@@ -3,6 +3,13 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { createStackNavigator } from '@react-navigation/stack';
+import { ThemeProvider } from 'styled-components/native';
+import { Alert, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import { auth } from './src/firebaseConfig';
+import { theme } from './src/theme';
+import LottieAnimation from './src/LottieAnimation'; 
+
 import HomeScreen from './screens/HomeScreen';
 import PickUpScreen from './screens/PickUpScreen';
 import PickUpDetail from './screens/PickUpDetail';
@@ -10,22 +17,14 @@ import DeliveryHistory from './screens/DeliveryHistory';
 import DeliveryDetail from './screens/DeliveryDetail';
 import LoginScreen from './screens/LoginScreen';
 import DriverProfileScreen from './screens/DriverProfileScreen';
-import { ThemeProvider } from 'styled-components/native';
-import { theme } from './src/theme';
-import { auth } from './src/firebaseConfig';
 import WelcomeScreen from './screens/WelcomeScreen';
-import { Alert, Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import DeliveryOverview from './screens/DeliveryOverview';
 import DeliveryScreen from './screens/DeliveryScreen';
 import ConfirmPickupScreen from './screens/ConfirmPickupScreen';
-import { navigationRef, navigate } from './src/RootNavigation';
 import SettingsScreen from './screens/SettingsScreen'; 
 import NotificationSettingsScreen from './screens/NotificationSettingsScreen';
 import AppPreferencesScreen from './screens/AppPreferencesScreen';
 import AboutAppScreen from './screens/AboutAppScreen';
-import AnimatedSplashScreen from './screens/AnimatedSplashScreen';
-
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -43,20 +42,20 @@ function PickUpStack() {
     <Stack.Navigator>
       <Stack.Screen name="Pickups" component={PickUpScreen } options={{ headerShown: false }} />
       <Stack.Screen name="PickUpDetail" component={PickUpDetail} options={{ headerShown: false }} />
-      <Stack.Screen name="ConfirmPickup" component={ConfirmPickupScreen} options={{ headerShown: false }}/> 
-      <Stack.Screen name="DeliveryOverview" component={DeliveryOverview} options={{ headerShown: false }}/>
-      <Stack.Screen name="DeliveryScreen" component={DeliveryScreen} options={{ headerShown: false }}/>
+      <Stack.Screen name="ConfirmPickup" component={ConfirmPickupScreen} options={{ headerShown: false }} /> 
+      <Stack.Screen name="DeliveryOverview" component={DeliveryOverview} options={{ headerShown: false }} />
+      <Stack.Screen name="DeliveryScreen" component={DeliveryScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
 
 function DeliveryStack() {
-    return (
-        <Stack.Navigator>
-            <Stack.Screen name="DeliveryHistory" component={DeliveryHistory} options={{ headerShown: false }} />
-            <Stack.Screen name="DeliveryDetail" component={DeliveryDetail} options={{ headerShown: false }} />
-        </Stack.Navigator>
-    );
+  return (
+    <Stack.Navigator>
+      <Stack.Screen name="DeliveryHistory" component={DeliveryHistory} options={{ headerShown: false }} />
+      <Stack.Screen name="DeliveryDetail" component={DeliveryDetail} options={{ headerShown: false }} />
+    </Stack.Navigator>
+  );
 }
 
 function AuthStack() {
@@ -73,25 +72,24 @@ function SettingsStack() {
     <Stack.Navigator>
       <Stack.Screen name="User Settings" component={SettingsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="AppPreferences" component={AppPreferencesScreen} options={{ headerShown: false }}/>
-      <Stack.Screen name="AboutApp" component={AboutAppScreen} options={{ headerShown: false }}/>
+      <Stack.Screen name="AppPreferences" component={AppPreferencesScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="AboutApp" component={AboutAppScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(true); // State to manage animation visibility
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (user) {
         setUser(user);
-        // Optionally fetch additional user data here
       } else {
         setUser(null);
       }
-      setLoading(false);
+      setIsTransitioning(false);
     });
 
     return () => unsubscribe();
@@ -105,15 +103,19 @@ export default function App() {
     return () => subscription.remove();
   }, []);
 
-  return (
+  const handleNavigationChange = () => {
+    setIsTransitioning(true);
+    setTimeout(() => setIsTransitioning(false), 1000); // Adjust the duration to match your animation length
+  };
 
+  return (
     <ThemeProvider theme={theme}>
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer onStateChange={handleNavigationChange}>
+        <LottieAnimation isVisible={isTransitioning} />
         {!user ? (
           <AuthStack />
         ) : (
-          <Drawer.Navigator initialRouteName="Splash">
-            <Drawer.Screen name="Splash" component={AnimatedSplashScreen} options={{ headerShown: false }} />
+          <Drawer.Navigator initialRouteName="Home">
             <Drawer.Screen name="Home" component={HomeScreen} />
             <Drawer.Screen name="PickUps" component={PickUpStack} />
             <Drawer.Screen name="Completed Deliveries" component={DeliveryStack} />

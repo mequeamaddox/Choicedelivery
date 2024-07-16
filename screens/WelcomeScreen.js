@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { View, Text, Button, StyleSheet, Alert, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 
 const WelcomeScreen = ({ navigation }) => {

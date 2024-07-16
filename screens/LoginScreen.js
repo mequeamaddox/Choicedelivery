@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Alert, TouchableOpacity, Text, View, Image } from 'react-native';
 import styled from 'styled-components/native';
-import { auth } from '../src/firebaseConfig';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { verifyFirebaseToken } from '../services/apiService';
+
+const auth = getAuth();
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -15,36 +15,16 @@ const LoginScreen = ({ navigation }) => {
       await signInWithEmailAndPassword(auth, email, password);
       console.log('User logged in');
 
-      // Get Firebase ID token
       const user = auth.currentUser;
       const idToken = await user.getIdToken();
       console.log('Firebase ID Token:', idToken);
 
-      try {
-        const response = await verifyFirebaseToken(idToken);
-
-        if (response.success) {
-          console.log('User verified with WordPress:', response);
-
-          // Check if the welcome screen has been shown
-          const welcomeShown = await AsyncStorage.getItem('welcomeShown');
-          console.log('Welcome shown status:', welcomeShown);
-          if (welcomeShown === 'true') {
-            // Navigate to the home screen
-            navigation.navigate('Home', { deliveries, pickups });
-          } else {
-            // Show the welcome screen
-            navigation.navigate('Welcome');
-          }
-        } else {
-          console.error('Verification failed:', response.message);
-          Alert.alert('Verification failed', 'There was a problem verifying your account. Please try again.');
-          return;
-        }
-      } catch (error) {
-        console.error('Error verifying token with WordPress:', error);
-        Alert.alert('Verification failed', 'There was a problem verifying your account. Please try again.');
-        return;
+      // Here you can call your API if needed or navigate to the home screen directly
+      const welcomeShown = await AsyncStorage.getItem('welcomeShown');
+      if (welcomeShown === 'true') {
+        navigation.navigate('Home', { deliveries: [], pickups: [] });
+      } else {
+        navigation.navigate('Welcome');
       }
     } catch (error) {
       console.error('Login failed', error);
