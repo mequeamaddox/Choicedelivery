@@ -417,3 +417,30 @@ test('address suggestions and distance-aware quotes', async () => {
   r = await call('GET', '/public/geocode?q=somewhere%20new');
   assert.equal(r.status, 502, 'lookup outages degrade gracefully');
 });
+
+test('landing page is served on www; the app on other hosts', async () => {
+  const http = require('http');
+  const get = (host, p) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: server.address().port, path: p, headers: { Host: host } }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
+    }).on('error', reject);
+  });
+  let r = await get('www.choicedeliverysc.com', '/');
+  assert.equal(r.status, 200);
+  assert.match(r.body, /Your Choice, Our Priority/);
+  r = await get('www.choicedeliverysc.com', '/privacy');
+  assert.match(r.body, /Privacy Policy/);
+  r = await get('www.choicedeliverysc.com', '/logo.png');
+  assert.match(r.headers['content-type'], /image\/png/);
+  r = await get('choicedeliverysc.com', '/privacy.html');
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.location, 'https://www.choicedeliverysc.com/privacy.html');
+  r = await get('www.choicedeliverysc.com', '/public/pricing');
+  assert.equal(r.status, 200, 'API still reachable from the landing host');
+  r = await get('app.choicedeliverysc.com', '/');
+  assert.match(r.body, /static\/main\.js/, 'app host gets the web app');
+  r = await get('api.choicedeliverysc.com', '/health');
+  assert.equal(r.status, 200);
+});

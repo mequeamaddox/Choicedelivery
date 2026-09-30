@@ -753,7 +753,8 @@
         });
 
         // All website forms send to the Choice Delivery backend.
-        const API = 'https://api.choicedeliverysc.com';
+        // The landing page is served by the same Railway service as the API.
+        const API = '';
 
         async function postJson(path, body) {
             const res = await fetch(API + path, {

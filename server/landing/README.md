@@ -1,7 +1,6 @@
 # Choice Delivery SC — public website (www.choicedeliverysc.com)
 
-Static landing site hosted on Hostinger. It stays separate from the app on purpose: marketing pages
-can change without touching the booking system.
+The public landing site. Marketing pages live in their own files so they can change without touching the booking system.
 
 | File | Purpose |
 |---|---|
@@ -9,7 +8,7 @@ can change without touching the booking system.
 | `privacy.html` | Privacy policy |
 | `logo.png`, `favicon.png` | Brand images (no longer loaded from the old WordPress site) |
 
-## What connects to the backend (`https://api.choicedeliverysc.com`)
+## What connects to the backend (same server)
 
 - **Quick Quote Calculator** → `POST /public/quote`: the same formula orders are priced with
   ($25 for the first 5 miles, $1.50 per extra mile, +$50 rush, plus weekend/lunch/high-demand/weather
@@ -23,9 +22,9 @@ Both forms include a hidden spam trap and are rate limited.
 
 "Launch App", "Create Account" and "Log In" go to `https://app.choicedeliverysc.com`.
 
-## Publishing to Hostinger
+## Hosting
 
-1. hPanel → **Websites → File Manager** → `public_html`.
-2. Upload `index.html`, `privacy.html`, `logo.png` and `favicon.png`, replacing the old files.
-3. If WordPress is still installed in `public_html`, its `index.php` can take priority over `index.html`.
-   Rename or remove WordPress files only after backing them up.
+Served by the same Railway service as the app and API (see `src/app.js`): requests for
+`www.choicedeliverysc.com` get these files, and `choicedeliverysc.com` redirects to `www`.
+To change the page, edit the files here and push; Railway redeploys automatically.
+The host names can be changed with the `LANDING_HOSTS` variable.

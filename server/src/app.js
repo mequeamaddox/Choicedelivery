@@ -19,8 +19,36 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// ---- Public landing page (www.choicedeliverysc.com) ----
+// Chosen by host name. The bare domain redirects to www. API paths (/public/quote, etc.) work on
+// every host, so the landing page's forms call this same server.
+const LANDING_DIR = path.join(__dirname, '..', 'landing');
+const LANDING_HOSTS = (process.env.LANDING_HOSTS || 'www.choicedeliverysc.com,choicedeliverysc.com')
+  .split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+const LANDING_FILES = {
+  '/': 'index.html',
+  '/index.html': 'index.html',
+  '/privacy': 'privacy.html',
+  '/privacy.html': 'privacy.html',
+  '/logo.png': 'logo.png',
+  '/favicon.png': 'favicon.png',
+  '/favicon.ico': 'favicon.png',
+};
+app.use((req, res, next) => {
+  const host = (req.hostname || '').toLowerCase();
+  if (!LANDING_HOSTS.includes(host) || !['GET', 'HEAD'].includes(req.method)) return next();
+  const file = LANDING_FILES[req.path];
+  if (!file) return next();
+  // One canonical address: choicedeliverysc.com -> www.choicedeliverysc.com
+  if (!host.startsWith('www.') && LANDING_HOSTS.includes(`www.${host}`)) {
+    return res.redirect(301, `https://www.${host}${req.originalUrl}`);
+  }
+  res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': file.endsWith('.html') ? 'no-cache' : 'public, max-age=86400' });
+  res.sendFile(path.join(LANDING_DIR, file));
+});
+
 // ---- Web app (shippers + dispatch) ----
-// Served from "/" on every host; app.choicedeliverysc.com is the intended address. It uses hash
+// Served from "/" on every other host; app.choicedeliverysc.com is the intended address. It uses hash
 // routes (/#/orders), so it never collides with the API paths below.
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const webHeaders = (res) => {
