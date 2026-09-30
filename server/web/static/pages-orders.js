@@ -36,13 +36,13 @@ function DemoDataButton({ onChange }) {
     <//>`;
 }
 
-// Dispatch switch for the $15 bad-weather surcharge on new orders.
+// Dispatch switch for the bad-weather surcharge on new orders.
 function WeatherSwitch() {
   const settings = useApi('/settings');
   const on = settings.data?.bad_weather === true;
   return html`
     <${ActionButton} class=${`btn ${on ? 'warn' : ''}`}
-      confirmText=${on ? 'Turn off bad-weather pricing?' : 'Turn on bad-weather pricing? New orders get a $15 weather surcharge until you turn it off.'}
+      confirmText=${on ? 'Turn off bad-weather pricing?' : 'Turn on bad-weather pricing? New orders get the weather surcharge until you turn it off.'}
       onClick=${async () => { await api('/settings/bad-weather', { method: 'PUT', body: { enabled: !on } }); settings.reload(); }}>
       ${on ? '⛈ Bad weather: ON' : 'Bad weather: off'}
     <//>`;
@@ -138,8 +138,7 @@ export function PriceBreakdown({ q }) {
   if (!q) return null;
   return html`
     <dl class="breakdown">
-      <dt>Base delivery (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
-      ${q.vehicleFeeCents > 0 && html`<dt>${q.vehicleType}</dt><dd>+${formatMoney(q.vehicleFeeCents)}</dd>`}
+      <dt>${q.vehicleType || 'Base delivery'} (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
       ${q.extraMileageCents > 0 && html`<dt>Distance fee (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
       ${q.rushFeeCents > 0 && html`<dt>Rush delivery</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
       ${q.weightFeeCents > 0 && html`<dt>Weight (${q.weightTier})</dt><dd>+${formatMoney(q.weightFeeCents)}</dd>`}
@@ -294,7 +293,7 @@ export function NewOrderPage() {
                 <input type="radio" name="serviceLevel" value=${l.id} checked=${v.serviceLevel === l.id}
                   onChange=${() => setV({ ...v, serviceLevel: l.id })} />
                 <span><strong>${l.id === 'rush' ? 'Rush delivery' : 'Standard delivery'}</strong>
-                  <span class="muted small">${l.id === 'rush' ? '2 hours or less' : `${formatMoney(pricing.data.baseFeeCents)} base, first ${pricing.data.baseMiles} miles`}</span></span>
+                  <span class="muted small">${l.id === 'rush' ? '2 hours or less' : 'Priced by vehicle and distance'}</span></span>
                 <span class="price push">${l.feeCents ? `+${formatMoney(l.feeCents)}` : ''}</span>
               </label>`)}
           </div>
@@ -306,9 +305,10 @@ export function NewOrderPage() {
                   <input type="radio" name="vehicleType" value=${name} checked=${v.vehicleType === name}
                     onChange=${() => setV({ ...v, vehicleType: name })} />
                   <span><strong>${name}</strong>
-                    <span class="muted small">${x.description} · up to ${x.maxLbs.toLocaleString()} lbs · ${formatMoney(x.perMileCents)}/mi after ${pricing.data.baseMiles} mi</span>
+                    <span class="muted small line">${x.description} · up to ${x.maxLbs.toLocaleString()} lbs</span>
+                    <span class="muted small line">${formatMoney(x.baseCents)} for the first ${x.includedMiles} mi, then ${formatMoney(x.perMileCents)}/mi</span>
                     ${tooHeavyFor(x) && html`<span class="small warn-text">Too heavy for this vehicle</span>`}</span>
-                  <span class="price push">${x.feeCents ? `+${formatMoney(x.feeCents)}` : 'Base'}</span>
+                  <span class="price push">${formatMoney(x.baseCents)}</span>
                 </label>`)}
             </div>
           </div>
@@ -632,7 +632,7 @@ function QuotePanel({ order, onChange, setError }) {
         <dt>Saved</dt><dd>${formatDate(order.createdAt)}</dd>
       </dl>
       ${notice ? html`<div class="alert warn" role="status">${notice}</div>`
-        : html`<p class="small muted">Not booked yet, so no driver has been notified. The price is rechecked when you book (time of day, weekend, demand and weather can change it)${order.scheduledAt ? '; if the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`}
+        : html`<p class="small muted">Not booked yet, so no driver has been notified. The price is rechecked when you book (time of day, weekends, holidays, demand and weather can change it)${order.scheduledAt ? '; if the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`}
       <${ActionButton} class="btn primary block" onError=${setError} onClick=${book}>
         ${notice ? `Book at ${formatMoney(order.priceCents)}` : payByCard ? `Book & pay ${formatMoney(order.priceCents)}` : `Book for ${formatMoney(order.priceCents)}`}
       <//>

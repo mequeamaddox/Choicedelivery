@@ -318,3 +318,10 @@ h3 { margin: .25rem 0 0; font-size: 1rem; }
 .vehicle-fees { border: 1px solid var(--border); border-radius: 10px; padding: .5rem .9rem .25rem; margin: 0; }
 .vehicle-fees legend { padding: 0 .35rem; font-weight: 600; }
 .inline-check { display: inline-flex; gap: .4rem; align-items: center; cursor: pointer; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 .75rem; }
+@media (max-width: 560px) { .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.surcharge-row { justify-content: space-between; }
+.surcharge-row .inline-check { flex: 1; }
+.surcharge-row input[type=number] { max-width: 8rem; flex: 0 0 8rem; }
+.holiday-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .4rem .75rem; font-size: .92rem; }
+.choice .line { display: block; }

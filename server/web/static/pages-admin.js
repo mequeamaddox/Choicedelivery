@@ -200,6 +200,17 @@ function PaymentsStatus() {
     </section>`;
 }
 
+const SURCHARGE_LABELS = {
+  holiday: 'Holiday', weekend: 'Weekend', weather: 'Bad weather (dispatch switch)',
+  lunch: 'Lunch rush (11:30am–1:30pm)', demand: 'High demand (3+ open orders)',
+};
+const HOLIDAY_LABELS = {
+  new_years_day: "New Year's Day", mlk_day: 'MLK Jr. Day', presidents_day: "Presidents' Day", memorial_day: 'Memorial Day',
+  juneteenth: 'Juneteenth', independence_day: 'Independence Day', labor_day: 'Labor Day', columbus_day: 'Columbus Day',
+  veterans_day: 'Veterans Day', thanksgiving: 'Thanksgiving', day_after_thanksgiving: 'Day after Thanksgiving',
+  christmas_eve: 'Christmas Eve', christmas: 'Christmas Day', new_years_eve: "New Year's Eve",
+};
+
 // Owner-only: amounts for weight tiers, extra stops, add-ons and wait time. Dollars in the form, cents in the API.
 function FeesEditor() {
   const loaded = useApi('/settings/fees');
@@ -220,7 +231,7 @@ function FeesEditor() {
   return html`
     <form class="card stack" onSubmit=${save}>
       <h2>Fees & extra charges</h2>
-      <p class="muted small">Added on top of the base price ($25 for the first 5 miles). Customers see these when they book.</p>
+      <p class="muted small">Your rate card. Customers see these prices when they book; saved changes apply to new quotes and orders.</p>
       <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
       <h3>Weight</h3>
       <${Field} label="Heaviest single piece allowed (lbs)" hint="Orders with any piece heavier than this can't be booked.">
@@ -242,20 +253,46 @@ function FeesEditor() {
       <button type="button" class="btn small" onClick=${() => set({ weightTiers: [...tiers, { upToLbs: (tiers[tiers.length - 1]?.upToLbs || 0) + 500, cents: (tiers[tiers.length - 1]?.cents || 0) + 2500 }] })}>+ Add weight tier</button>
       <p class="muted small">Heavier than ${(tiers[tiers.length - 1]?.upToLbs || 0).toLocaleString()} lbs: sent to you for a custom price.</p>
       <h3>Vehicles</h3>
-      <p class="muted small">Flat fee on top of the base, the per-mile rate after the first 5 miles, and the most each carries (heavier goes to a bigger vehicle or a custom price).</p>
+      <p class="muted small">Base price covering the first miles, the per-mile rate after that, and the most each carries (heavier goes to a bigger vehicle or a custom price). Uncheck a vehicle you don't run.</p>
       ${Object.entries(fees.vehicles).map(([name, x]) => html`
         <fieldset class="vehicle-fees">
           <legend><label class="inline-check"><input type="checkbox" checked=${x.enabled}
             onChange=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, enabled: e.target.checked } } })} /> ${name}</label></legend>
-          <div class="grid-3">
-            <${Field} label="Fee ($)"><input type="number" min="0" step="0.01" value=${dollars(x.feeCents)} disabled=${!x.enabled}
-              onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, feeCents: cents(e.target.value) } } })} /><//>
+          <div class="grid-4">
+            <${Field} label="Base ($)"><input type="number" min="0" step="0.01" value=${dollars(x.baseCents)} disabled=${!x.enabled}
+              onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, baseCents: cents(e.target.value) } } })} /><//>
+            <${Field} label="Miles included"><input type="number" min="0" step="1" value=${x.includedMiles} disabled=${!x.enabled}
+              onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, includedMiles: Number(e.target.value) } } })} /><//>
             <${Field} label="Per mile ($)"><input type="number" min="0" step="0.01" value=${dollars(x.perMileCents)} disabled=${!x.enabled}
               onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, perMileCents: cents(e.target.value) } } })} /><//>
             <${Field} label="Max lbs"><input type="number" min="1" step="1" value=${x.maxLbs} disabled=${!x.enabled}
               onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, maxLbs: Number(e.target.value) } } })} /><//>
           </div>
         </fieldset>`)}
+      <h3>Rush & surcharges</h3>
+      <div class="grid-2">
+        <${Field} label="Rush / expedited ($)" hint="2 hours or less.">
+          <input type="number" min="0" step="0.01" value=${dollars(fees.rushCents)} onInput=${(e) => set({ rushCents: cents(e.target.value) })} />
+        <//>
+      </div>
+      ${Object.entries(SURCHARGE_LABELS).map(([k, label]) => html`
+        <div class="inline surcharge-row">
+          <label class="inline-check"><input type="checkbox" checked=${fees.surcharges[k].enabled}
+            onChange=${(e) => set({ surcharges: { ...fees.surcharges, [k]: { ...fees.surcharges[k], enabled: e.target.checked } } })} /> ${label}</label>
+          <input type="number" min="0" step="0.01" aria-label=${`${label} ($)`} value=${dollars(fees.surcharges[k].cents)} disabled=${!fees.surcharges[k].enabled}
+            onInput=${(e) => set({ surcharges: { ...fees.surcharges, [k]: { ...fees.surcharges[k], cents: cents(e.target.value) } } })} />
+        </div>`)}
+      <h3>Holidays</h3>
+      <p class="muted small">The holiday surcharge applies on these days (Columbia time), instead of the weekend charge.</p>
+      <div class="holiday-grid">
+        ${Object.entries(HOLIDAY_LABELS).map(([k, label]) => html`
+          <label class="inline-check"><input type="checkbox" checked=${fees.holidays[k]}
+            onChange=${(e) => set({ holidays: { ...fees.holidays, [k]: e.target.checked } })} /> ${label}</label>`)}
+      </div>
+      <${Field} label="Other holiday dates" hint="Extra days to charge as holidays, e.g. 2026-12-26, 2027-01-02">
+        <input value=${fees.extraHolidayDates.join(', ')} placeholder="YYYY-MM-DD, YYYY-MM-DD"
+          onChange=${(e) => set({ extraHolidayDates: e.target.value.split(/[\s,]+/).filter(Boolean) })} />
+      <//>
       <h3>Stops & add-ons</h3>
       <div class="grid-2">
         <${Field} label="Each extra stop ($)" hint="Beyond one pickup and one drop-off.">

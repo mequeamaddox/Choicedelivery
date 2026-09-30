@@ -1,30 +1,91 @@
-// Delivery pricing for Choice Delivery SC, carried over from the original app's shared/pricing.ts.
+// Delivery pricing for Choice Delivery SC (the owner's rate card; every amount below is a default the
+// owner can change under Account → Fees & extra charges):
 //
-//   $25 base (covers the first 5 miles)
-//   + $1.50 per mile over 5
+//   By vehicle, each base covering the first 10 miles:
+//     Car $25 then $1.50/mile · Minivan $35 then $2.00/mile · Pickup Truck $45 then $2.50/mile
 //   + $50 rush (2 hours or less)
-//   + surcharges: weekend $10, lunch rush (11:30am-1:30pm) $5, high demand (3+ open orders) $15,
+//   + surcharges: weekend $15, holiday $25 (instead of the weekend charge, not on top of it),
+//     and from the original app: lunch rush (11:30am-1:30pm) $5, high demand (3+ open orders) $15,
 //     bad weather $15 (switched on by dispatch)
-//
-// Plus the extras below (defaults; the owner can change the amounts on the Account page):
-//   weight tiers, $10 per extra stop, optional add-ons (loading help, inside delivery/stairs),
-//   and wait time billed after the order (first 15 minutes at each stop free, then $10 per 15 minutes).
+//   + weight tiers, $10 per extra stop, optional add-ons (loading help, inside delivery/stairs),
+//     and wait time billed after the order (first 15 minutes at each stop free, then $10 per 15 minutes).
 //
 // Times are Columbia, SC local time. For scheduled deliveries the pickup time counts.
 // Dispatch can override the price of any order.
 
 const TIME_ZONE = 'America/New_York';
+// Car rates: the "starting at" price, and what unknown/legacy vehicle types are priced at.
 const BASE_FEE_CENTS = 2500;
-const BASE_MILES = 5;
+const BASE_MILES = 10;
 const PER_MILE_CENTS = 150;
 const RUSH_FEE_CENTS = 5000;
 
 const SURCHARGES = {
+  holiday: { label: 'Holiday service', cents: 2500 },
+  weekend: { label: 'Weekend service', cents: 1500 },
   weather: { label: 'Weather conditions', cents: 1500 },
   lunch: { label: 'Lunch rush (11:30am–1:30pm)', cents: 500 },
   demand: { label: 'High demand', cents: 1500 },
-  weekend: { label: 'Weekend service', cents: 1000 },
 };
+
+// Holidays that get the holiday surcharge (on the day itself, Columbia time). on: default setting.
+const HOLIDAYS = {
+  new_years_day: { label: "New Year's Day", on: true },
+  mlk_day: { label: 'Martin Luther King Jr. Day', on: false },
+  presidents_day: { label: "Presidents' Day", on: false },
+  memorial_day: { label: 'Memorial Day', on: true },
+  juneteenth: { label: 'Juneteenth', on: false },
+  independence_day: { label: 'Independence Day', on: true },
+  labor_day: { label: 'Labor Day', on: true },
+  columbus_day: { label: 'Columbus Day', on: false },
+  veterans_day: { label: 'Veterans Day', on: false },
+  thanksgiving: { label: 'Thanksgiving', on: true },
+  day_after_thanksgiving: { label: 'Day after Thanksgiving', on: true },
+  christmas_eve: { label: 'Christmas Eve', on: true },
+  christmas: { label: 'Christmas Day', on: true },
+  new_years_eve: { label: "New Year's Eve", on: true },
+};
+
+// nth (1-based; -1 = last) weekday (0 = Sunday) of a month, as day of month.
+function nthWeekday(year, month, weekday, nth) {
+  if (nth > 0) {
+    const first = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    return 1 + ((weekday - first + 7) % 7) + (nth - 1) * 7;
+  }
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const last = new Date(Date.UTC(year, month - 1, lastDay)).getUTCDay();
+  return lastDay - ((last - weekday + 7) % 7);
+}
+
+// Which holiday (key) a local calendar date is, if any.
+function holidayOn(year, month, day) {
+  const is = (m, d) => month === m && day === d;
+  if (is(1, 1)) return 'new_years_day';
+  if (is(1, nthWeekday(year, 1, 1, 3))) return 'mlk_day';
+  if (is(2, nthWeekday(year, 2, 1, 3))) return 'presidents_day';
+  if (is(5, nthWeekday(year, 5, 1, -1))) return 'memorial_day';
+  if (is(6, 19)) return 'juneteenth';
+  if (is(7, 4)) return 'independence_day';
+  if (is(9, nthWeekday(year, 9, 1, 1))) return 'labor_day';
+  if (is(10, nthWeekday(year, 10, 1, 2))) return 'columbus_day';
+  if (is(11, 11)) return 'veterans_day';
+  const thanksgiving = nthWeekday(year, 11, 4, 4);
+  if (is(11, thanksgiving)) return 'thanksgiving';
+  if (is(11, thanksgiving + 1)) return 'day_after_thanksgiving';
+  if (is(12, 24)) return 'christmas_eve';
+  if (is(12, 25)) return 'christmas';
+  if (is(12, 31)) return 'new_years_eve';
+  return null;
+}
+
+// Label of the holiday on this local date if its surcharge is switched on (or it's an extra date), else null.
+function holidayName(localDate, fees = DEFAULT_FEES) {
+  const [y, m, d] = localDate.split('-').map(Number);
+  const key = holidayOn(y, m, d);
+  if (key && fees.holidays[key]) return HOLIDAYS[key].label;
+  if (fees.extraHolidayDates.includes(localDate)) return 'Holiday';
+  return null;
+}
 const LUNCH_START = 11.5;
 const LUNCH_END = 13.5;
 const HIGH_DEMAND_OPEN_ORDERS = 3;
@@ -41,15 +102,21 @@ const DEFAULT_FEES = {
     { upToLbs: 500, cents: 3500 },
     { upToLbs: 1000, cents: 7500 },
   ],
-  // Price and capacity by vehicle: a flat fee on top of the base, its own per-mile rate past the first
-  // 5 miles, and the most it carries (heavier loads need a bigger vehicle or manual review).
-  // The biggest vehicle is a half-ton pickup; there's no liftgate/box-truck service.
+  // Bumped when the default rate card changes, so older saved settings don't override the new rates.
+  version: 2,
+  // By vehicle: base price covering the first includedMiles, per-mile rate after that, and the most it
+  // carries (heavier loads need a bigger vehicle or manual review). The biggest vehicle is a half-ton
+  // pickup; there's no liftgate/box-truck service. Cargo Van is off unless the owner turns it on.
   vehicles: {
-    Car: { description: 'Envelopes, boxes, small parcels', feeCents: 0, perMileCents: 150, maxLbs: 150, enabled: true },
-    Minivan: { description: 'Several boxes, small furniture', feeCents: 1000, perMileCents: 175, maxLbs: 500, enabled: true },
-    'Cargo Van': { description: 'Larger loads that must stay dry', feeCents: 2000, perMileCents: 200, maxLbs: 1000, enabled: true },
-    'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', feeCents: 2500, perMileCents: 200, maxLbs: 1000, enabled: true },
+    Car: { description: 'Envelopes, boxes, small parcels', baseCents: 2500, includedMiles: 10, perMileCents: 150, maxLbs: 150, enabled: true },
+    Minivan: { description: 'Several boxes, small furniture', baseCents: 3500, includedMiles: 10, perMileCents: 200, maxLbs: 500, enabled: true },
+    'Cargo Van': { description: 'Larger loads that must stay dry', baseCents: 4000, includedMiles: 10, perMileCents: 225, maxLbs: 1000, enabled: false },
+    'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', baseCents: 4500, includedMiles: 10, perMileCents: 250, maxLbs: 1000, enabled: true },
   },
+  rushCents: RUSH_FEE_CENTS,
+  surcharges: Object.fromEntries(Object.entries(SURCHARGES).map(([k, sc]) => [k, { cents: sc.cents, enabled: true }])),
+  holidays: Object.fromEntries(Object.entries(HOLIDAYS).map(([k, h]) => [k, h.on])),
+  extraHolidayDates: [], // 'YYYY-MM-DD' (Columbia time), e.g. a closure you want charged as a holiday
   maxPieceLbs: 75, // no single piece heavier than this is accepted (one person has to lift it)
   extraStopCents: 1000, // each stop beyond one pickup and one drop-off
   addOns: {
@@ -88,25 +155,44 @@ function normalizeFees(saved) {
     .sort((a, b) => a.upToLbs - b.upToLbs)
     .filter((t, i, all) => i === 0 || t.upToLbs > all[i - 1].upToLbs);
   if (!weightTiers.length) weightTiers = DEFAULT_FEES.weightTiers;
+  // Settings saved before the current rate card keep their other amounts but not vehicle/surcharge rates.
+  const current = Number(f.version) >= DEFAULT_FEES.version;
   const vehicles = {};
   for (const [key, def] of Object.entries(DEFAULT_FEES.vehicles)) {
-    const v = f.vehicles?.[key] || {};
+    const v = (current && f.vehicles?.[key]) || {};
     vehicles[key] = {
       description: def.description,
-      feeCents: cleanCents(v.feeCents, def.feeCents),
+      baseCents: cleanCents(v.baseCents, def.baseCents),
+      includedMiles: cleanCents(v.includedMiles, def.includedMiles),
       perMileCents: cleanCents(v.perMileCents, def.perMileCents),
       maxLbs: Math.max(1, cleanCents(v.maxLbs, def.maxLbs)),
       enabled: typeof v.enabled === 'boolean' ? v.enabled : def.enabled,
     };
   }
   if (!Object.values(vehicles).some((v) => v.enabled)) vehicles.Car.enabled = true;
+  const surcharges = {};
+  for (const [key, def] of Object.entries(DEFAULT_FEES.surcharges)) {
+    const sc = (current && f.surcharges?.[key]) || {};
+    surcharges[key] = { cents: cleanCents(sc.cents, def.cents), enabled: typeof sc.enabled === 'boolean' ? sc.enabled : def.enabled };
+  }
+  const holidays = {};
+  for (const [key, def] of Object.entries(DEFAULT_FEES.holidays)) {
+    holidays[key] = typeof f.holidays?.[key] === 'boolean' ? f.holidays[key] : def;
+  }
+  const extraHolidayDates = (Array.isArray(f.extraHolidayDates) ? f.extraHolidayDates : [])
+    .filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 50);
   const addOns = {};
   for (const [key, def] of Object.entries(DEFAULT_FEES.addOns)) {
     addOns[key] = { ...def, cents: cleanCents(f.addOns?.[key]?.cents, def.cents) };
   }
   return {
+    version: DEFAULT_FEES.version,
     weightTiers,
     vehicles,
+    rushCents: cleanCents(current ? f.rushCents : undefined, DEFAULT_FEES.rushCents),
+    surcharges,
+    holidays,
+    extraHolidayDates,
     maxPieceLbs: Math.max(1, cleanCents(f.maxPieceLbs, DEFAULT_FEES.maxPieceLbs)),
     extraStopCents: cleanCents(f.extraStopCents, DEFAULT_FEES.extraStopCents),
     addOns,
@@ -176,13 +262,18 @@ const OVERAGE_CENTS = 1500;
 const normalizeServiceLevel = (v) => (v === 'same_day' ? 'rush' : v);
 const isServiceLevel = (v) => Object.prototype.hasOwnProperty.call(SERVICE_LEVELS, normalizeServiceLevel(v));
 
-// Local day-of-week and fractional hour in Columbia for a given instant.
+// Local day-of-week, fractional hour and calendar date (YYYY-MM-DD) in Columbia for a given instant.
 function localTime(at) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: TIME_ZONE, weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(at);
   const get = (t) => parts.find((p) => p.type === t)?.value;
-  return { weekday: get('weekday'), hour: Number(get('hour')) + Number(get('minute')) / 60 };
+  return {
+    weekday: get('weekday'),
+    hour: Number(get('hour')) + Number(get('minute')) / 60,
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+  };
 }
 
 // distanceMiles may be null when addresses couldn't be located; no distance fee then, and the
@@ -195,24 +286,25 @@ function calculatePrice({
   vehicleType = null, weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES,
 }) {
   const level = normalizeServiceLevel(serviceLevel);
-  const vehicle = fees.vehicles?.[vehicleType] || null; // unknown/legacy types: base rates, no capacity check
-  const perMileCents = vehicle ? vehicle.perMileCents : PER_MILE_CENTS;
-  const vehicleFeeCents = vehicle ? vehicle.feeCents : 0;
+  const vehicle = fees.vehicles?.[vehicleType] || null; // unknown/legacy types: Car rates, no capacity check
+  const rates = vehicle || fees.vehicles?.Car || { baseCents: BASE_FEE_CENTS, includedMiles: BASE_MILES, perMileCents: PER_MILE_CENTS };
   const miles = distanceMiles == null ? null : Math.round(Number(distanceMiles) * 10) / 10;
-  const extraMiles = miles == null ? 0 : Math.max(0, Math.round((miles - BASE_MILES) * 10) / 10);
-  const extraMileageCents = Math.round(extraMiles * perMileCents);
-  const rushFeeCents = SERVICE_LEVELS[level]?.feeCents ?? 0;
+  const extraMiles = miles == null ? 0 : Math.max(0, Math.round((miles - rates.includedMiles) * 10) / 10);
+  const extraMileageCents = Math.round(extraMiles * rates.perMileCents);
+  const rushFeeCents = level === 'rush' ? fees.rushCents : 0;
 
-  const { weekday, hour } = localTime(at instanceof Date ? at : new Date(at));
+  const { weekday, hour, date } = localTime(at instanceof Date ? at : new Date(at));
+  const holiday = holidayName(date, fees);
   const applies = {
+    holiday: !!holiday,
+    weekend: (weekday === 'Sat' || weekday === 'Sun') && !(holiday && fees.surcharges.holiday.enabled),
     weather: !!badWeather,
     lunch: hour >= LUNCH_START && hour <= LUNCH_END,
     demand: openOrders >= HIGH_DEMAND_OPEN_ORDERS,
-    weekend: weekday === 'Sat' || weekday === 'Sun',
   };
   const surcharges = Object.entries(SURCHARGES)
-    .filter(([key]) => applies[key])
-    .map(([key, s]) => ({ key, label: s.label, cents: s.cents }));
+    .filter(([key]) => applies[key] && fees.surcharges[key].enabled && fees.surcharges[key].cents > 0)
+    .map(([key, s]) => ({ key, label: key === 'holiday' ? `Holiday (${holiday})` : s.label, cents: fees.surcharges[key].cents }));
   const surchargeCents = surcharges.reduce((sum, s) => sum + s.cents, 0);
 
   const lbs = weightLbs == null || weightLbs === '' ? null : Number(weightLbs);
@@ -241,12 +333,11 @@ function calculatePrice({
   return {
     distanceMiles: miles,
     distanceConfirmed: miles != null,
-    baseFeeCents: BASE_FEE_CENTS,
-    baseMiles: BASE_MILES,
+    baseFeeCents: rates.baseCents,
+    baseMiles: rates.includedMiles,
     extraMiles,
-    perMileCents,
+    perMileCents: rates.perMileCents,
     vehicleType: vehicle ? vehicleType : null,
-    vehicleFeeCents,
     extraMileageCents,
     serviceLevel: level,
     rushFeeCents,
@@ -260,7 +351,7 @@ function calculatePrice({
     needsReview: reviewReasons.length > 0,
     reviewReasons,
     context: { at: new Date(at).toISOString(), openOrders, badWeather: !!badWeather },
-    totalCents: BASE_FEE_CENTS + vehicleFeeCents + extraMileageCents + rushFeeCents + surchargeCents + weightFeeCents
+    totalCents: rates.baseCents + extraMileageCents + rushFeeCents + surchargeCents + weightFeeCents
       + extraStopsCents + addOnCents,
   };
 }
@@ -292,7 +383,8 @@ async function pricingContext(client, excludeOrderId = null) {
 }
 
 module.exports = {
-  TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HIGH_DEMAND_OPEN_ORDERS,
+  TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HOLIDAYS, HIGH_DEMAND_OPEN_ORDERS,
+  holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, DEFAULT_FEES, CHARGE_KINDS,
   normalizeFees, getFees, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
 };

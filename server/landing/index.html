@@ -527,7 +527,6 @@
                                 <select id="quote-vehicle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                                     <option value="Car">Car (up to 150 lbs)</option>
                                     <option value="Minivan">Minivan (up to 500 lbs)</option>
-                                    <option value="Cargo Van">Cargo Van (up to 1,000 lbs)</option>
                                     <option value="Pickup Truck">Pickup Truck (up to 1,000 lbs)</option>
                                 </select>
                             </div>
@@ -821,9 +820,8 @@
                 });
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
                 document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price' : `Estimated: ${money(q.totalCents)}`;
-                const lines = q.needsReview ? [] : [[`Base delivery (first ${q.baseMiles} miles)`, money(q.baseFeeCents)]];
-                if (!q.needsReview && q.vehicleFeeCents > 0) lines.push([q.vehicleType, '+' + money(q.vehicleFeeCents)]);
-                if (!q.needsReview && q.extraMileageCents > 0) lines.push([`Distance fee (${q.extraMiles} mi × ${money(q.perMileCents)})`, '+' + money(q.extraMileageCents)]);
+                const lines = [[`${q.vehicleType || 'Base delivery'} (first ${q.baseMiles} miles)`, money(q.baseFeeCents)]];
+                if (q.extraMileageCents > 0) lines.push([`Distance fee (${q.extraMiles} mi × ${money(q.perMileCents)})`, '+' + money(q.extraMileageCents)]);
                 if (q.rushFeeCents > 0) lines.push(['Rush delivery', '+' + money(q.rushFeeCents)]);
                 if (q.weightFeeCents > 0) lines.push([`Weight (${q.weightTier})`, '+' + money(q.weightFeeCents)]);
                 (q.surcharges || []).forEach((sc) => lines.push([sc.label, '+' + money(sc.cents)]));

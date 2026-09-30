@@ -76,18 +76,20 @@ plus `GET /public/geocode?q=` for address suggestions (OpenStreetMap, SC/NC/GA o
 to their one-request-per-second limit). Messages and plan requests are stored as **leads** (`GET/PATCH /leads`,
 staff only) and emailed to `LEADS_EMAIL` when email is configured.
 
-**Pricing** (`src/pricing.js`, from the original app's `shared/pricing.ts`): $25 covers the first 5 miles,
-then $1.50 per mile, plus $50 rush (2 hours or less). Surcharges: weekend +$10, lunch rush 11:30am–1:30pm +$5,
-high demand (3+ open orders) +$15, bad weather +$15 (dispatch switch on the Orders page). Times are Columbia
-local time; scheduled pickups use the pickup time. Distance is straight-line x 1.2 between stops with map
-coordinates. Orders are priced on the server when booked; demand/weather are locked in at booking. Dispatch can
-set a custom price, and clearing it returns to the formula.
+**Pricing** (`src/pricing.js`; every amount is editable by the owner under Account → Fees & extra charges):
+by vehicle, each base covering the first 10 miles: Car $25 then $1.50/mile, Minivan $35 then $2.00/mile,
+Pickup Truck (half-ton) $45 then $2.50/mile (Cargo Van exists but is off). Rush (2 hours or less) +$50.
+Surcharges: holiday +$25 (New Year's Day, Memorial Day, July 4th, Labor Day, Thanksgiving and the day after,
+Christmas Eve/Day, New Year's Eve by default; replaces the weekend charge), weekend +$15, and from the original app
+lunch rush 11:30am–1:30pm +$5, high demand (3+ open orders) +$15, bad weather +$15 (dispatch switch); each can be
+switched off. Times are Columbia local time; scheduled pickups use the pickup time. Distance is straight-line x 1.2
+between stops with map coordinates. Orders are priced on the server when booked; demand/weather are locked in at
+booking. Dispatch can set a custom price, and clearing it returns to the formula.
 
 **Extras** (modeled on Curri's accessorial charges; amounts editable by the owner under Account → Fees & extra
 charges, stored in the `fees` setting):
-- Vehicles (the biggest is a half-ton pickup; no box trucks or liftgates): Car +$0, $1.50/mi, up to 150 lbs;
-  Minivan +$10, $1.75/mi, 500 lbs; Cargo Van +$20, $2.00/mi, 1,000 lbs; Pickup Truck +$25, $2.00/mi, 1,000 lbs.
-  The per-mile rate applies after the first 5 miles. Vehicle types can be switched off.
+- Vehicle weight limits (the biggest is a half-ton pickup; no box trucks or liftgates): Car 150 lbs,
+  Minivan 500 lbs, Pickup Truck 1,000 lbs.
 - **No single piece over 75 lbs** (editable): shippers must enter the heaviest piece; orders with a heavier piece,
   or a total weight that can't be split into the stated number of pieces under the limit, are refused on booking,
   on edits and when a quote is booked (dispatch included).

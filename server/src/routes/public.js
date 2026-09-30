@@ -4,7 +4,7 @@ const db = require('../db');
 const { sendMail } = require('../mailer');
 const { rateLimit } = require('../rate-limit');
 const {
-  SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS,
+  SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS,
   SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs,
   CHARGE_KINDS, pieceWeightProblem,
 } = require('../pricing');
@@ -22,15 +22,18 @@ const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 router.get('/pricing', asyncH(async (req, res) => {
   const { badWeather } = await pricingContext(db);
   const fees = await getFees(db);
+  const car = fees.vehicles.Car;
   res.json({
-    surcharges: Object.entries(SURCHARGES).map(([id, sc]) => ({ id, ...sc })),
+    surcharges: Object.entries(SURCHARGES).filter(([id]) => fees.surcharges[id].enabled)
+      .map(([id, sc]) => ({ id, ...sc, cents: fees.surcharges[id].cents })),
     badWeather,
-    baseFeeCents: BASE_FEE_CENTS,
-    baseMiles: BASE_MILES,
-    perMileCents: PER_MILE_CENTS,
-    rushFeeCents: RUSH_FEE_CENTS,
+    // "Starting at" figures are the Car rates; each vehicle's own rates are in fees.vehicles.
+    baseFeeCents: car.baseCents,
+    baseMiles: car.includedMiles,
+    perMileCents: car.perMileCents,
+    rushFeeCents: fees.rushCents,
     vehicleTypes: Object.entries(fees.vehicles).filter(([, v]) => v.enabled).map(([k]) => k),
-    serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, s]) => ({ id, ...s })),
+    serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, sv]) => ({ id, ...sv, feeCents: id === 'rush' ? fees.rushCents : 0 })),
     businessPlans: Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })),
     overageCents: OVERAGE_CENTS,
     fees,

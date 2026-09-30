@@ -283,26 +283,49 @@ test('web app is served with security headers', async () => {
   assert.equal(res.status, 404);
 });
 
-test('pricing formula matches the original shared/pricing.ts', () => {
-  const { calculatePrice } = require('../src/pricing');
+test('rate card: vehicle base covers 10 miles, then per mile; rush, weekend, holiday and other surcharges', () => {
+  const { calculatePrice, holidayOn, normalizeFees, DEFAULT_FEES } = require('../src/pricing');
   const wedMorning = new Date('2026-09-30T14:00:00Z'); // 10:00 in Columbia
   const wedLunch = new Date('2026-09-30T16:15:00Z'); // 12:15
   const saturday = new Date('2026-10-03T13:00:00Z'); // Sat 09:00
-  const price = (o) => calculatePrice({ at: wedMorning, ...o });
-  assert.equal(price({ distanceMiles: 3 }).totalCents, 2500, 'first 5 miles are the base fee');
-  assert.equal(price({ distanceMiles: 5 }).totalCents, 2500);
-  assert.equal(price({ distanceMiles: 12 }).totalCents, 3550, '$25 + 7 mi x $1.50');
-  assert.equal(price({ distanceMiles: 12, serviceLevel: 'rush' }).totalCents, 8550, 'rush adds $50');
+  const price = (o) => calculatePrice({ at: wedMorning, vehicleType: 'Car', ...o });
+  assert.equal(price({ distanceMiles: 3 }).totalCents, 2500, 'Car: $25 covers the first 10 miles');
+  assert.equal(price({ distanceMiles: 10 }).totalCents, 2500);
+  assert.equal(price({ distanceMiles: 12 }).totalCents, 2800, '$25 + 2 mi x $1.50');
+  assert.equal(price({ vehicleType: 'Minivan', distanceMiles: 12 }).totalCents, 3900, 'Minivan: $35 + 2 mi x $2.00');
+  assert.equal(price({ vehicleType: 'Pickup Truck', distanceMiles: 12 }).totalCents, 5000, 'Truck: $45 + 2 mi x $2.50');
+  assert.equal(price({ vehicleType: 'Pickup Truck', distanceMiles: 3 }).totalCents, 4500);
+  assert.equal(price({ vehicleType: 'Cargo Van', distanceMiles: 3 }).needsReview, true, 'Cargo Van is off by default');
+  assert.equal(price({ vehicleType: 'Van', distanceMiles: 12 }).totalCents, 2800, 'unknown types get Car rates');
+  assert.equal(price({ distanceMiles: 12, serviceLevel: 'rush' }).totalCents, 7800, 'rush adds $50');
   assert.equal(price({ distanceMiles: 12, serviceLevel: 'same_day' }).rushFeeCents, 5000, 'old name still works');
   assert.equal(price({ distanceMiles: null }).distanceConfirmed, false);
-  assert.deepEqual(calculatePrice({ distanceMiles: 3, at: wedLunch }).surcharges.map((x) => x.key), ['lunch']);
-  assert.equal(calculatePrice({ distanceMiles: 3, at: wedLunch }).totalCents, 3000, 'lunch rush +$5');
-  assert.equal(calculatePrice({ distanceMiles: 3, at: saturday }).totalCents, 3500, 'weekend +$10');
-  assert.equal(price({ distanceMiles: 3, openOrders: 2 }).totalCents, 2500);
+  assert.deepEqual(price({ distanceMiles: 3, at: wedLunch }).surcharges.map((x) => x.key), ['lunch']);
+  assert.equal(price({ distanceMiles: 3, at: saturday }).totalCents, 4000, 'weekend +$15');
   assert.equal(price({ distanceMiles: 3, openOrders: 3 }).totalCents, 4000, 'high demand +$15 at 3 open orders');
   assert.equal(price({ distanceMiles: 3, badWeather: true }).totalCents, 4000, 'bad weather +$15');
-  const all = calculatePrice({ distanceMiles: 12, serviceLevel: 'rush', at: saturday, openOrders: 5, badWeather: true });
-  assert.equal(all.totalCents, 2500 + 1050 + 5000 + 1000 + 1500 + 1500);
+
+  // Holidays: +$25, instead of (not on top of) the weekend charge.
+  const thanksgiving = price({ distanceMiles: 3, at: new Date('2026-11-26T15:00:00Z') });
+  assert.deepEqual(thanksgiving.surcharges.map((x) => [x.key, x.cents]), [['holiday', 2500]]);
+  assert.equal(thanksgiving.surcharges[0].label, 'Holiday (Thanksgiving)');
+  const july4th = price({ distanceMiles: 3, at: new Date('2026-07-04T15:00:00Z') }); // a Saturday
+  assert.deepEqual(july4th.surcharges.map((x) => x.key), ['holiday']);
+  assert.deepEqual([holidayOn(2026, 5, 25), holidayOn(2026, 9, 7), holidayOn(2027, 11, 25), holidayOn(2027, 11, 26), holidayOn(2026, 3, 3)],
+    ['memorial_day', 'labor_day', 'thanksgiving', 'day_after_thanksgiving', null]);
+  const mlk = new Date('2027-01-18T15:00:00Z');
+  assert.equal(price({ distanceMiles: 3, at: mlk }).surcharges.length, 0, 'MLK Day is off by default');
+  const withMlk = normalizeFees({ ...DEFAULT_FEES, holidays: { ...DEFAULT_FEES.holidays, mlk_day: true }, extraHolidayDates: ['2026-10-07'] });
+  assert.equal(price({ distanceMiles: 3, at: mlk, fees: withMlk }).totalCents, 5000);
+  assert.equal(price({ distanceMiles: 3, at: new Date('2026-10-07T15:00:00Z'), fees: withMlk }).surcharges[0].key, 'holiday', 'extra dates count');
+  const noLunch = normalizeFees({ ...DEFAULT_FEES, surcharges: { ...DEFAULT_FEES.surcharges, lunch: { cents: 500, enabled: false } } });
+  assert.equal(price({ distanceMiles: 3, at: wedLunch, fees: noLunch }).surcharges.length, 0, 'surcharges can be switched off');
+
+  // Settings saved under the old rate card don't override the new vehicle rates.
+  assert.equal(normalizeFees({ vehicles: { Car: { feeCents: 0, perMileCents: 999 } } }).vehicles.Car.perMileCents, 150);
+
+  const all = calculatePrice({ distanceMiles: 12, serviceLevel: 'rush', at: saturday, openOrders: 5, badWeather: true, vehicleType: 'Car' });
+  assert.equal(all.totalCents, 2500 + 300 + 5000 + 1500 + 1500 + 1500);
 });
 
 test('orders are priced on the server by distance; dispatch can override', async () => {
@@ -316,7 +339,7 @@ test('orders are priced on the server by distance; dispatch can override', async
   const miles = r.data.distanceMiles;
   assert.ok(miles > 100 && miles < 160, `distance ${miles}`);
   const bd = r.data.priceBreakdown;
-  assert.equal(bd.extraMileageCents, Math.round((miles - 5) * 150));
+  assert.equal(bd.extraMileageCents, Math.round((miles - 10) * 150));
   assert.equal(r.data.priceCents, 2500 + bd.extraMileageCents + surchargeTotal(bd));
   assert.equal(r.data.priceIsCustom, false);
   const id = r.data.id;
@@ -407,7 +430,7 @@ test('address suggestions and distance-aware quotes', async () => {
     scheduledAt: '2026-09-30T14:00:00Z' } });
   assert.ok(r.data.distanceMiles > 100 && r.data.distanceMiles < 160, `distance ${r.data.distanceMiles}`);
   const demand = r.data.surcharges.reduce((sum, x) => sum + x.cents, 0);
-  assert.equal(r.data.totalCents, 2500 + Math.round((r.data.distanceMiles - 5) * 150) + 5000 + demand);
+  assert.equal(r.data.totalCents, 2500 + Math.round((r.data.distanceMiles - 10) * 150) + 5000 + demand);
   assert.equal(r.data.priceCents, r.data.totalCents);
   assert.equal(r.data.outOfArea, false);
   r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'x',
@@ -772,12 +795,12 @@ test('weight tiers, extra stops, add-ons and wait time are priced like the fee s
   assert.deepEqual(heavy.reviewReasons, ['Over 1,000 lbs']);
   assert.equal(heavy.weightFeeCents, 0);
 
-  // Vehicles: flat fee plus their own per-mile rate; capacity limits send it to review.
+  // Vehicles: their own base and per-mile rate; capacity limits send it to review.
   const car = calculatePrice({ distanceMiles: 15, at, vehicleType: 'Car', weightLbs: 100 });
-  assert.equal(car.totalCents, 2500 + 10 * 150 + 1500);
+  assert.equal(car.totalCents, 2500 + 5 * 150 + 1500);
   const truck = calculatePrice({ distanceMiles: 15, at, vehicleType: 'Pickup Truck', weightLbs: 100 });
-  assert.equal(truck.vehicleFeeCents, DEFAULT_FEES.vehicles['Pickup Truck'].feeCents);
-  assert.equal(truck.totalCents, 2500 + 2500 + 10 * 200 + 1500);
+  assert.equal(truck.baseFeeCents, DEFAULT_FEES.vehicles['Pickup Truck'].baseCents);
+  assert.equal(truck.totalCents, 4500 + 5 * 250 + 1500);
   assert.ok(truck.totalCents > car.totalCents);
   const tooHeavy = calculatePrice({ distanceMiles: 3, at, vehicleType: 'Car', weightLbs: 300 });
   assert.equal(tooHeavy.needsReview, true);
