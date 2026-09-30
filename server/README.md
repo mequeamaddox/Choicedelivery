@@ -17,23 +17,25 @@ and it's set up to deploy on [Railway](https://railway.com) with Postgres on Rai
    | `JWT_SECRET` | a long random string (`openssl rand -hex 32`) |
    | `DISPATCH_API_KEY` | *(optional)* random string that lets your website or order form create orders |
    | `RESEND_API_KEY`, `MAIL_FROM` | *(optional)* for password-reset emails via Resend; without them reset links are only written to the logs |
-5. **Get a public URL**: *Settings → Networking → Generate Domain*. You'll get something like `https://choicedelivery-api.up.railway.app`.
+5. **Give it a domain**: *Settings → Networking → Custom Domain* → `api.choicedeliverysc.com`, then add the
+   CNAME record Railway shows at your DNS provider. (Domain plan: `www.` = public landing page,
+   `app.` = future dispatch/shipper web app, `api.` = this service.)
 6. **Create the first admin**. The first account can register without logging in:
    ```sh
-   curl -X POST https://<your-domain>/auth/register \
+   curl -X POST https://api.choicedeliverysc.com/auth/register \
      -H 'Content-Type: application/json' \
      -d '{"email":"you@choicedeliverysc.com","password":"<8+ chars>"}'
    ```
    The response includes a `token`. Use it to add drivers:
    ```sh
-   curl -X POST https://<your-domain>/auth/register \
+   curl -X POST https://api.choicedeliverysc.com/auth/register \
      -H "Authorization: Bearer <admin token>" -H 'Content-Type: application/json' \
      -d '{"email":"driver@example.com","password":"<8+ chars>"}'
    ```
    `role` can be `driver` (default), `dispatcher`, `admin` or `shipper` (shippers also need `organizationId`).
    Or, from a shell with `DATABASE_URL` set (for example via `railway run`): `npm run create-user -- driver@example.com <password> driver "Driver Name"`
-7. **Point the app at it**: set `EXPO_PUBLIC_API_URL=https://<your-domain>` (in a root `.env` for
-   local dev, or as an EAS environment variable for builds), or replace `extra.apiUrl` in `app.json`. Then rebuild the app.
+7. **The app** already points at `https://api.choicedeliverysc.com` (`extra.apiUrl` in `app.json`). For local
+   testing, override it with `EXPO_PUBLIC_API_URL` in a root `.env`.
 
 Database changes in `migrations/` are applied automatically when the service starts.
 
