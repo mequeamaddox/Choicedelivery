@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
 const { asyncH, HttpError } = require('../util');
+const { normalizeFees, getFees, DEFAULT_FEES } = require('../pricing');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin', 'dispatcher'));
@@ -21,6 +22,22 @@ router.put('/bad-weather', asyncH(async (req, res) => {
     [JSON.stringify(req.body.enabled), req.user.id]
   );
   res.json({ bad_weather: req.body.enabled });
+}));
+
+// Weight tiers, extra stop, add-on and wait-time amounts. Owner (admin) only.
+router.get('/fees', asyncH(async (req, res) => {
+  res.json({ fees: await getFees(db), defaults: normalizeFees(DEFAULT_FEES) });
+}));
+
+router.put('/fees', requireRole('admin'), asyncH(async (req, res) => {
+  const b = req.body || {};
+  if (!Array.isArray(b.weightTiers) || !b.weightTiers.length) throw new HttpError(400, 'weightTiers is required');
+  const fees = normalizeFees(b);
+  await db.query(
+    `INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('fees', $1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [JSON.stringify(fees), req.user.id]);
+  res.json({ fees });
 }));
 
 module.exports = router;

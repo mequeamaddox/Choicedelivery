@@ -301,3 +301,13 @@ h3 { margin: .25rem 0 0; font-size: 1rem; }
 .check-row { display: flex; gap: .6rem; align-items: flex-start; }
 .check-row input { margin-top: .3rem; }
 .account-extra { margin-top: 1rem; max-width: 560px; }
+
+/* Additional charges */
+.notice { border-left: 4px solid var(--amber); }
+.notice ul { margin: .25rem 0; padding-left: 1.1rem; display: grid; gap: .35rem; }
+.charges { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; gap: .5rem; }
+.charges li { display: flex; gap: .75rem; align-items: flex-start; border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+.charges li.waived { opacity: .6; text-decoration: line-through; }
+.add-charge { margin-top: .75rem; }
+.add-charge summary { cursor: pointer; font-weight: 600; color: var(--focus); margin-bottom: .5rem; }
+.btn.block + .btn.block { margin-top: .5rem; }

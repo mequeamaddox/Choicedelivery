@@ -35,21 +35,23 @@ async function stripeRequest(method, path, params, { idempotencyKey } = {}) {
   return data;
 }
 
-function createCheckoutSession({ orderId, orderNumber, amountCents, description, customerEmail, successUrl, cancelUrl }) {
+function createCheckoutSession({
+  orderId, orderNumber, amountCents, description, customerEmail, successUrl, cancelUrl, name, metadata = {},
+}) {
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     success_url: successUrl,
     cancel_url: cancelUrl,
     customer_email: customerEmail || undefined,
     client_reference_id: orderId,
-    metadata: { order_id: orderId, order_number: orderNumber },
-    payment_intent_data: { metadata: { order_id: orderId, order_number: orderNumber } },
+    metadata: { order_id: orderId, order_number: orderNumber, ...metadata },
+    payment_intent_data: { metadata: { order_id: orderId, order_number: orderNumber, ...metadata } },
     line_items: [{
       quantity: 1,
       price_data: {
         currency: 'usd',
         unit_amount: amountCents,
-        product_data: { name: `Choice Delivery ${orderNumber}`, description: description || undefined },
+        product_data: { name: name || `Choice Delivery ${orderNumber}`, description: description || undefined },
       },
     }],
   });

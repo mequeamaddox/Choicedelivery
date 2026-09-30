@@ -22,6 +22,19 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
       || event.type === 'checkout.session.async_payment_succeeded';
     if (paidEvent) {
       const orderId = session.metadata?.order_id || session.client_reference_id;
+      if (session.metadata?.kind === 'charges') {
+        // Payment for additional charges (wait time, etc.) on an order that was already paid.
+        await db.withTx(async (client) => {
+          const { rows } = await client.query(
+            `UPDATE order_charges SET status = 'paid', paid_at = now()
+             WHERE order_id = $1 AND stripe_session_id = $2 AND status = 'due' RETURNING cents`, [orderId, session.id]);
+          if (rows.length) {
+            await recordEvent(client, orderId, null, 'charges_paid', { cents: rows.reduce((t, r) => t + r.cents, 0), method: 'card' });
+            await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [orderId]);
+          }
+        });
+        return res.json({ received: true });
+      }
       const updated = await db.withTx(async (client) => {
         // Only the order's current payment link counts, and only once (Stripe may retry).
         const { rows } = await client.query(

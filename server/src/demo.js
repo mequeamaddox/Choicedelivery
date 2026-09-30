@@ -4,7 +4,7 @@
 // tokens, and demo orders are hidden from real drivers and excluded from pricing.
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { calculatePrice, routeMiles } = require('./pricing');
+const { calculatePrice, routeMiles, parseWeightLbs, waitCharge } = require('./pricing');
 
 const MIN = 60 * 1000;
 const ago = (minutes) => new Date(Date.now() - minutes * MIN);
@@ -116,7 +116,7 @@ async function loadDemoData(client, actorId) {
         place('clinicNE', { status: 'completed', doneMin: 30, signedBy: 'M. Lee', photo: true }),
         place('lab', { status: 'arrived', arrivedMin: 3, contactName: 'Supply room' })] },
     { org: realty, by: realtyUser, status: 'completed', driver: marcus, createdMin: 26 * 60, acceptedMin: 25.8 * 60,
-      vehicle: 'Car', level: 'rush', description: 'Earnest money check', weight: '1 lb', pieces: '1',
+      vehicle: 'Car', level: 'rush', description: 'Earnest money check', weight: '1 lb', pieces: '1', waitMinutes: 34,
       stops: [place('titleCo', { status: 'completed', doneMin: 25.5 * 60, signedBy: 'Title desk' }),
         place('lexington', { status: 'completed', doneMin: 24.7 * 60, signedBy: 'K. Brown', photo: true })] },
     { org: legal, by: legalUser, status: 'completed', driver: tasha, createdMin: 50 * 60, acceptedMin: 49.9 * 60,
@@ -136,6 +136,7 @@ async function loadDemoData(client, actorId) {
     const stopsDone = o.stops.every((s) => s.status === 'completed');
     const breakdown = calculatePrice({
       distanceMiles: routeMiles(o.stops.map((s) => s.location)), serviceLevel: o.level, at: created, openOrders: 0,
+      weightLbs: parseWeightLbs(o.weight), stopCount: o.stops.length,
     });
     const { rows: [{ id }] } = await client.query(
       // Own numbering (DEMO-1001...) so sample orders don't use up real CD- order numbers.
@@ -168,6 +169,15 @@ async function loadDemoData(client, actorId) {
       if (done) events.push([done, o.driver, 'stop_completed', { type, printedName: s.signedBy }]);
     }
     if (o.status === 'completed') events.push([ago(Math.min(...o.stops.map((s) => s.doneMin))), o.driver, 'completed', {}]);
+    if (o.waitMinutes) {
+      // Sample wait-time charge: the driver waited at the drop-off.
+      const { cents } = waitCharge(o.waitMinutes);
+      await client.query(
+        `INSERT INTO order_charges (order_id, kind, description, cents, minutes, status, created_at)
+         VALUES ($1, 'wait_time', 'Waited at the drop-off for the receiver', $2, $3, 'invoice', $4)`,
+        [id, cents, o.waitMinutes, ago(Math.min(...o.stops.map((s) => s.doneMin)))]);
+      events.push([ago(Math.min(...o.stops.map((s) => s.doneMin)) - 1), null, 'charge_added', { kind: 'wait_time', cents, minutes: o.waitMinutes }]);
+    }
     if (o.cancelledMin) events.push([ago(o.cancelledMin), o.by, 'cancelled', { reason: 'Office rescheduled' }]);
     if (o.status === 'in_transit') {
       await client.query("UPDATE orders SET notes = $2 WHERE id = $1", [id, JSON.stringify([

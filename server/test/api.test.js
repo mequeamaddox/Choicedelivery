@@ -752,3 +752,124 @@ test('saved quotes: hidden from drivers, booked later at a rechecked price, dele
     delete process.env.STRIPE_WEBHOOK_SECRET;
   }
 });
+
+test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
+  const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
+  const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges
+  const plain = calculatePrice({ distanceMiles: 3, at });
+  assert.equal(plain.totalCents, 2500);
+  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 50 }).weightFeeCents, 0);
+  const q = calculatePrice({ distanceMiles: 3, at, weightLbs: 120, stopCount: 4, addOns: ['loading_help', 'inside_delivery'] });
+  assert.equal(q.weightTier, '51–150 lbs');
+  assert.equal(q.weightFeeCents, 1500);
+  assert.equal(q.extraStops, 2);
+  assert.equal(q.extraStopsCents, 2000);
+  assert.deepEqual(q.addOns.map((a) => a.cents), [2500, 2000]);
+  assert.equal(q.totalCents, 2500 + 1500 + 2000 + 4500);
+  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 5000 }).weightTier, 'Over 1000 lbs');
+  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 5000 }).weightFeeCents, DEFAULT_FEES.weightTiers[4].cents);
+  assert.deepEqual([waitCharge(10).cents, waitCharge(15).cents, waitCharge(16).cents, waitCharge(30).cents, waitCharge(31).cents],
+    [0, 0, 1000, 1000, 2000]);
+  assert.deepEqual([parseWeightLbs('1,200 lbs'), parseWeightLbs('approx 40'), parseWeightLbs(''), parseWeightLbs('10 kg')], [1200, 40, null, 22]);
+});
+
+test('extra charges: booked add-ons, owner-editable fees, wait-time charges paid online or billed', async () => {
+  const stripe = require('../src/stripe');
+  const crypto = require('crypto');
+  const mailer = require('../src/mailer');
+  const sent = [];
+  mailer.setSender(async (m) => { sent.push(m); });
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+  const sessions = [];
+  stripe.setFetch(async (url, opts) => {
+    const body = new URLSearchParams(opts.body || '');
+    if (url.endsWith('/checkout/sessions')) {
+      sessions.push(body);
+      return { ok: true, json: async () => ({ id: `cs_c${sessions.length}`, url: `https://checkout.stripe.com/c${sessions.length}` }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  });
+  const webhook = (event) => {
+    const payload = JSON.stringify(event);
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', 'whsec_test').update(`${ts}.${payload}`).digest('hex');
+    return fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload,
+      headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
+  };
+  try {
+    let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ addOns: ['teleport'] }) });
+    assert.equal(r.status, 400, 'unknown add-ons are rejected');
+
+    // Owner edits the fees; dispatchers can see but not change them.
+    r = await call('GET', '/settings/fees', { token: t.dispatcher });
+    const fees = r.data.fees;
+    assert.equal((await call('PUT', '/settings/fees', { token: t.dispatcher, body: fees })).status, 403);
+    r = await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, addOns: { ...fees.addOns, loading_help: { cents: 3000 } } } });
+    assert.equal(r.data.fees.addOns.loading_help.cents, 3000);
+    assert.equal((await call('GET', '/public/pricing')).data.fees.addOns.loading_help.cents, 3000, 'published for the booking form');
+
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ weight: '120 lbs', addOns: ['loading_help'] }) });
+    const order = r.data;
+    assert.deepEqual(order.addOns, ['loading_help']);
+    assert.equal(order.priceBreakdown.weightFeeCents, 1500);
+    assert.deepEqual(order.priceBreakdown.addOns.map((a) => a.cents), [3000]);
+    await settle();
+    assert.match(sent.find((m) => /booked/.test(m.subject)).html, /first 15 minutes at each stop are free/, 'booking email explains wait time');
+
+    // Paid by card, then the driver waits 32 minutes at the drop-off.
+    await call('POST', `/orders/${order.id}/checkout`, { token: t.acme });
+    const { rows: [{ stripe_session_id: sid }] } = await db.query('SELECT stripe_session_id FROM orders WHERE id = $1', [order.id]);
+    await webhook({ type: 'checkout.session.completed', data: { object: { id: sid, payment_status: 'paid',
+      amount_total: order.priceCents, payment_intent: 'pi_c', metadata: { order_id: order.id } } } });
+
+    assert.equal((await call('POST', `/orders/${order.id}/charges`, { token: t.acme, body: { kind: 'other', cents: 500 } })).status, 403);
+    r = await call('POST', `/orders/${order.id}/charges`, { token: t.dispatcher, body: { kind: 'wait_time', minutes: 10 } });
+    assert.equal(r.status, 400, 'nothing to charge within the free time');
+    sent.length = 0;
+    r = await call('POST', `/orders/${order.id}/charges`, { token: t.dispatcher,
+      body: { kind: 'wait_time', minutes: 32, stopId: order.stops[1].id, description: 'Receiver at lunch' } });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.charges[0].cents, 2000);
+    assert.equal(r.data.charges[0].status, 'due', 'card customers pay extra charges online');
+    assert.equal(r.data.balanceDueCents, 2000);
+    await settle();
+    assert.match(sent[0].subject, /Additional charge .*\$20\.00/);
+    assert.match(sent[0].html, /Wait time.*32 minutes.*Receiver at lunch/s);
+
+    r = await call('GET', '/orders?status=pending', { token: t.acme });
+    assert.equal(r.data.find((o) => o.id === order.id).balanceDueCents, 2000, 'list shows the balance');
+
+    r = await call('POST', `/orders/${order.id}/checkout`, { token: t.acme });
+    assert.equal(r.status, 200);
+    const s = sessions[sessions.length - 1];
+    assert.equal(s.get('line_items[0][price_data][unit_amount]'), '2000');
+    assert.equal(s.get('metadata[kind]'), 'charges');
+    await webhook({ type: 'checkout.session.completed', data: { object: { id: `cs_c${sessions.length}`, payment_status: 'paid',
+      amount_total: 2000, payment_intent: 'pi_c2', metadata: { order_id: order.id, kind: 'charges' } } } });
+    r = await call('GET', `/orders/${order.id}`, { token: t.acme });
+    assert.equal(r.data.balanceDueCents, 0);
+    assert.equal(r.data.charges[0].status, 'paid');
+    assert.equal(r.data.paidCents, order.priceCents, 'the original payment is untouched');
+    assert.equal((await call('POST', `/orders/${order.id}/charges/${r.data.charges[0].id}/waive`, { token: t.dispatcher })).status, 409);
+
+    // A dispatch-booked (billed to account) order: charges go on the account; they can be removed.
+    r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ organizationId: ids.acmeOrg }) });
+    const inv = r.data;
+    r = await call('POST', `/orders/${inv.id}/charges`, { token: t.dispatcher, body: { kind: 'return_trip', cents: 3500 } });
+    assert.equal(r.data.charges[0].status, 'invoice');
+    assert.equal(r.data.balanceDueCents, 0);
+    assert.equal(r.data.extraChargesCents, 3500);
+    r = await call('POST', `/orders/${inv.id}/charges/${r.data.charges[0].id}/waive`, { token: t.dispatcher });
+    assert.equal(r.data.charges[0].status, 'waived');
+    assert.equal(r.data.extraChargesCents, 0);
+    await call('POST', `/orders/${inv.id}/cancel`, { token: t.admin });
+    await call('POST', `/orders/${order.id}/cancel`, { token: t.admin });
+    await call('PUT', '/settings/fees', { token: t.admin, body: (await call('GET', '/settings/fees', { token: t.admin })).data.defaults });
+  } finally {
+    mailer.setSender(null);
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});

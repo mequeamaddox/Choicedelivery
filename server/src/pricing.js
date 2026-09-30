@@ -6,6 +6,10 @@
 //   + surcharges: weekend $10, lunch rush (11:30am-1:30pm) $5, high demand (3+ open orders) $15,
 //     bad weather $15 (switched on by dispatch)
 //
+// Plus the extras below (defaults; the owner can change the amounts on the Account page):
+//   weight tiers, $10 per extra stop, optional add-ons (loading help, inside delivery/stairs),
+//   and wait time billed after the order (first 15 minutes at each stop free, then $10 per 15 minutes).
+//
 // Times are Columbia, SC local time. For scheduled deliveries the pickup time counts.
 // Dispatch can override the price of any order.
 
@@ -26,6 +30,94 @@ const LUNCH_END = 13.5;
 const HIGH_DEMAND_OPEN_ORDERS = 3;
 
 const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Truck'];
+
+// Modeled on how Curri and other couriers charge: heavier loads, extra stops and driver labor cost more,
+// and waiting past a free window is billed. Amounts are stored in settings ('fees') and editable.
+const DEFAULT_FEES = {
+  // Tiers by total declared weight; the last tier (upToLbs: null) covers everything heavier.
+  weightTiers: [
+    { upToLbs: 50, cents: 0 },
+    { upToLbs: 150, cents: 1500 },
+    { upToLbs: 500, cents: 3500 },
+    { upToLbs: 1000, cents: 7500 },
+    { upToLbs: null, cents: 12500 },
+  ],
+  extraStopCents: 1000, // each stop beyond one pickup and one drop-off
+  addOns: {
+    loading_help: { label: 'Loading/unloading help', description: 'Driver helps load and unload', cents: 2500 },
+    inside_delivery: { label: 'Inside delivery / stairs', description: 'Carried inside, upstairs or to a specific room', cents: 2000 },
+  },
+  waitFreeMinutes: 15, // per stop
+  waitBlockMinutes: 15,
+  waitBlockCents: 1000,
+};
+
+// Charges added after booking (by dispatch), with the reason shown to the customer.
+const CHARGE_KINDS = {
+  wait_time: 'Wait time',
+  extra_weight: 'Heavier than declared',
+  labor: 'Loading/unloading help',
+  return_trip: 'Return trip',
+  failed_attempt: 'Failed delivery attempt',
+  other: 'Other',
+};
+
+const cleanCents = (v, fallback) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 0 && n <= 1000000 ? n : fallback;
+};
+
+// Merges saved fee settings over the defaults, ignoring anything malformed.
+function normalizeFees(saved) {
+  const f = saved && typeof saved === 'object' ? saved : {};
+  const tiers = Array.isArray(f.weightTiers) && f.weightTiers.length ? f.weightTiers : DEFAULT_FEES.weightTiers;
+  const weightTiers = tiers.slice(0, 10).map((t, i, all) => ({
+    upToLbs: i === all.length - 1 ? null : cleanCents(t?.upToLbs, null),
+    cents: cleanCents(t?.cents, 0),
+  })).filter((t, i, all) => i === all.length - 1 || t.upToLbs != null);
+  const capped = weightTiers.slice(0, -1).sort((a, b) => a.upToLbs - b.upToLbs)
+    .filter((t, i, all) => i === 0 || t.upToLbs > all[i - 1].upToLbs);
+  weightTiers.splice(0, weightTiers.length - 1, ...capped);
+  const addOns = {};
+  for (const [key, def] of Object.entries(DEFAULT_FEES.addOns)) {
+    addOns[key] = { ...def, cents: cleanCents(f.addOns?.[key]?.cents, def.cents) };
+  }
+  return {
+    weightTiers,
+    extraStopCents: cleanCents(f.extraStopCents, DEFAULT_FEES.extraStopCents),
+    addOns,
+    waitFreeMinutes: cleanCents(f.waitFreeMinutes, DEFAULT_FEES.waitFreeMinutes),
+    waitBlockMinutes: Math.max(1, cleanCents(f.waitBlockMinutes, DEFAULT_FEES.waitBlockMinutes)),
+    waitBlockCents: cleanCents(f.waitBlockCents, DEFAULT_FEES.waitBlockCents),
+  };
+}
+
+async function getFees(client) {
+  const { rows } = await client.query("SELECT value FROM settings WHERE key = 'fees'");
+  return normalizeFees(rows[0]?.value);
+}
+
+// "120 lbs", "120", "1,200 lb" -> number of pounds; null when no number is given.
+function parseWeightLbs(text) {
+  if (typeof text === 'number') return Number.isFinite(text) && text >= 0 ? text : null;
+  const m = String(text ?? '').replace(/,/g, '').match(/\d+(\.\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return /kg|kilo/i.test(String(text)) ? Math.round(n * 2.20462) : n;
+}
+
+function weightTierLabel(tiers, index) {
+  const lo = index === 0 ? 0 : tiers[index - 1].upToLbs + 1;
+  const hi = tiers[index].upToLbs;
+  return hi == null ? `Over ${lo - 1} lbs` : index === 0 ? `Up to ${hi} lbs` : `${lo}–${hi} lbs`;
+}
+
+// Wait-time charge for a stop: free minutes first, then each started block is billed.
+function waitCharge(minutes, fees = DEFAULT_FEES) {
+  const billable = Math.max(0, Math.round(minutes) - fees.waitFreeMinutes);
+  const blocks = Math.ceil(billable / fees.waitBlockMinutes);
+  return { minutes: Math.round(minutes), billableMinutes: billable, cents: blocks * fees.waitBlockCents };
+}
 
 const SERVICE_LEVELS = {
   standard: { label: 'Standard delivery', description: 'Scheduled delivery', feeCents: 0 },
@@ -57,7 +149,11 @@ function localTime(at) {
 // distanceMiles may be null when addresses couldn't be located; no distance fee then, and the
 // quote says the distance still needs confirming.
 // `at` is when the pickup happens (defaults to now); openOrders and badWeather come from the system.
-function calculatePrice({ distanceMiles, serviceLevel = 'standard', at = new Date(), openOrders = 0, badWeather = false }) {
+// weightLbs, stopCount (default 2) and addOns (keys of fees.addOns) add the extras above.
+function calculatePrice({
+  distanceMiles, serviceLevel = 'standard', at = new Date(), openOrders = 0, badWeather = false,
+  weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES,
+}) {
   const level = normalizeServiceLevel(serviceLevel);
   const miles = distanceMiles == null ? null : Math.round(Number(distanceMiles) * 10) / 10;
   const extraMiles = miles == null ? 0 : Math.max(0, Math.round((miles - BASE_MILES) * 10) / 10);
@@ -76,6 +172,20 @@ function calculatePrice({ distanceMiles, serviceLevel = 'standard', at = new Dat
     .map(([key, s]) => ({ key, label: s.label, cents: s.cents }));
   const surchargeCents = surcharges.reduce((sum, s) => sum + s.cents, 0);
 
+  const lbs = weightLbs == null || weightLbs === '' ? null : Number(weightLbs);
+  let weightFeeCents = 0;
+  let weightTier = null;
+  if (lbs != null && Number.isFinite(lbs)) {
+    const i = fees.weightTiers.findIndex((t) => t.upToLbs == null || lbs <= t.upToLbs);
+    weightFeeCents = fees.weightTiers[i].cents;
+    weightTier = weightTierLabel(fees.weightTiers, i);
+  }
+  const extraStops = Math.max(0, (Number(stopCount) || 2) - 2);
+  const extraStopsCents = extraStops * fees.extraStopCents;
+  const addOnLines = [...new Set(addOns)].filter((k) => fees.addOns[k])
+    .map((k) => ({ key: k, label: fees.addOns[k].label, cents: fees.addOns[k].cents }));
+  const addOnCents = addOnLines.reduce((sum, a) => sum + a.cents, 0);
+
   return {
     distanceMiles: miles,
     distanceConfirmed: miles != null,
@@ -87,8 +197,14 @@ function calculatePrice({ distanceMiles, serviceLevel = 'standard', at = new Dat
     serviceLevel: level,
     rushFeeCents,
     surcharges,
+    weightLbs: lbs != null && Number.isFinite(lbs) ? lbs : null,
+    weightTier,
+    weightFeeCents,
+    extraStops,
+    extraStopsCents,
+    addOns: addOnLines,
     context: { at: new Date(at).toISOString(), openOrders, badWeather: !!badWeather },
-    totalCents: BASE_FEE_CENTS + extraMileageCents + rushFeeCents + surchargeCents,
+    totalCents: BASE_FEE_CENTS + extraMileageCents + rushFeeCents + surchargeCents + weightFeeCents + extraStopsCents + addOnCents,
   };
 }
 
@@ -120,6 +236,6 @@ async function pricingContext(client, excludeOrderId = null) {
 
 module.exports = {
   TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HIGH_DEMAND_OPEN_ORDERS,
-  VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS,
-  normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
+  VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, DEFAULT_FEES, CHARGE_KINDS,
+  normalizeFees, getFees, parseWeightLbs, weightTierLabel, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
 };

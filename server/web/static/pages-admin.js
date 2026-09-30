@@ -200,6 +200,61 @@ function PaymentsStatus() {
     </section>`;
 }
 
+// Owner-only: amounts for weight tiers, extra stops, add-ons and wait time. Dollars in the form, cents in the API.
+function FeesEditor() {
+  const loaded = useApi('/settings/fees');
+  const [f, setF] = useState(null);
+  const [msg, setMsg] = useState({});
+  if (!loaded.data) return null;
+  const fees = f || loaded.data.fees;
+  const dollars = (c) => (c / 100).toFixed(2);
+  const cents = (v) => Math.round(Number(v || 0) * 100);
+  const set = (patch) => { setF({ ...fees, ...patch }); setMsg({}); };
+  const setTier = (i, patch) => set({ weightTiers: fees.weightTiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
+  const save = async (e) => {
+    e.preventDefault();
+    try { const r = await api('/settings/fees', { method: 'PUT', body: fees }); setF(r.fees); setMsg({ ok: 'Saved. New quotes and orders use these amounts.' }); }
+    catch (err) { setMsg({ error: err }); }
+  };
+  const tiers = fees.weightTiers;
+  return html`
+    <form class="card stack" onSubmit=${save}>
+      <h2>Fees & extra charges</h2>
+      <p class="muted small">Added on top of the base price ($25 for 5 miles, then $1.50/mile). Customers see these when they book.</p>
+      <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
+      <h3>Weight</h3>
+      ${tiers.map((t, i) => html`
+        <div class="grid-2">
+          <${Field} label=${i === tiers.length - 1 ? `Over ${tiers[i - 1]?.upToLbs ?? 0} lbs` : `Up to (lbs)`}>
+            ${i === tiers.length - 1 ? html`<input value="and heavier" disabled />`
+              : html`<input type="number" min="1" step="1" value=${t.upToLbs} onInput=${(e) => setTier(i, { upToLbs: Number(e.target.value) })} />`}
+          <//>
+          <${Field} label="Fee ($)"><input type="number" min="0" step="0.01" value=${dollars(t.cents)} onInput=${(e) => setTier(i, { cents: cents(e.target.value) })} /><//>
+        </div>`)}
+      <h3>Stops & add-ons</h3>
+      <div class="grid-2">
+        <${Field} label="Each extra stop ($)" hint="Beyond one pickup and one drop-off.">
+          <input type="number" min="0" step="0.01" value=${dollars(fees.extraStopCents)} onInput=${(e) => set({ extraStopCents: cents(e.target.value) })} />
+        <//>
+        ${Object.entries(fees.addOns).map(([k, a]) => html`
+          <${Field} label=${`${a.label} ($)`} hint=${a.description}>
+            <input type="number" min="0" step="0.01" value=${dollars(a.cents)}
+              onInput=${(e) => set({ addOns: { ...fees.addOns, [k]: { ...a, cents: cents(e.target.value) } } })} />
+          <//>`)}
+      </div>
+      <h3>Wait time</h3>
+      <div class="grid-2">
+        <${Field} label="Free minutes per stop"><input type="number" min="0" step="1" value=${fees.waitFreeMinutes} onInput=${(e) => set({ waitFreeMinutes: Number(e.target.value) })} /><//>
+        <${Field} label="Then charge ($)"><input type="number" min="0" step="0.01" value=${dollars(fees.waitBlockCents)} onInput=${(e) => set({ waitBlockCents: cents(e.target.value) })} /><//>
+        <${Field} label="Per how many minutes"><input type="number" min="1" step="1" value=${fees.waitBlockMinutes} onInput=${(e) => set({ waitBlockMinutes: Number(e.target.value) })} /><//>
+      </div>
+      <div class="actions">
+        <button class="btn primary">Save fees</button>
+        <button type="button" class="btn" onClick=${() => set(loaded.data.defaults)}>Reset to defaults</button>
+      </div>
+    </form>`;
+}
+
 export function AccountPage() {
   const me = getUser();
   const [v, setV] = useState({ name: me.name || '', email: me.email, phoneNumber: me.phoneNumber || '',
@@ -253,7 +308,7 @@ export function AccountPage() {
           <div><button class="btn primary">Change password</button></div>
         </form>
       </div>
-      ${me.role === 'admin' && html`<div class="account-extra"><${PaymentsStatus} /></div>`}
+      ${me.role === 'admin' && html`<div class="account-extra stack"><${PaymentsStatus} /><${FeesEditor} /></div>`}
     <//>`;
 }
 

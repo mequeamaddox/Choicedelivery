@@ -3,7 +3,18 @@ const db = require('./db');
 const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
 const stripe = require('./stripe');
-const { isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext } = require('./pricing');
+const {
+  isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
+} = require('./pricing');
+
+// Add-ons are the keys of the fee settings (loading_help, inside_delivery).
+function normalizeAddOns(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.some((k) => !Object.prototype.hasOwnProperty.call(DEFAULT_FEES.addOns, k))) {
+    throw new HttpError(400, `addOns must be a list of: ${Object.keys(DEFAULT_FEES.addOns).join(', ')}`);
+  }
+  return [...new Set(value)];
+}
 
 const ACTIVE = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'];
 
@@ -53,6 +64,7 @@ async function insertStops(client, orderId, stops) {
 async function createOrder(client, actor, body) {
   const stops = normalizeStops(body.stops);
   const isQuote = body.saveAsQuote === true;
+  const addOns = normalizeAddOns(body.addOns);
   let organizationId = body.organizationId || null;
   if (actor.role === 'shipper') organizationId = actor.organization_id;
 
@@ -73,12 +85,12 @@ async function createOrder(client, actor, body) {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
                            tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status,
-                           status, booked_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END)
+                           status, booked_at, add_ons)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14)
        RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
-        body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending']
+        body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -137,7 +149,8 @@ async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
 // Unscheduled (ASAP) orders are priced for when they were booked; unbooked quotes for now.
 async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
   const { rows: [o] } = await client.query(
-    'SELECT status, service_level, scheduled_at, booked_at, created_at, price_breakdown FROM orders WHERE id = $1', [orderId]);
+    `SELECT status, service_level, scheduled_at, booked_at, created_at, price_breakdown, weight, add_ons
+     FROM orders WHERE id = $1`, [orderId]);
   const { rows: stops } = await client.query(
     'SELECT location FROM stops WHERE order_id = $1 ORDER BY sequence', [orderId]);
   const previous = o.price_breakdown?.context;
@@ -148,6 +161,10 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
     at: o.scheduled_at || at || (o.status === 'quote' ? new Date() : o.booked_at || o.created_at),
     openOrders: context.openOrders,
     badWeather: context.badWeather,
+    weightLbs: parseWeightLbs(o.weight),
+    stopCount: stops.length,
+    addOns: o.add_ons,
+    fees: await getFees(client),
   });
   await client.query(
     `UPDATE orders SET distance_miles = $2, price_breakdown = $3,
@@ -172,6 +189,8 @@ function visibilityFilter(user, params) {
 
 const ORDER_SELECT = `
   SELECT o.*, org.name AS organization_name,
+         (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status = 'due')::int AS balance_due_cents,
+         (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status <> 'waived')::int AS extra_charges_cents,
          d.name AS driver_name, d.phone_number AS driver_phone,
          d.last_location AS driver_location, d.location_updated_at AS driver_location_updated_at
   FROM orders o
@@ -199,7 +218,14 @@ function serializeStop(s, { proof }) {
   return out;
 }
 
-function serializeOrder(o, stops, { events, proof = false, user } = {}) {
+function serializeCharge(c) {
+  return {
+    id: c.id, kind: c.kind, description: c.description, cents: c.cents, minutes: c.minutes, stopId: c.stop_id,
+    status: c.status, paidAt: c.paid_at, createdAt: c.created_at,
+  };
+}
+
+function serializeOrder(o, stops, { events, charges, proof = false, user } = {}) {
   const showDriverLocation = ACTIVE.includes(o.status) && user && user.role !== 'driver';
   const out = {
     id: o.id,
@@ -223,6 +249,9 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
     paidAt: o.paid_at,
     paymentMethod: o.payment_method,
     refundedCents: o.refunded_cents,
+    addOns: o.add_ons || [],
+    extraChargesCents: o.extra_charges_cents ?? 0,
+    balanceDueCents: o.balance_due_cents ?? 0,
     vehicleType: o.vehicle_type,
     weight: o.weight,
     numberOfPieces: o.number_of_pieces,
@@ -242,6 +271,7 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
   };
   // Quotes aren't trackable until they're booked.
   if (user && (isStaff(user) || user.role === 'shipper') && o.status !== 'quote') out.trackingUrlToken = o.public_token;
+  if (charges) out.charges = charges.map(serializeCharge);
   if (events) out.events = events.map((e) => ({ type: e.type, data: e.data, actorId: e.actor_id, at: e.created_at }));
   return out;
 }
@@ -270,7 +300,9 @@ async function getOrderFor(user, id, client = db) {
   const stops = (await loadStops(client, [id])).get(id);
   const { rows: events } = await client.query(
     'SELECT * FROM order_events WHERE order_id = $1 ORDER BY created_at, id', [id]);
-  return serializeOrder(rows[0], stops, { events, proof: true, user });
+  const { rows: charges } = await client.query(
+    'SELECT * FROM order_charges WHERE order_id = $1 ORDER BY created_at', [id]);
+  return serializeOrder(rows[0], stops, { events, charges, proof: true, user });
 }
 
 // Recomputes the order's status from its stops after a stop changes.
@@ -344,6 +376,6 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
 }
 
 module.exports = {
-  ACTIVE, recordEvent, createOrder, bookQuote, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 };

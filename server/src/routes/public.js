@@ -5,7 +5,8 @@ const { sendMail } = require('../mailer');
 const { rateLimit } = require('../rate-limit');
 const {
   SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, VEHICLE_TYPES, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS,
-  SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext,
+  SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs,
+  CHARGE_KINDS,
 } = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
 const { searchAddresses, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
@@ -31,6 +32,8 @@ router.get('/pricing', asyncH(async (req, res) => {
     serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, s]) => ({ id, ...s })),
     businessPlans: Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })),
     overageCents: OVERAGE_CENTS,
+    fees: await getFees(db),
+    chargeKinds: CHARGE_KINDS,
   });
 }));
 
@@ -65,11 +68,18 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
   const serviceLevel = isServiceLevel(b.serviceLevel) ? normalizeServiceLevel(b.serviceLevel) : 'standard';
   const locations = await Promise.all(stops.map((st) => locate(st.address, st.location)));
   const at = b.scheduledAt && !Number.isNaN(Date.parse(b.scheduledAt)) ? new Date(b.scheduledAt) : new Date();
-  const quote = calculatePrice({ distanceMiles: routeMiles(locations), serviceLevel, at, ...(await pricingContext(db)) });
+  const fees = await getFees(db);
+  const addOns = Array.isArray(b.addOns) ? b.addOns.filter((k) => typeof k === 'string') : [];
+  const quote = calculatePrice({
+    distanceMiles: routeMiles(locations), serviceLevel, at, ...(await pricingContext(db)),
+    weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
+  });
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
   res.json({
     ...quote,
     priceCents: quote.totalCents,
+    extraChargesNote: `Wait time over ${fees.waitFreeMinutes} minutes at a stop ($${(fees.waitBlockCents / 100).toFixed(2)} per `
+      + `${fees.waitBlockMinutes} min), loading help, stairs, return trips and failed attempts may be charged extra.`,
     outOfArea,
     note: outOfArea
       ? `One of these addresses is outside our ${SERVICE_RADIUS_MILES}-mile service area. Call (803) 949-7034 and we'll see what we can do.`

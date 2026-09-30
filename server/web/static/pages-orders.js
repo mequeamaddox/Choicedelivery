@@ -98,7 +98,7 @@ export function OrdersPage() {
                   <td data-label="Route"><${RouteSummary} stops=${o.stops} /></td>
                   ${isStaff(user) && html`<td data-label="Company">${o.organization?.name || html`<span class="muted">Internal</span>`}</td>`}
                   <td data-label="Driver">${o.driver?.name || html`<span class="muted">—</span>`}</td>
-                  <td data-label="Status"><${StatusBadge} status=${o.status} />${o.status === 'quote' && html` <span class="muted small nowrap">${formatMoney(o.priceCents)}</span>`}${o.paymentStatus === 'unpaid' && o.status !== 'cancelled' && html` <span class="badge amber">Unpaid</span>`}</td>
+                  <td data-label="Status"><${StatusBadge} status=${o.status} />${o.status === 'quote' && html` <span class="muted small nowrap">${formatMoney(o.priceCents)}</span>`}${o.paymentStatus === 'unpaid' && o.status !== 'cancelled' && html` <span class="badge amber">Unpaid</span>`}${o.balanceDueCents > 0 && html` <span class="badge amber">Balance due</span>`}</td>
                   <td data-label="Booked" class="muted small">${o.status === 'quote' ? `Saved ${formatDate(o.createdAt)}` : formatDate(o.bookedAt || o.createdAt)}</td>
                 </tr>`)}
             </tbody>
@@ -112,9 +112,9 @@ export function OrdersPage() {
 const blankStop = (type) => ({ type, address: '', location: null, contactName: '', contactPhone: '', instructions: '' });
 
 // Live quote from the server (same formula used when the order is booked).
-function useQuote(stops, serviceLevel, scheduledAt) {
+function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns) {
   const [quote, setQuote] = useState(null);
-  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt]);
+  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt, weightLbs, addOns]);
   useEffect(() => {
     if (stops.some((s) => !s.address.trim() && !s.location)) { setQuote(null); return undefined; }
     let cancelled = false;
@@ -123,6 +123,7 @@ function useQuote(stops, serviceLevel, scheduledAt) {
         const q = await api('/public/quote', { method: 'POST', body: {
           stops: stops.map((s) => ({ address: s.address, location: s.location || undefined })), serviceLevel,
           scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+          weightLbs: weightLbs === '' ? undefined : Number(weightLbs), addOns,
         } });
         if (!cancelled) setQuote(q);
       } catch { /* the estimate is optional */ }
@@ -140,9 +141,29 @@ export function PriceBreakdown({ q }) {
       <dt>Base delivery (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
       ${q.extraMileageCents > 0 && html`<dt>Distance fee (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
       ${q.rushFeeCents > 0 && html`<dt>Rush delivery</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
+      ${q.weightFeeCents > 0 && html`<dt>Weight (${q.weightTier})</dt><dd>+${formatMoney(q.weightFeeCents)}</dd>`}
+      ${q.extraStopsCents > 0 && html`<dt>Extra stops (${q.extraStops})</dt><dd>+${formatMoney(q.extraStopsCents)}</dd>`}
+      ${(q.addOns || []).map((a) => html`<dt>${a.label}</dt><dd>+${formatMoney(a.cents)}</dd>`)}
       ${(q.surcharges || []).map((sc) => html`<dt>${sc.label}</dt><dd>+${formatMoney(sc.cents)}</dd>`)}
       <dt class="total">Total</dt><dd class="total">${formatMoney(q.totalCents)}</dd>
     </dl>`;
+}
+
+// What can be charged after booking, shown before the customer books (like Curri's accessorial policy).
+export function ChargesNotice({ fees }) {
+  return html`
+    <section class="card notice">
+      <h2>Good to know: possible extra charges</h2>
+      <ul class="small">
+        <li><strong>Wait time:</strong> the first ${fees.waitFreeMinutes} minutes at each stop are free. After that it's ${formatMoney(fees.waitBlockCents)}
+          per ${fees.waitBlockMinutes} minutes, so please have the shipment and the receiver ready.</li>
+        <li><strong>Weight:</strong> the price uses the weight you enter. If the shipment is heavier, the difference can be charged.</li>
+        <li><strong>Loading help and stairs:</strong> if the driver has to load, unload or carry items inside and it wasn't
+          booked, it can be added (${formatMoney(fees.addOns.loading_help?.cents)} / ${formatMoney(fees.addOns.inside_delivery?.cents)}).</li>
+        <li><strong>Return trips and failed attempts:</strong> if no one is available, the location is closed, or items must go back to the pickup.</li>
+      </ul>
+      <p class="small muted">We email you the reason and amount with any additional charge.</p>
+    </section>`;
 }
 
 function StopEditor({ stops, setStops }) {
@@ -191,13 +212,15 @@ export function NewOrderPage() {
   const pricing = useApi('/public/pricing');
   const [stops, setStops] = useState([blankStop('pickup'), blankStop('dropoff')]);
   const [v, setV] = useState({
-    serviceLevel: 'standard', vehicleType: 'Car', weight: '', numberOfPieces: '', description: '', trackingNumber: '',
-    scheduledAt: '', organizationId: '', price: '',
+    serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
+    scheduledAt: '', organizationId: '', price: '', addOns: [],
   });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
-  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt);
+  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns);
+  const fees = pricing.data?.fees;
+  const toggleAddOn = (k) => setV({ ...v, addOns: v.addOns.includes(k) ? v.addOns.filter((x) => x !== k) : [...v.addOns, k] });
   const payments = useApi('/payments/config');
   const payByCard = !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
 
@@ -214,7 +237,8 @@ export function NewOrderPage() {
     setBusy(true);
     try {
       const body = {
-        serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weight, numberOfPieces: v.numberOfPieces, description: v.description,
+        serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
+        addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
         trackingNumber: v.trackingNumber || undefined,
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
@@ -264,6 +288,18 @@ export function NewOrderPage() {
               ${(pricing.data?.vehicleTypes || VEHICLE_TYPES).map((t) => html`<option>${t}</option>`)}
             </select>
           <//>
+          ${fees && html`
+            <div class="field">
+              <span class="field-label">Extras</span>
+              <div class="choice-grid">
+                ${Object.entries(fees.addOns).map(([k, a]) => html`
+                  <label class=${`choice ${v.addOns.includes(k) ? 'selected' : ''}`}>
+                    <input type="checkbox" checked=${v.addOns.includes(k)} onChange=${() => toggleAddOn(k)} />
+                    <span><strong>${a.label}</strong><span class="muted small">${a.description}</span></span>
+                    <span class="price push">+${formatMoney(a.cents)}</span>
+                  </label>`)}
+              </div>
+            </div>`}
           <div class="estimate">
             <div class="estimate-head">
               <span><strong>Estimated price</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
@@ -283,7 +319,9 @@ export function NewOrderPage() {
             <${Field} label="Pickup time" hint="Leave empty for as soon as possible.">
               <input type="datetime-local" ...${bind('scheduledAt')} />
             <//>
-            <${Field} label="Total weight"><input placeholder="e.g. 120 lbs" ...${bind('weight')} /><//>
+            <${Field} label="Total weight (lbs)" hint=${fees ? `Priced by weight: ${fees.weightTiers.map((t, i) => `${i === fees.weightTiers.length - 1 ? `over ${fees.weightTiers[i - 1]?.upToLbs ?? 0}` : `up to ${t.upToLbs}`} lbs ${t.cents ? `+${formatMoney(t.cents)}` : 'included'}`).join(', ')}.` : undefined}>
+              <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
+            <//>
             <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" ...${bind('numberOfPieces')} /><//>
           </div>
           <${Field} label="What are we moving?"><textarea rows="3" placeholder="Pallets of tile, boxed parts, fragile items…" ...${bind('description')}></textarea><//>
@@ -304,6 +342,7 @@ export function NewOrderPage() {
               <${Field} label="Custom price (USD)" hint="Leave empty to use the calculated price."><input type="number" min="0" step="0.01" ...${bind('price')} /><//>
             </div>
           </section>`}
+        ${fees && html`<${ChargesNotice} fees=${fees} />`}
         <div class="form-actions">
           <a class="btn" href="#/orders">Cancel</a>
           <button type="button" class="btn" disabled=${busy} onClick=${(e) => submit(e, true)}
@@ -318,6 +357,9 @@ export function NewOrderPage() {
 
 const EVENT_LABELS = {
   quoted: 'Quote saved',
+  charge_added: 'Additional charge added',
+  charge_waived: 'Additional charge removed',
+  charges_paid: 'Additional charges paid',
   repriced: 'Price updated',
   created: 'Order booked',
   accepted: 'Driver accepted',
@@ -418,6 +460,105 @@ function PaymentPanel({ order, onChange, setError }) {
     </section>`;
 }
 
+const ADD_ON_LABELS = { loading_help: 'Loading/unloading help', inside_delivery: 'Inside delivery / stairs' };
+const CHARGE_STATUS = {
+  due: { label: 'Due', tone: 'amber' }, paid: { label: 'Paid', tone: 'green' },
+  invoice: { label: 'On account', tone: 'blue' }, waived: { label: 'Removed', tone: 'gray' },
+};
+
+// Same rule as the server: free minutes, then each started block is billed.
+const waitCents = (minutes, fees) =>
+  Math.ceil(Math.max(0, minutes - fees.waitFreeMinutes) / fees.waitBlockMinutes) * fees.waitBlockCents;
+
+// Charges added after booking. Customers see why and can pay a balance by card; dispatch adds or removes
+// charges, with one-click wait-time charges worked out from when the driver arrived and finished each stop.
+function ChargesPanel({ order, onChange, setError }) {
+  const user = getUser();
+  const staff = isStaff(user);
+  const pricing = useApi('/public/pricing');
+  const payments = useApi('/payments/config');
+  const [form, setForm] = useState({ kind: 'wait_time', minutes: '', amount: '', stopId: '', description: '' });
+  const fees = pricing.data?.fees;
+  const kinds = pricing.data?.chargeKinds || {};
+  const charges = order.charges || [];
+  if (!staff && !charges.length) return null;
+  const add = (body) => async () => onChange(await api(`/orders/${order.id}/charges`, { method: 'POST', body }));
+  const dwell = (s) => (s.arrivedAt && s.completedAt ? Math.round((new Date(s.completedAt) - new Date(s.arrivedAt)) / 60000) : null);
+  const suggestions = !staff || !fees ? [] : order.stops
+    .map((s, i) => ({ s, i, minutes: dwell(s) }))
+    .filter(({ s, minutes }) => minutes != null && waitCents(minutes, fees) > 0
+      && !charges.some((c) => c.kind === 'wait_time' && c.stopId === s.id && c.status !== 'waived'));
+  const preview = form.kind === 'wait_time' && form.amount === '' && form.minutes !== '' && fees ? waitCents(Number(form.minutes), fees) : null;
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      onChange(await api(`/orders/${order.id}/charges`, { method: 'POST', body: {
+        kind: form.kind, minutes: form.minutes === '' ? undefined : Number(form.minutes),
+        cents: form.amount === '' ? undefined : Math.round(Number(form.amount) * 100),
+        stopId: form.stopId || undefined, description: form.description,
+      } }));
+      setForm({ ...form, minutes: '', amount: '', description: '' });
+    } catch (err) { setError(err); }
+  };
+  const stopName = (id) => {
+    const i = order.stops.findIndex((s) => s.id === id);
+    return i < 0 ? '' : `${order.stops[i].type === 'pickup' ? 'Pickup' : 'Drop-off'} ${i + 1}`;
+  };
+  return html`
+    <section class="card">
+      <h2>Additional charges${order.balanceDueCents > 0 && html` <span class="badge amber">${formatMoney(order.balanceDueCents)} due</span>`}</h2>
+      ${charges.length === 0 ? html`<p class="muted small">None.</p>` : html`
+        <ul class="charges">
+          ${charges.map((c) => {
+            const st = CHARGE_STATUS[c.status] || { label: c.status, tone: 'gray' };
+            return html`<li class=${c.status === 'waived' ? 'waived' : ''}>
+              <div><strong>${kinds[c.kind] || c.kind}</strong>${c.minutes != null ? ` · ${c.minutes} min` : ''}${c.stopId ? ` · ${stopName(c.stopId)}` : ''}
+                ${c.description && html`<div class="muted small">${c.description}</div>`}</div>
+              <div class="push nowrap">${formatMoney(c.cents)} <span class=${`badge ${st.tone}`}>${st.label}</span>
+                ${staff && ['due', 'invoice'].includes(c.status) && html` <${ActionButton} class="btn small" onError=${setError}
+                  confirmText="Remove this charge?" onClick=${async () => onChange(await api(`/orders/${order.id}/charges/${c.id}/waive`, { method: 'POST' }))}>Remove<//>`}</div>
+            </li>`;
+          })}
+        </ul>`}
+      ${order.balanceDueCents > 0 && !staff && payments.data?.enabled && html`
+        <${ActionButton} class="btn primary block" onError=${setError} onClick=${() => startCheckout(order.id)}>
+          Pay ${formatMoney(order.balanceDueCents)} by card
+        <//>`}
+      ${staff && !['quote', 'cancelled'].includes(order.status) && html`
+        ${suggestions.map(({ s, i, minutes }) => html`
+          <${ActionButton} class="btn small block" onError=${setError}
+            onClick=${add({ kind: 'wait_time', minutes, stopId: s.id, description: `Waited ${minutes} min at ${s.type === 'pickup' ? 'pickup' : 'drop-off'}` })}>
+            + Wait time at ${s.type === 'pickup' ? 'pickup' : 'drop-off'} ${i + 1}: ${minutes} min → ${formatMoney(waitCents(minutes, fees))}
+          <//>`)}
+        <details class="add-charge">
+          <summary>Add a charge</summary>
+          <form class="stack" onSubmit=${submit}>
+            <div class="grid-2">
+              <${Field} label="Reason">
+                <select value=${form.kind} onChange=${(e) => setForm({ ...form, kind: e.target.value })}>
+                  ${Object.entries(kinds).map(([k, label]) => html`<option value=${k}>${label}</option>`)}
+                </select>
+              <//>
+              <${Field} label="Stop">
+                <select value=${form.stopId} onChange=${(e) => setForm({ ...form, stopId: e.target.value })}>
+                  <option value="">—</option>
+                  ${order.stops.map((s, i) => html`<option value=${s.id}>${s.type === 'pickup' ? 'Pickup' : 'Drop-off'} ${i + 1}</option>`)}
+                </select>
+              <//>
+              ${form.kind === 'wait_time' && html`<${Field} label="Minutes waited" hint=${preview != null ? `= ${formatMoney(preview)}` : fees ? `First ${fees.waitFreeMinutes} free, then ${formatMoney(fees.waitBlockCents)} per ${fees.waitBlockMinutes} min` : undefined}>
+                <input type="number" min="0" step="1" value=${form.minutes} onInput=${(e) => setForm({ ...form, minutes: e.target.value })} /><//>`}
+              <${Field} label="Amount ($)" hint=${form.kind === 'wait_time' ? 'Leave empty to use the wait-time rate.' : undefined}>
+                <input type="number" min="0" step="0.01" value=${form.amount} onInput=${(e) => setForm({ ...form, amount: e.target.value })} /><//>
+            </div>
+            <${Field} label="Note for the customer"><input maxlength="300" placeholder="e.g. Receiver's office was closed until 2pm" value=${form.description}
+              onInput=${(e) => setForm({ ...form, description: e.target.value })} /><//>
+            <button class="btn">Add charge</button>
+            <p class="muted small">The customer is emailed the reason and amount. Card customers pay it online; monthly accounts are billed.</p>
+          </form>
+        </details>`}
+    </section>`;
+}
+
 // A saved quote: book it (card customers then pay) or delete it. The price is rechecked on booking;
 // if it changed, the server updates the quote and asks the customer to confirm the new price.
 function QuotePanel({ order, onChange, setError }) {
@@ -514,7 +655,8 @@ export function OrderPage({ id }) {
         </div>
         <div class="stack">
           ${isQuote ? html`<${QuotePanel} order=${order} onChange=${setOverride} setError=${setError} />`
-            : html`<${PaymentPanel} order=${order} onChange=${setOverride} setError=${setError} />`}
+            : html`<${PaymentPanel} order=${order} onChange=${setOverride} setError=${setError} />
+              <${ChargesPanel} order=${order} onChange=${setOverride} setError=${setError} />`}
           ${!isQuote && html`<section class="card">
             <h2>Driver</h2>
             ${order.driver ? html`
@@ -533,6 +675,7 @@ export function OrderPage({ id }) {
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}</dd>
               <dt>Pickup time</dt><dd>${order.scheduledAt ? formatDate(order.scheduledAt) : 'ASAP'}</dd>
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
+              <dt>Extras</dt><dd>${order.addOns.length ? order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ') : '—'}</dd>
               <dt>Distance</dt><dd>${order.distanceMiles != null ? `about ${order.distanceMiles} mi` : '—'}</dd>
               <dt>Price</dt><dd>${formatMoney(order.priceCents)}${order.priceIsCustom ? ' (set by dispatch)' : ''}</dd>
             </dl>

@@ -2,14 +2,14 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
-  ACTIVE, recordEvent, createOrder, bookQuote, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
 const { emailShipper } = require('../notify');
-const { isServiceLevel, normalizeServiceLevel } = require('../pricing');
+const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -134,9 +134,10 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   const b = req.body || {};
   if (b.priceCents !== undefined && !isStaff(req.user)) throw new HttpError(403, 'Only dispatch can set a price');
   if (req.user.role === 'shipper' && current.paymentStatus === 'paid'
-    && (b.stops !== undefined || b.serviceLevel !== undefined || b.scheduledAt !== undefined)) {
-    throw new HttpError(409, 'This order is already paid; contact dispatch to change the route, service or time');
+    && ['stops', 'serviceLevel', 'scheduledAt', 'weight', 'addOns'].some((k) => b[k] !== undefined)) {
+    throw new HttpError(409, 'This order is already paid; contact dispatch to change the route, service, time, weight or add-ons');
   }
+  const addOns = b.addOns === undefined ? undefined : normalizeAddOns(b.addOns);
   if (b.serviceLevel !== undefined && !isServiceLevel(b.serviceLevel)) {
     throw new HttpError(400, 'serviceLevel must be "standard" or "rush"');
   }
@@ -152,11 +153,12 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
            price_is_custom = CASE WHEN $8::boolean THEN $9::int IS NOT NULL ELSE price_is_custom END,
            scheduled_at = CASE WHEN $10::boolean THEN $11::timestamptz ELSE scheduled_at END,
            service_level = COALESCE($12, service_level),
+           add_ons = CASE WHEN $13::boolean THEN $14::text[] ELSE add_ons END,
            updated_at = now()
          WHERE id = $1`,
         [current.id, b.vehicleType ?? null, b.weight ?? null, b.numberOfPieces ?? null, b.description ?? null,
           b.trackingNumber !== undefined, str(b.trackingNumber), b.priceCents !== undefined, b.priceCents ?? null,
-          b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null]
+          b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null, addOns !== undefined, addOns || []]
       );
     } catch (e) {
       if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -223,21 +225,44 @@ router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH
 router.post('/:id/checkout', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
   if (!stripe.enabled()) throw new HttpError(503, 'Online payment is not set up yet');
   const order = await getOrderFor(req.user, req.params.id);
+  if (order.status === 'quote') throw new HttpError(409, 'Book this quote first');
+  const base = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+  const { rows: [me] } = req.user.id ? await db.query('SELECT email FROM users WHERE id = $1', [req.user.id]) : { rows: [{}] };
+  const customerEmail = req.user.role === 'shipper' ? me?.email : undefined;
+  // Additional charges (wait time, etc.) on an order that's already paid are paid separately.
+  if (order.paymentStatus !== 'unpaid' && order.balanceDueCents > 0) {
+    const due = order.charges.filter((c) => c.status === 'due');
+    const { rows: open } = await db.query(
+      "SELECT DISTINCT stripe_session_id FROM order_charges WHERE order_id = $1 AND status = 'due' AND stripe_session_id IS NOT NULL",
+      [order.id]);
+    for (const o of open) await stripe.expireCheckoutSession(o.stripe_session_id).catch(() => {});
+    const session = await stripe.createCheckoutSession({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      amountCents: order.balanceDueCents,
+      name: `Additional charges for ${order.orderNumber}`,
+      description: due.map((c) => `${CHARGE_KINDS[c.kind]}${c.description ? `: ${c.description}` : ''}`).join('; ').slice(0, 450),
+      metadata: { kind: 'charges' },
+      customerEmail,
+      successUrl: `${base}/#/orders/${order.id}?paid=1`,
+      cancelUrl: `${base}/#/orders/${order.id}`,
+    });
+    await db.query("UPDATE order_charges SET stripe_session_id = $2 WHERE order_id = $1 AND status = 'due' AND id = ANY($3)",
+      [order.id, session.id, due.map((c) => c.id)]);
+    return res.json({ url: session.url });
+  }
   if (order.paymentStatus !== 'unpaid') throw new HttpError(409, 'This order does not need payment');
   if (order.status === 'cancelled') throw new HttpError(409, 'Order is cancelled');
-  if (order.status === 'quote') throw new HttpError(409, 'Book this quote first');
   if (!order.priceCents || order.priceCents < 50) throw new HttpError(409, 'This order has no price yet; contact dispatch');
   const { rows: [o] } = await db.query('SELECT stripe_session_id FROM orders WHERE id = $1', [order.id]);
   // Only one open payment link per order, so an old amount can't be paid after a change.
   if (o.stripe_session_id) await stripe.expireCheckoutSession(o.stripe_session_id).catch(() => {});
-  const base = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-  const { rows: [me] } = req.user.id ? await db.query('SELECT email FROM users WHERE id = $1', [req.user.id]) : { rows: [{}] };
   const session = await stripe.createCheckoutSession({
     orderId: order.id,
     orderNumber: order.orderNumber,
     amountCents: order.priceCents,
     description: `${order.stops[0]?.address} → ${order.stops[order.stops.length - 1]?.address}`,
-    customerEmail: req.user.role === 'shipper' ? me?.email : undefined,
+    customerEmail,
     successUrl: `${base}/#/orders/${order.id}?paid=1`,
     cancelUrl: `${base}/#/orders/${order.id}`,
   });
@@ -272,6 +297,53 @@ router.post('/:id/payment', requireRole('admin', 'dispatcher'), asyncH(async (re
     notifyDriversOfOrder(updated).catch((e) => console.error('Push notify failed:', e));
   }
   res.json(updated);
+}));
+
+// Dispatch adds a charge after booking (wait time, heavier than declared, return trip...). The customer is
+// emailed the reason and amount; card customers pay it online, monthly accounts are billed.
+// Body: { kind, cents?, minutes?, stopId?, description? }. Wait time without cents is priced by the fee
+// settings (free minutes, then per block).
+router.post('/:id/charges', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const b = req.body || {};
+  if (!CHARGE_KINDS[b.kind]) throw new HttpError(400, `kind must be one of: ${Object.keys(CHARGE_KINDS).join(', ')}`);
+  const order = await getOrderFor(req.user, req.params.id);
+  if (['quote', 'cancelled'].includes(order.status)) throw new HttpError(409, `Order is ${order.status === 'quote' ? 'a quote' : 'cancelled'}`);
+  const minutes = b.minutes == null || b.minutes === '' ? null : Math.round(Number(b.minutes));
+  if (minutes != null && (!Number.isFinite(minutes) || minutes < 0)) throw new HttpError(400, 'minutes must be a positive number');
+  let cents = b.cents == null || b.cents === '' ? null : Math.round(Number(b.cents));
+  if (cents == null && b.kind === 'wait_time' && minutes != null) cents = waitCharge(minutes, await getFees(db)).cents;
+  if (!Number.isFinite(cents) || cents <= 0) {
+    throw new HttpError(400, b.kind === 'wait_time' && minutes != null
+      ? 'That wait is within the free time, so there is nothing to charge' : 'Enter an amount');
+  }
+  const stopId = b.stopId && order.stops.some((st) => st.id === b.stopId) ? b.stopId : null;
+  // Card customers pay extra charges online; everyone else is billed to their account.
+  const byCard = order.paymentMethod === 'card' || order.paymentStatus === 'unpaid';
+  await db.withTx(async (client) => {
+    const { rows: [c] } = await client.query(
+      `INSERT INTO order_charges (order_id, kind, description, cents, minutes, stop_id, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [order.id, b.kind, str(b.description).slice(0, 300), cents, minutes, stopId, byCard ? 'due' : 'invoice', req.user.id]);
+    await recordEvent(client, order.id, req.user.id, 'charge_added', { chargeId: c.id, kind: b.kind, cents, minutes });
+    await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [order.id]);
+  });
+  const updated = await getOrderFor(req.user, order.id);
+  emailShipper(order.id, 'charge_added', { charge: updated.charges[updated.charges.length - 1] });
+  res.status(201).json(updated);
+}));
+
+// Dispatch removes a charge that hasn't been paid (kept on record as waived).
+router.post('/:id/charges/:chargeId/waive', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const order = await getOrderFor(req.user, req.params.id);
+  const charge = (order.charges || []).find((c) => c.id === req.params.chargeId);
+  if (!charge) throw new HttpError(404, 'Charge not found');
+  if (charge.status === 'paid') throw new HttpError(409, 'This charge was already paid');
+  await db.withTx(async (client) => {
+    await client.query("UPDATE order_charges SET status = 'waived' WHERE id = $1", [charge.id]);
+    await recordEvent(client, order.id, req.user.id, 'charge_waived', { chargeId: charge.id, cents: charge.cents });
+    await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [order.id]);
+  });
+  res.json(await getOrderFor(req.user, order.id));
 }));
 
 // Dispatch assigns (or reassigns) a driver. driverId: null puts it back in the open pool.

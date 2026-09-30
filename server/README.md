@@ -83,6 +83,18 @@ local time; scheduled pickups use the pickup time. Distance is straight-line x 1
 coordinates. Orders are priced on the server when booked; demand/weather are locked in at booking. Dispatch can
 set a custom price, and clearing it returns to the formula.
 
+**Extras** (modeled on Curri's accessorial charges; amounts editable by the owner under Account → Fees & extra
+charges, stored in the `fees` setting):
+- Weight tiers on the declared weight: up to 50 lbs included, 51–150 +$15, 151–500 +$35, 501–1000 +$75, over 1000 +$125.
+- $10 per stop beyond one pickup and one drop-off.
+- Optional add-ons at booking: loading/unloading help +$25, inside delivery / stairs +$20.
+- Charges added after booking by dispatch (`POST /orders/:id/charges`): wait time (first 15 min per stop free,
+  then $10 per 15 min; the order page suggests it from when the driver arrived and finished each stop), heavier
+  than declared, loading help, return trip, failed attempt, other. The shipper is emailed the reason and amount.
+  Card customers pay the balance online (`POST /orders/:id/checkout`); monthly accounts are billed. Unpaid charges
+  can be removed (`POST /orders/:id/charges/:chargeId/waive`).
+The booking page, booking email and the website's quote calculator tell customers about these charges up front.
+
 ## Payments (Stripe)
 
 Off until `STRIPE_SECRET_KEY` is set; until then every order is treated as billed to account.
