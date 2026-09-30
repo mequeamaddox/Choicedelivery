@@ -1,4 +1,4 @@
-import { html, useState, useRef, getUser, logout, isStaff, STATUS, formatDate, mapsLink, ROLE_LABELS, currentPath } from './lib.js';
+import { html, useState, useEffect, useRef, getUser, logout, isStaff, STATUS, formatDate, mapsLink, ROLE_LABELS, currentPath } from './lib.js';
 
 export function Logo() {
   return html`<a class="logo" href=${getUser()?.role === 'driver' ? '#/driver' : '#/orders'}><img src="/static/logo.png" alt="Choice Delivery SC" width="480" height="174" /></a>`;
@@ -225,4 +225,59 @@ const ICONS = {
 export function Icon({ name }) {
   return html`<svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${ICONS[name]} /></svg>`;
+}
+
+// Live map: pickup/drop-off pins and the driver's last known position (OpenStreetMap tiles via Leaflet,
+// loaded only when a map is shown). Fits everything in view on first draw and when the driver appears.
+export function LiveMap({ stops, driver }) {
+  const el = useRef(null);
+  const m = useRef({});
+  const located = (stops || []).filter((s) => s.location);
+  const driverLoc = driver?.location;
+  const draw = () => {
+    const { L, map, layer } = m.current;
+    if (!map) return;
+    layer.clearLayers();
+    const points = [];
+    located.forEach((s) => {
+      const n = stops.indexOf(s) + 1;
+      const done = s.status === 'completed';
+      L.marker([s.location.lat, s.location.lng], {
+        title: `${s.type === 'pickup' ? 'Pickup' : 'Drop-off'}: ${s.address}`,
+        icon: L.divIcon({ className: `map-pin ${s.type}${done ? ' done' : ''}`, html: s.type === 'pickup' ? 'P' : String(n), iconSize: [28, 28] }),
+      }).addTo(layer);
+      points.push([s.location.lat, s.location.lng]);
+    });
+    if (driverLoc) {
+      L.marker([driverLoc.lat, driverLoc.lng], {
+        title: driver.name ? `Driver: ${driver.name}` : 'Driver', zIndexOffset: 1000,
+        icon: L.divIcon({ className: 'map-pin driver', html: '🚗', iconSize: [34, 34] }),
+      }).addTo(layer);
+      points.push([driverLoc.lat, driverLoc.lng]);
+    }
+    const key = `${points.length}:${!!driverLoc}`;
+    if (points.length && m.current.fitted !== key) {
+      m.current.fitted = key;
+      if (points.length === 1) map.setView(points[0], 14);
+      else map.fitBounds(points, { padding: [36, 36], maxZoom: 15 });
+    }
+  };
+  useEffect(() => {
+    let alive = true;
+    import('./vendor/leaflet.js').then((L) => {
+      if (!alive || !el.current) return;
+      const map = L.map(el.current, { scrollWheelZoom: false, attributionControl: true });
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+        referrerPolicy: 'strict-origin-when-cross-origin', // OSM asks for a Referer from web pages
+      }).addTo(map);
+      m.current = { L, map, layer: L.layerGroup().addTo(map) };
+      draw();
+    }).catch(() => {});
+    return () => { alive = false; m.current.map?.remove(); m.current = {}; };
+  }, []);
+  useEffect(draw, [JSON.stringify(located.map((s) => [s.location, s.status])), driverLoc?.lat, driverLoc?.lng]);
+  if (!located.length && !driverLoc) return null;
+  return html`<div class="live-map" ref=${el} role="img" aria-label="Map of the route and the driver's location"></div>`;
 }

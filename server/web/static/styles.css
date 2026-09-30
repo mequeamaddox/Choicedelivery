@@ -325,3 +325,11 @@ h3 { margin: .25rem 0 0; font-size: 1rem; }
 .surcharge-row input[type=number] { max-width: 8rem; flex: 0 0 8rem; }
 .holiday-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .4rem .75rem; font-size: .92rem; }
 .choice .line { display: block; }
+
+/* Live map */
+.live-map { height: 280px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 1rem; z-index: 0; }
+.map-pin { display: flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 700; font-size: 13px;
+  color: #fff; background: var(--focus); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.map-pin.dropoff { background: #1d4ed8; }
+.map-pin.done { background: #6b7280; }
+.map-pin.driver { background: #fff; border-color: var(--focus); font-size: 18px; }

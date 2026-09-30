@@ -173,8 +173,11 @@ start. To change the database, add a new file (e.g. `003_add_invoices.sql`) and 
 | Cancel | while pending | – | ✓ | ✓ |
 | Create accounts | coworkers | – | drivers, shippers | anyone |
 
-Shippers and dispatch see the driver's live location while an order is underway. Anyone with
-an order's tracking link (`GET /track/<trackingUrlToken>`) sees its status without logging in.
+Shippers and dispatch see the driver's live location while an order is underway, on a map (Leaflet,
+vendored in `web/static/vendor/`, with OpenStreetMap tiles) on the order page. **Track driver** opens the public
+tracking page; **Share link** uses the phone's share sheet or copies it. Anyone with an order's tracking link
+(`GET /track/<trackingUrlToken>`) sees its status, the route and the driver on a map (refreshing every 15s)
+without logging in. Drivers' locations come from the driver portal while it's open and they're online.
 
 ## Creating orders from your website
 

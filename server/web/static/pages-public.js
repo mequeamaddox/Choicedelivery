@@ -1,5 +1,5 @@
 import { html, useState, useEffect, api, login, signup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink } from './lib.js';
-import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo } from './components.js';
+import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo, LiveMap } from './components.js';
 
 function useForm(initial) {
   const [values, setValues] = useState(initial);
@@ -132,7 +132,7 @@ export function ResetPage({ token }) {
 
 // Public tracking page for customers/recipients: no login.
 export function TrackPage({ token }) {
-  const { data, error, loading } = useApi(`/track/${encodeURIComponent(token)}`, { pollMs: 20000 });
+  const { data, error, loading } = useApi(`/track/${encodeURIComponent(token)}`, { pollMs: 15000 });
   return html`
     <div class="track">
       <header class="track-header"><${Logo} /></header>
@@ -148,6 +148,8 @@ export function TrackPage({ token }) {
             ${data.driver && html`<p>Your driver is <strong>${data.driver.name}</strong>.
               ${data.driver.location && html` Last seen ${timeAgo(data.driver.locationUpdatedAt)}${' · '}<a href=${mapsLink(data.driver.location)} target="_blank" rel="noopener">view on map</a>`}</p>`}
             ${data.completedAt && html`<p>Delivered ${formatDate(data.completedAt)}.</p>`}
+            ${data.status !== 'cancelled' && html`<${LiveMap} stops=${data.stops} driver=${data.driver} />`}
+            ${data.driver?.location && html`<p class="muted small">The map updates on its own while the driver is on the way.</p>`}
             <${StopTimeline} stops=${data.stops} />
           </div>`}
       </main>

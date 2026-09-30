@@ -4,6 +4,7 @@ import {
 } from './lib.js';
 import {
   Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
+  LiveMap,
 } from './components.js';
 
 const FILTERS = [
@@ -657,7 +658,11 @@ export function OrderPage({ id }) {
   const awaitingPrice = order.reviewStatus === 'needed';
   const canCancel = !isQuote && (staff ? !['completed', 'cancelled'].includes(order.status) : order.status === 'pending');
   const link = order.trackingUrlToken && trackingUrl(order.trackingUrlToken);
-  const copyLink = async () => {
+  // Phones get the share sheet (text, email...); elsewhere the link is copied.
+  const shareLink = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: `Track ${order.orderNumber}`, url: link }); return; } catch { return; }
+    }
     try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); }
     catch { window.prompt('Copy this tracking link:', link); }
   };
@@ -669,7 +674,9 @@ export function OrderPage({ id }) {
         title=${html`${order.orderNumber} ${awaitingPrice ? html`<span class="badge amber">Waiting for price</span>` : html`<${StatusBadge} status=${order.status} />`}<${DemoBadge} on=${order.isDemo} />`}
         subtitle=${`${isQuote ? 'Quote saved' : 'Booked'} ${formatDate(isQuote ? order.createdAt : order.bookedAt || order.createdAt)}${order.organization ? ` · ${order.organization.name}` : ''}`}
         actions=${html`
-          ${link && html`<button class="btn" onClick=${copyLink}>${copied ? 'Link copied ✓' : 'Copy tracking link'}</button>`}
+          ${link && html`
+            <a class="btn primary" href=${link} target="_blank" rel="noopener">${ACTIVE_STATUSES.includes(order.status) ? 'Track driver' : 'Tracking page'}</a>
+            <button class="btn" onClick=${shareLink}>${copied ? 'Link copied ✓' : 'Share link'}</button>`}
           ${canCancel && html`<${ActionButton} class="btn danger" onError=${setError}
             confirmText="Cancel this order? The driver (if any) will be notified."
             onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel order<//>`}
@@ -680,6 +687,7 @@ export function OrderPage({ id }) {
         <div class="stack">
           <section class="card">
             <h2>Route</h2>
+            ${order.status !== 'cancelled' && html`<${LiveMap} stops=${order.stops} driver=${order.driver} />`}
             <${StopTimeline} stops=${order.stops} showProof=${true} />
           </section>
           <section class="card">

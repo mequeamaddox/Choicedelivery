@@ -15,7 +15,7 @@ router.get('/:token', asyncH(async (req, res) => {
   const o = rows[0];
   if (!o) throw new HttpError(404, 'Tracking link not found');
   const { rows: stops } = await db.query(
-    'SELECT type, status, address, arrived_at, completed_at FROM stops WHERE order_id = $1 ORDER BY sequence', [o.id]);
+    'SELECT type, status, address, location, arrived_at, completed_at FROM stops WHERE order_id = $1 ORDER BY sequence', [o.id]);
   res.json({
     orderNumber: o.order_number,
     status: o.status,
@@ -26,7 +26,7 @@ router.get('/:token', asyncH(async (req, res) => {
       ...(ACTIVE.includes(o.status) ? { location: o.last_location, locationUpdatedAt: o.location_updated_at } : {}),
     } : null,
     stops: stops.map((s) => ({
-      type: s.type, status: s.status, address: s.address, arrivedAt: s.arrived_at, completedAt: s.completed_at,
+      type: s.type, status: s.status, address: s.address, location: s.location, arrivedAt: s.arrived_at, completedAt: s.completed_at,
     })),
   });
 }));

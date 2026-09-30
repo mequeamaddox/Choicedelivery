@@ -62,7 +62,7 @@ app.use((req, res, next) => {
 const WEB_DIR = path.join(__dirname, '..', 'web');
 const webHeaders = (res) => {
   res.set({
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; style-src 'self'; script-src 'self'; "
       + "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'same-origin',
