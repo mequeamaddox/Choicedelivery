@@ -8,7 +8,8 @@ const router = express.Router();
 router.use(requireAuth, requireRole('admin', 'dispatcher'));
 
 router.get('/', asyncH(async (req, res) => {
-  const { rows } = await db.query('SELECT key, value, updated_at FROM settings');
+  // Internal values (e.g. the Stripe webhook signing secret) are never exposed.
+  const { rows } = await db.query("SELECT key, value, updated_at FROM settings WHERE key <> 'stripe_webhook'");
   res.json(Object.fromEntries(rows.map((r) => [r.key, r.value])));
 }));
 

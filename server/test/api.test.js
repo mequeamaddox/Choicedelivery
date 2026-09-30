@@ -637,3 +637,45 @@ test('shippers get status emails with a tracking link; opt-out and demo respecte
     mailer.setSender(null);
   }
 });
+
+test('stripe webhook is created automatically and its secret is kept private', async () => {
+  const stripe = require('../src/stripe');
+  const crypto = require('crypto');
+  process.env.STRIPE_SECRET_KEY = 'sk_test_auto';
+  process.env.PUBLIC_URL = 'https://app.choicedeliverysc.com';
+  delete process.env.STRIPE_WEBHOOK_SECRET;
+  const calls = [];
+  stripe.setFetch(async (url, opts) => {
+    calls.push(`${opts.method} ${url.replace('https://api.stripe.com/v1', '')}`);
+    if (opts.method === 'GET') return { ok: true, json: async () => ({ data: [{ id: 'we_old', url: 'https://app.choicedeliverysc.com/webhooks/stripe' }] }) };
+    if (opts.method === 'DELETE') return { ok: true, json: async () => ({ deleted: true }) };
+    return { ok: true, json: async () => ({ id: 'we_new', secret: 'whsec_auto123' }) };
+  });
+  try {
+    let r = await stripe.ensureWebhook(db);
+    assert.equal(r.status, 'created');
+    assert.deepEqual(calls, ['GET /webhook_endpoints?limit=100', 'DELETE /webhook_endpoints/we_old', 'POST /webhook_endpoints']);
+    r = await stripe.ensureWebhook(db);
+    assert.equal(r.status, 'ready', 'second start reuses the saved endpoint');
+    assert.equal(calls.length, 3);
+
+    const cfg = await call('GET', '/payments/config');
+    assert.deepEqual(cfg.data, { enabled: true, mode: 'test', webhookReady: true });
+    const settings = await call('GET', '/settings', { token: t.admin });
+    assert.ok(!('stripe_webhook' in settings.data), 'signing secret never exposed');
+
+    const payload = JSON.stringify({ type: 'ping', data: { object: {} } });
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', 'whsec_auto123').update(`${ts}.${payload}`).digest('hex');
+    const res = await fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload,
+      headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
+    assert.equal(res.status, 200, 'webhooks verify with the automatically stored secret');
+
+    process.env.STRIPE_SECRET_KEY = 'sk_live_now';
+    r = await stripe.ensureWebhook(db);
+    assert.equal(r.status, 'created', 'switching to live keys registers a live webhook');
+  } finally {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.PUBLIC_URL;
+  }
+});

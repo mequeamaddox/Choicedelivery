@@ -299,3 +299,4 @@ tr.inactive td { opacity: .6; }
 h3 { margin: .25rem 0 0; font-size: 1rem; }
 .check-row { display: flex; gap: .6rem; align-items: flex-start; }
 .check-row input { margin-top: .3rem; }
+.account-extra { margin-top: 1rem; max-width: 560px; }

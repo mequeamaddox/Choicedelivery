@@ -183,6 +183,23 @@ export function TeamPage() {
     <//>`;
 }
 
+// Admin-only: shows whether online payments are connected.
+function PaymentsStatus() {
+  const cfg = useApi('/payments/config');
+  if (!cfg.data) return null;
+  const { enabled, mode, webhookReady } = cfg.data;
+  return html`
+    <section class="card stack">
+      <h2>Online payments</h2>
+      ${!enabled ? html`<p class="muted">Not connected. Add <code>STRIPE_SECRET_KEY</code> in Railway → Variables to turn on card payments.</p>`
+        : html`<p><span class=${`badge ${webhookReady ? 'green' : 'amber'}`}>${webhookReady ? 'Connected' : 'Finishing setup'}</span>
+            ${' '}<span class=${`badge ${mode === 'live' ? 'blue' : 'gray'}`}>${mode === 'live' ? 'Live mode' : 'Test mode'}</span></p>
+          <p class="muted small">${webhookReady
+            ? (mode === 'live' ? 'Customers are charged real money.' : 'Test mode: use card 4242 4242 4242 4242. Switch to your live key when ready.')
+            : 'The server is registering itself with Stripe. Refresh in a minute; if this stays, check Railway deploy logs for "Stripe webhook".'}</p>`}
+    </section>`;
+}
+
 export function AccountPage() {
   const me = getUser();
   const [v, setV] = useState({ name: me.name || '', email: me.email, phoneNumber: me.phoneNumber || '',
@@ -236,6 +253,7 @@ export function AccountPage() {
           <div><button class="btn primary">Change password</button></div>
         </form>
       </div>
+      ${me.role === 'admin' && html`<div class="account-extra"><${PaymentsStatus} /></div>`}
     <//>`;
 }
 

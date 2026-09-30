@@ -94,6 +94,11 @@ async function start() {
 
   handler = app;
   console.log(`Choice Delivery API ready on :${port}`);
+
+  // Payments: create/verify the Stripe webhook in the background (never blocks startup).
+  require('./stripe').ensureWebhook(db)
+    .then((r) => console.log(`Stripe webhook: ${r.status}${r.url ? ` (${r.url}, ${r.mode} mode)` : ''}${r.reason ? ` - ${r.reason}` : ''}`))
+    .catch((e) => console.error('Stripe webhook setup failed:', e.message));
 }
 
 start();

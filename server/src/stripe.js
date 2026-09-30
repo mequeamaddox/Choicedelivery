@@ -62,9 +62,47 @@ const refund = (paymentIntent, amountCents, orderId) => stripeRequest(
   { idempotencyKey: `refund-${orderId}` }
 );
 
+const WEBHOOK_EVENTS = ['checkout.session.completed', 'checkout.session.async_payment_succeeded'];
+const mode = () => (String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live_') ? 'live' : 'test');
+
+// Signing secret of the webhook this server created (see ensureWebhook), cached from the settings table.
+let storedSecret = null;
+
+// Creates the Stripe webhook endpoint automatically (so nobody has to copy a signing secret by hand)
+// and remembers its secret in the settings table. Re-creates it if the URL or test/live mode changes.
+// Skipped when STRIPE_WEBHOOK_SECRET is set manually.
+async function ensureWebhook(db) {
+  if (!enabled() || process.env.STRIPE_WEBHOOK_SECRET) return { status: enabled() ? 'manual' : 'off' };
+  const base = String(process.env.PUBLIC_URL || '').replace(/\/$/, '');
+  if (!base.startsWith('https://')) return { status: 'waiting', reason: 'Set PUBLIC_URL to https://app.choicedeliverysc.com' };
+  const url = `${base}/webhooks/stripe`;
+  const { rows } = await db.query("SELECT value FROM settings WHERE key = 'stripe_webhook'");
+  const saved = rows[0]?.value;
+  if (saved?.url === url && saved?.mode === mode() && saved?.secret) {
+    storedSecret = saved.secret;
+    return { status: 'ready', url, mode: mode() };
+  }
+  // Remove endpoints for this same URL left over from earlier setups (their secrets can't be read back).
+  const existing = await stripeRequest('GET', '/webhook_endpoints?limit=100');
+  for (const ep of existing.data || []) {
+    if (ep.url === url) await stripeRequest('DELETE', `/webhook_endpoints/${encodeURIComponent(ep.id)}`);
+  }
+  const created = await stripeRequest('POST', '/webhook_endpoints', {
+    url, enabled_events: WEBHOOK_EVENTS, description: 'Choice Delivery payments (created automatically)',
+  });
+  const value = { id: created.id, url, mode: mode(), secret: created.secret };
+  await db.query(
+    `INSERT INTO settings (key, value, updated_at) VALUES ('stripe_webhook', $1, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [JSON.stringify(value)]);
+  storedSecret = created.secret;
+  return { status: 'created', url, mode: mode() };
+}
+
+const webhookReady = () => !!(process.env.STRIPE_WEBHOOK_SECRET || storedSecret);
+
 // Verifies the Stripe-Signature header (HMAC-SHA256 of "timestamp.payload") and returns the event.
-function verifyWebhook(rawBody, header, secret = process.env.STRIPE_WEBHOOK_SECRET, toleranceSec = 300) {
-  if (!secret) throw Object.assign(new Error('STRIPE_WEBHOOK_SECRET is not set'), { status: 503 });
+function verifyWebhook(rawBody, header, secret = process.env.STRIPE_WEBHOOK_SECRET || storedSecret, toleranceSec = 300) {
+  if (!secret) throw Object.assign(new Error('Stripe webhook is not set up yet'), { status: 503 });
   const parts = Object.fromEntries(String(header || '').split(',').map((p) => p.split('=')).filter((p) => p.length === 2)
     .map(([k, v]) => [k.trim(), v.trim()]));
   const signatures = String(header || '').split(',').filter((p) => p.trim().startsWith('v1=')).map((p) => p.trim().slice(3));
@@ -80,4 +118,7 @@ function verifyWebhook(rawBody, header, secret = process.env.STRIPE_WEBHOOK_SECR
   return JSON.parse(rawBody.toString('utf8'));
 }
 
-module.exports = { enabled, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode };
+module.exports = {
+  enabled, mode, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
+  ensureWebhook, webhookReady,
+};

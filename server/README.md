@@ -95,10 +95,10 @@ Off until `STRIPE_SECRET_KEY` is set; until then every order is treated as bille
 - **Cancelling a card-paid order refunds it in full** automatically.
 
 Setup: in the Stripe dashboard → Developers → API keys, copy the secret key into Railway as
-`STRIPE_SECRET_KEY`. Then Developers → Webhooks → Add endpoint:
-`https://app.choicedeliverysc.com/webhooks/stripe`, events `checkout.session.completed` and
-`checkout.session.async_payment_succeeded`; copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
-Use test keys (`sk_test_...`) first.
+`STRIPE_SECRET_KEY` (and make sure `PUBLIC_URL` is `https://app.choicedeliverysc.com`). On startup the
+server registers its own webhook with Stripe and stores the signing secret, so no other variable is needed
+(setting `STRIPE_WEBHOOK_SECRET` manually still works and takes precedence). Switching to a live key
+(`sk_live_...`) registers a live webhook automatically. Admins see the status under Account → Online payments.
 
 ## Driver portal
 
