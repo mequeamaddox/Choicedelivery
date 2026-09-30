@@ -1,14 +1,18 @@
 import { html, useState, useRef, getUser, logout, isStaff, STATUS, formatDate, mapsLink, ROLE_LABELS, currentPath } from './lib.js';
 
 export function Logo() {
-  return html`<a class="logo" href="#/orders"><img src="/static/logo.png" alt="Choice Delivery SC" width="480" height="174" /></a>`;
+  return html`<a class="logo" href=${getUser()?.role === 'driver' ? '#/driver' : '#/orders'}><img src="/static/logo.png" alt="Choice Delivery SC" width="480" height="174" /></a>`;
 }
 
 export function Layout({ children }) {
   const user = getUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const path = currentPath();
-  const links = [
+  const links = user?.role === 'driver' ? [
+    { href: '/driver', label: 'Jobs', icon: 'list', tab: true },
+    { href: '/driver/history', label: 'History', icon: 'inbox', tab: true },
+    { href: '/account', label: 'Account', icon: 'user', tab: true },
+  ] : [
     { href: '/orders', label: 'Orders', icon: 'list', tab: true },
     { href: '/orders/new', label: 'New order', icon: 'plus', tab: true },
     ...(isStaff(user) ? [
@@ -19,7 +23,9 @@ export function Layout({ children }) {
     ...(user?.role === 'shipper' ? [{ href: '/team', label: 'Team', icon: 'users', tab: true }] : []),
     { href: '/account', label: 'Account', icon: 'user', tab: true },
   ];
-  const active = (href) => (href === '/orders'
+  const active = (href) => (href === '/driver'
+    ? path === '/driver' || path.startsWith('/driver/job/')
+    : href === '/orders'
     ? path === '/orders' || (path.startsWith('/orders/') && path !== '/orders/new')
     : path === href || path.startsWith(`${href}/`));
   return html`

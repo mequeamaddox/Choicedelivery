@@ -56,7 +56,7 @@ function LoginForm() {
     navigate('/orders');
   });
   return html`
-    <${AuthShell} title="Log in" subtitle="For shippers and dispatch.">
+    <${AuthShell} title="Log in" subtitle="For shippers, drivers and dispatch.">
       <form onSubmit=${onSubmit} class="stack">
         <${Alert} error=${error} />
         <${Field} label="Email"><input type="email" autocomplete="email" required ...${bind('email')} /><//>
@@ -120,7 +120,7 @@ export function ResetPage({ token }) {
     <${AuthShell} title="Choose a new password">
       ${done ? html`
         <${Alert} tone="success">${done}<//>
-        <p class="auth-links">Drivers: open the Choice Delivery app. Shippers and dispatch: <a href="#/login">log in here</a>.</p>` : html`
+        <p class="auth-links"><a href="#/login">Log in with your new password</a></p>` : html`
         <form onSubmit=${onSubmit} class="stack">
           <${Alert} error=${error} />
           <${Field} label="New password" hint="At least 8 characters."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>

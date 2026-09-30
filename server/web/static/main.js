@@ -3,6 +3,7 @@ import { Spinner } from './components.js';
 import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
 import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage } from './pages-admin.js';
+import { DriverJobsPage, DriverJobPage, DriverHistoryPage } from './pages-driver.js';
 
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage };
 
@@ -30,6 +31,17 @@ function App() {
     navigate('/login');
     return null;
   }
+  // Drivers get the driver portal.
+  if (user.role === 'driver') {
+    const job = match('/driver/job/:id', path);
+    if (path === '/driver') return html`<${DriverJobsPage} />`;
+    if (job) return html`<${DriverJobPage} key=${job.id} id=${job.id} />`;
+    if (path === '/driver/history') return html`<${DriverHistoryPage} />`;
+    if (path === '/account') return html`<${AccountPage} />`;
+    navigate('/driver');
+    return null;
+  }
+
   if (PUBLIC[path] || path === '/') {
     navigate('/orders');
     return null;

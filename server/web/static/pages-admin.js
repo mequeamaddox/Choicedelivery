@@ -1,4 +1,4 @@
-import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS } from './lib.js';
+import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS, VEHICLE_TYPES } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton, DemoBadge } from './components.js';
 
 function AddAccountForm({ roles, companies, fixedCompanyId, onCreated, submitPath }) {
@@ -131,12 +131,19 @@ export function CompaniesPage() {
       ${loading ? html`<${Spinner} />` : !data?.length ? html`<${Empty} title="No companies yet" />` : html`
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Company</th><th>Phone</th><th>Billing email</th><th>Since</th></tr></thead>
+            <thead><tr><th>Company</th><th>Phone</th><th>Billing email</th><th>Billing</th><th>Since</th></tr></thead>
             <tbody>${data.map((c) => html`
               <tr>
                 <td data-label="Company"><strong>${c.name}</strong><${DemoBadge} on=${c.isDemo} />${c.address && html`<div class="muted small">${c.address}</div>`}</td>
                 <td data-label="Phone">${c.phone || '—'}</td>
                 <td data-label="Billing email">${c.billingEmail || '—'}</td>
+                <td data-label="Billing">
+                  <select aria-label=${`How ${c.name} pays`} value=${c.billingMode}
+                    onChange=${async (e) => { await api(`/organizations/${c.id}`, { method: 'PATCH', body: { billingMode: e.target.value } }); reload(); }}>
+                    <option value="card">Card per order</option>
+                    <option value="invoice">Monthly account (invoice)</option>
+                  </select>
+                </td>
                 <td data-label="Since" class="muted small">${new Date(c.createdAt).toLocaleDateString()}</td>
               </tr>`)}</tbody>
           </table>
@@ -178,7 +185,8 @@ export function TeamPage() {
 
 export function AccountPage() {
   const me = getUser();
-  const [v, setV] = useState({ name: me.name || '', email: me.email, phoneNumber: me.phoneNumber || '' });
+  const [v, setV] = useState({ name: me.name || '', email: me.email, phoneNumber: me.phoneNumber || '',
+    ...(me.role === 'driver' ? { vehicleType: me.vehicleType || 'Car' } : {}) });
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '' });
   const [msg, setMsg] = useState({});
   const bind = (k) => ({ value: v[k], onInput: (e) => setV({ ...v, [k]: e.target.value }) });
@@ -206,6 +214,10 @@ export function AccountPage() {
           <${Field} label="Name"><input ...${bind('name')} /><//>
           <${Field} label="Email"><input type="email" required ...${bind('email')} /><//>
           <${Field} label="Phone"><input type="tel" ...${bind('phoneNumber')} /><//>
+          ${me.role === 'driver' && html`<${Field} label="Vehicle">
+            <select value=${v.vehicleType} onChange=${(e) => setV({ ...v, vehicleType: e.target.value })}>
+              ${VEHICLE_TYPES.map((t) => html`<option>${t}</option>`)}
+            </select><//>`}
           <div><button class="btn primary">Save</button></div>
         </form>
         <form class="card stack" onSubmit=${changePassword}>

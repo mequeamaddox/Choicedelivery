@@ -500,3 +500,91 @@ test('demo data: admin-only, invisible to real drivers, removable without touchi
   assert.equal(r.data.loaded, false);
   assert.equal(await countReal(), realBefore, 'real orders untouched');
 });
+
+test('payments: card orders wait for Stripe payment; invoice companies dispatch immediately; cancel refunds', async () => {
+  const stripe = require('../src/stripe');
+  const crypto = require('crypto');
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+  const stripeCalls = [];
+  stripe.setFetch(async (url, opts) => {
+    const body = new URLSearchParams(opts.body || '');
+    stripeCalls.push({ url, body });
+    if (url.endsWith('/checkout/sessions')) {
+      return { ok: true, json: async () => ({ id: `cs_${stripeCalls.length}`, url: 'https://checkout.stripe.com/pay/cs_test' }) };
+    }
+    if (url.includes('/expire')) return { ok: true, json: async () => ({}) };
+    if (url.endsWith('/refunds')) return { ok: true, json: async () => ({ id: 're_1', amount: Number(body.get('amount')) }) };
+    return { ok: false, status: 404, json: async () => ({ error: { message: 'unexpected' } }) };
+  });
+  const webhook = (event, secret = 'whsec_test') => {
+    const payload = JSON.stringify(event);
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', secret).update(`${ts}.${payload}`).digest('hex');
+    return fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload,
+      headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
+  };
+
+  try {
+    let r = await call('GET', '/payments/config');
+    assert.equal(r.data.enabled, true);
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+    const order = r.data;
+    assert.equal(order.paymentStatus, 'unpaid', 'card customers pay first');
+    r = await call('GET', '/orders?status=pending', { token: t.d1 });
+    assert.ok(!r.data.some((o) => o.id === order.id), 'drivers do not see unpaid jobs');
+    r = await call('POST', `/orders/${order.id}/accept`, { token: t.d1 });
+    assert.equal(r.status, 409);
+
+    r = await call('POST', `/orders/${order.id}/checkout`, { token: t.acme });
+    assert.equal(r.data.url, 'https://checkout.stripe.com/pay/cs_test');
+    const sent = stripeCalls.find((c) => c.url.endsWith('/checkout/sessions')).body;
+    assert.equal(sent.get('line_items[0][price_data][unit_amount]'), String(order.priceCents), 'charges the order price');
+    assert.equal(sent.get('metadata[order_id]'), order.id);
+    const sessionId = (await db.query('SELECT stripe_session_id FROM orders WHERE id = $1', [order.id])).rows[0].stripe_session_id;
+
+    const paidEvent = { type: 'checkout.session.completed', data: { object: {
+      id: sessionId, payment_status: 'paid', amount_total: order.priceCents, payment_intent: 'pi_123',
+      metadata: { order_id: order.id } } } };
+    let res = await webhook(paidEvent, 'wrong_secret');
+    assert.equal(res.status, 400, 'forged webhooks are rejected');
+    res = await webhook(paidEvent);
+    assert.equal(res.status, 200);
+    await webhook(paidEvent); // Stripe retries are harmless
+    r = await call('GET', `/orders/${order.id}`, { token: t.acme });
+    assert.equal(r.data.paymentStatus, 'paid');
+    assert.equal(r.data.paidCents, order.priceCents);
+    assert.equal(r.data.events.filter((e) => e.type === 'paid').length, 1, 'recorded once');
+    r = await call('GET', '/orders?status=pending', { token: t.d1 });
+    assert.ok(r.data.some((o) => o.id === order.id), 'paid job is now visible to drivers');
+
+    r = await call('PATCH', `/orders/${order.id}`, { token: t.acme, body: { serviceLevel: 'rush' } });
+    assert.equal(r.status, 409, 'paid orders cannot be repriced by the shipper');
+
+    r = await call('POST', `/orders/${order.id}/cancel`, { token: t.acme });
+    assert.equal(r.data.paymentStatus, 'refunded');
+    assert.equal(r.data.refundedCents, order.priceCents);
+    const refundCall = stripeCalls.find((c) => c.url.endsWith('/refunds'));
+    assert.equal(refundCall.body.get('payment_intent'), 'pi_123');
+
+    // Invoice (monthly account) companies skip payment.
+    await call('PATCH', `/organizations/${ids.acmeOrg}`, { token: t.acme, body: { billingMode: 'invoice' } })
+      .then((x) => assert.equal(x.status, 403, 'shippers cannot switch themselves to invoicing'));
+    await call('PATCH', `/organizations/${ids.acmeOrg}`, { token: t.dispatcher, body: { billingMode: 'invoice' } });
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+    assert.equal(r.data.paymentStatus, 'invoice');
+    const inv = r.data.id;
+    r = await call('POST', `/orders/${inv}/checkout`, { token: t.acme });
+    assert.equal(r.status, 409);
+    r = await call('POST', `/orders/${inv}/payment`, { token: t.dispatcher, body: { status: 'paid', method: 'check' } });
+    assert.equal(r.data.paymentStatus, 'paid');
+    assert.equal(r.data.paymentMethod, 'check');
+    r = await call('POST', `/orders/${inv}/payment`, { token: t.acme, body: { status: 'waived' } });
+    assert.equal(r.status, 403, 'only dispatch records payments');
+    await call('POST', `/orders/${inv}/cancel`, { token: t.admin });
+    await call('PATCH', `/organizations/${ids.acmeOrg}`, { token: t.dispatcher, body: { billingMode: 'card' } });
+  } finally {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});

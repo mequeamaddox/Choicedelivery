@@ -62,9 +62,6 @@ export async function restoreSession() {
 
 export async function login(email, password) {
   const { token: t, user } = await api('/auth/login', { method: 'POST', body: { email, password } });
-  if (user.role === 'driver') {
-    throw new Error('Drivers use the Choice Delivery driver app. This site is for shippers and dispatch.');
-  }
   setSession(t, user);
   return user;
 }
@@ -159,6 +156,20 @@ export const STATUS = {
 };
 
 export const ACTIVE_STATUSES = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'];
+
+export const PAYMENT_STATUS = {
+  unpaid: { label: 'Unpaid', tone: 'amber' },
+  paid: { label: 'Paid', tone: 'green' },
+  invoice: { label: 'Invoiced account', tone: 'blue' },
+  waived: { label: 'No charge', tone: 'gray' },
+  refunded: { label: 'Refunded', tone: 'gray' },
+};
+
+// Sends the browser to Stripe's secure checkout page for an order.
+export async function startCheckout(orderId) {
+  const { url } = await api(`/orders/${encodeURIComponent(orderId)}/checkout`, { method: 'POST' });
+  window.location.assign(url);
+}
 
 export const SERVICE_LEVEL_LABELS = { standard: 'Standard', rush: 'Rush (2 hours or less)' };
 

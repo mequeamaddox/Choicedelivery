@@ -4,7 +4,7 @@ const { ROLES } = require('./auth');
 const { HttpError, str } = require('./util');
 
 const USER_SELECT = `
-  SELECT u.*, o.name AS organization_name,
+  SELECT u.*, o.name AS organization_name, o.billing_mode AS organization_billing_mode,
          (SELECT v.type FROM vehicles v WHERE v.driver_id = u.id ORDER BY v.created_at LIMIT 1) AS vehicle_type
   FROM users u LEFT JOIN organizations o ON o.id = u.organization_id`;
 
@@ -14,7 +14,8 @@ function publicUser(u, { includeLocation = false } = {}) {
     email: u.email,
     name: u.name,
     role: u.role,
-    organization: u.organization_id ? { id: u.organization_id, name: u.organization_name } : null,
+    organization: u.organization_id
+      ? { id: u.organization_id, name: u.organization_name, billingMode: u.organization_billing_mode } : null,
     phoneNumber: u.phone_number,
     vehicleType: u.vehicle_type || '',
     profilePictureUrl: u.profile_picture_url,

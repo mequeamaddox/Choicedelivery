@@ -1,6 +1,6 @@
 import {
   html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
-  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS,
+  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout,
 } from './lib.js';
 import {
   Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
@@ -96,7 +96,7 @@ export function OrdersPage() {
                   <td data-label="Route"><${RouteSummary} stops=${o.stops} /></td>
                   ${isStaff(user) && html`<td data-label="Company">${o.organization?.name || html`<span class="muted">Internal</span>`}</td>`}
                   <td data-label="Driver">${o.driver?.name || html`<span class="muted">—</span>`}</td>
-                  <td data-label="Status"><${StatusBadge} status=${o.status} /></td>
+                  <td data-label="Status"><${StatusBadge} status=${o.status} />${o.paymentStatus === 'unpaid' && o.status !== 'cancelled' && html` <span class="badge amber">Unpaid</span>`}</td>
                   <td data-label="Booked" class="muted small">${formatDate(o.createdAt)}</td>
                 </tr>`)}
             </tbody>
@@ -196,6 +196,8 @@ export function NewOrderPage() {
   const [busy, setBusy] = useState(false);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
   const quote = useQuote(stops, v.serviceLevel, v.scheduledAt);
+  const payments = useApi('/payments/config');
+  const payByCard = !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
 
   const submit = async (e) => {
     e.preventDefault();
@@ -217,6 +219,10 @@ export function NewOrderPage() {
         if (v.price !== '') body.priceCents = Math.round(Number(v.price) * 100);
       }
       const order = await api('/orders', { method: 'POST', body });
+      if (order.paymentStatus === 'unpaid') {
+        // Card customers go straight to Stripe's secure payment page.
+        try { await startCheckout(order.id); return; } catch { /* fall through to the order page's Pay button */ }
+      }
       navigate(`/orders/${order.id}`);
     } catch (err) {
       setError(err);
@@ -261,6 +267,7 @@ export function NewOrderPage() {
               <p class="muted small">${quote.note}</p>`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
+            ${payByCard && html`<p class="small"><strong>Payment:</strong> you'll pay by card on Stripe's secure page after booking. Drivers are notified once it's paid.</p>`}
           </div>
         </section>
         <section class="card">
@@ -292,7 +299,7 @@ export function NewOrderPage() {
           </section>`}
         <div class="form-actions">
           <a class="btn" href="#/orders">Cancel</a>
-          <button class="btn primary" disabled=${busy}>${busy ? 'Booking…' : 'Book delivery'}</button>
+          <button class="btn primary" disabled=${busy}>${busy ? 'Booking…' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
         </div>
       </form>
     <//>`;
@@ -360,6 +367,46 @@ function DispatchPanel({ order, onChange, setError }) {
     </section>`;
 }
 
+// Payment status and actions: shippers pay by card; dispatch records cash/check or waives.
+function PaymentPanel({ order, onChange, setError }) {
+  const user = getUser();
+  const staff = isStaff(user);
+  const payments = useApi('/payments/config');
+  const justPaid = location.hash.includes('paid=1');
+  const st = PAYMENT_STATUS[order.paymentStatus] || { label: order.paymentStatus, tone: 'gray' };
+  const record = (status, method) => async () =>
+    onChange(await api(`/orders/${order.id}/payment`, { method: 'POST', body: { status, method } }));
+  const cancelled = order.status === 'cancelled';
+  return html`
+    <section class="card">
+      <h2>Payment <span class=${`badge ${st.tone}`}>${st.label}</span></h2>
+      <dl class="facts">
+        <dt>Price</dt><dd>${formatMoney(order.priceCents)}</dd>
+        ${order.paidCents != null && html`<dt>Paid</dt><dd>${formatMoney(order.paidCents)}${order.paymentMethod ? ` · ${order.paymentMethod}` : ''}${order.paidAt ? ` · ${formatDate(order.paidAt)}` : ''}</dd>`}
+        ${order.refundedCents != null && html`<dt>Refunded</dt><dd>${formatMoney(order.refundedCents)}</dd>`}
+      </dl>
+      ${order.paymentStatus === 'unpaid' && !cancelled && html`
+        ${justPaid
+          ? html`<p class="small">Thanks! We're confirming your payment with Stripe; this updates automatically.</p>`
+          : html`<p class="small">Drivers are notified as soon as this order is paid.</p>`}
+        ${payments.data?.enabled && !justPaid && html`
+          <${ActionButton} class="btn primary block" onError=${setError} onClick=${() => startCheckout(order.id)}>
+            Pay ${formatMoney(order.priceCents)} by card
+          <//>`}`}
+      ${staff && !cancelled && html`
+        <div class="actions">
+          ${order.paymentStatus !== 'paid' && html`
+            <${ActionButton} class="btn small" onError=${setError} onClick=${record('paid', 'cash')}>Paid in cash<//>
+            <${ActionButton} class="btn small" onError=${setError} onClick=${record('paid', 'check')}>Paid by check<//>`}
+          ${order.paymentStatus !== 'invoice' && order.paymentMethod !== 'card' && html`
+            <${ActionButton} class="btn small" onError=${setError} onClick=${record('invoice')}>Bill to account<//>`}
+          ${order.paymentStatus !== 'waived' && order.paymentMethod !== 'card' && html`
+            <${ActionButton} class="btn small" onError=${setError} confirmText="Deliver this order at no charge?" onClick=${record('waived')}>No charge<//>`}
+        </div>
+        ${order.paymentMethod === 'card' && html`<p class="muted small">Paid by card. Cancelling the order refunds the card automatically.</p>`}`}
+    </section>`;
+}
+
 export function OrderPage({ id }) {
   const user = getUser();
   const staff = isStaff(user);
@@ -417,6 +464,7 @@ export function OrderPage({ id }) {
           </section>
         </div>
         <div class="stack">
+          <${PaymentPanel} order=${order} onChange=${setOverride} setError=${setError} />
           <section class="card">
             <h2>Driver</h2>
             ${order.driver ? html`

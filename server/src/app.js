@@ -7,8 +7,12 @@ const resetPage = require('./reset-page');
 const app = express();
 app.set('trust proxy', 1); // Railway terminates TLS at its proxy
 app.use(cors());
+// Stripe webhooks need the raw request body, so they're mounted before the JSON parser.
+app.use('/webhooks', require('./routes/webhooks'));
 // Signatures and photos are sent inline as base64 data URLs.
 app.use(express.json({ limit: '15mb' }));
+
+app.get('/payments/config', (req, res) => res.json({ enabled: require('./stripe').enabled() }));
 
 app.get('/health', async (req, res) => {
   try {

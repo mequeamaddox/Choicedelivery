@@ -2,6 +2,7 @@
 const db = require('./db');
 const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
+const stripe = require('./stripe');
 const { isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext } = require('./pricing');
 
 const ACTIVE = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'];
@@ -63,15 +64,23 @@ async function createOrder(client, actor, body) {
     if (!Number.isFinite(priceCents) || priceCents < 0) throw new HttpError(400, 'priceCents must be a positive integer');
   }
 
+  // Who pays how: dispatch-created orders and "invoice" companies are billed outside the app;
+  // card customers pay through Stripe before drivers see the job (when Stripe is set up).
+  let paymentStatus = 'invoice';
+  if (actor.role === 'shipper' && stripe.enabled()) {
+    const { rows: [org] } = await client.query('SELECT billing_mode FROM organizations WHERE id = $1', [organizationId]);
+    if (org?.billing_mode !== 'invoice') paymentStatus = 'unpaid';
+  }
+
   let rows;
   try {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
-                           tracking_number, price_cents, price_is_custom, scheduled_at, service_level)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+                           tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
-        body.scheduledAt || null, serviceLevel]
+        body.scheduledAt || null, serviceLevel, paymentStatus]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -120,7 +129,9 @@ function visibilityFilter(user, params) {
   }
   params.push(user.id);
   // Drivers never see sample (demo) orders.
-  return `NOT o.is_demo AND (o.driver_id = $${params.length} OR (o.status = 'pending' AND o.driver_id IS NULL))`;
+  // Unpaid card orders stay hidden until payment clears.
+  return `NOT o.is_demo AND (o.driver_id = $${params.length}
+    OR (o.status = 'pending' AND o.driver_id IS NULL AND o.payment_status <> 'unpaid'))`;
 }
 
 const ORDER_SELECT = `
@@ -170,6 +181,11 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
     distanceMiles: o.distance_miles == null ? null : Number(o.distance_miles),
     priceBreakdown: o.price_breakdown,
     priceIsCustom: o.price_is_custom,
+    paymentStatus: o.payment_status,
+    paidCents: o.paid_cents,
+    paidAt: o.paid_at,
+    paymentMethod: o.payment_method,
+    refundedCents: o.refunded_cents,
     vehicleType: o.vehicle_type,
     weight: o.weight,
     numberOfPieces: o.number_of_pieces,

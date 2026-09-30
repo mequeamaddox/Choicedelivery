@@ -83,6 +83,29 @@ local time; scheduled pickups use the pickup time. Distance is straight-line x 1
 coordinates. Orders are priced on the server when booked; demand/weather are locked in at booking. Dispatch can
 set a custom price, and clearing it returns to the formula.
 
+## Payments (Stripe)
+
+Off until `STRIPE_SECRET_KEY` is set; until then every order is treated as billed to account.
+
+- **Card customers** (companies with billing = "Card per order", the default) are sent to Stripe Checkout
+  right after booking. Drivers don't see the job until Stripe confirms payment.
+- **Monthly accounts**: set a company to "Monthly account (invoice)" on the Companies page; their jobs
+  dispatch immediately and are billed outside the app. Orders dispatch creates are also billed to account.
+- Dispatch can record **cash/check**, **bill to account** or **no charge** on any order.
+- **Cancelling a card-paid order refunds it in full** automatically.
+
+Setup: in the Stripe dashboard → Developers → API keys, copy the secret key into Railway as
+`STRIPE_SECRET_KEY`. Then Developers → Webhooks → Add endpoint:
+`https://app.choicedeliverysc.com/webhooks/stripe`, events `checkout.session.completed` and
+`checkout.session.async_payment_succeeded`; copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
+Use test keys (`sk_test_...`) first.
+
+## Driver portal
+
+Drivers log in at `app.choicedeliverysc.com` from their phone's browser (no app install): go online
+(shares location every ~30s while the page is open), accept open jobs, navigate/call, mark arrival and
+complete each stop with a finger-drawn signature and/or camera photo, and see their history.
+
 ## How the data fits together
 
 One Postgres database is the single source of truth for every app (driver app, future shipper
