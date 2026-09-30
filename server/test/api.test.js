@@ -427,22 +427,22 @@ test('landing page is served on www; the app on other hosts', async () => {
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
     }).on('error', reject);
   });
-  let r = await get('www.choicedeliverysc.com', '/');
+  let r = await get('choicedeliverysc.com', '/');
   assert.equal(r.status, 200);
   assert.match(r.body, /Your Choice, Our Priority/);
-  r = await get('www.choicedeliverysc.com', '/privacy');
+  r = await get('choicedeliverysc.com', '/privacy');
   assert.match(r.body, /Privacy Policy/);
-  r = await get('www.choicedeliverysc.com', '/logo.png');
+  r = await get('choicedeliverysc.com', '/logo.png');
   assert.match(r.headers['content-type'], /image\/png/);
-  r = await get('choicedeliverysc.com', '/privacy.html');
+  r = await get('www.choicedeliverysc.com', '/privacy.html');
   assert.equal(r.status, 301);
-  assert.equal(r.headers.location, 'https://www.choicedeliverysc.com/privacy.html');
-  r = await get('www.choicedeliverysc.com', '/public/pricing');
+  assert.equal(r.headers.location, 'https://choicedeliverysc.com/privacy.html');
+  r = await get('choicedeliverysc.com', '/public/pricing');
   assert.equal(r.status, 200, 'API still reachable from the landing host');
   r = await get('app.choicedeliverysc.com', '/');
   assert.match(r.body, /static\/main\.js/, 'app host gets the web app');
-  r = await get('api.choicedeliverysc.com', '/health');
-  assert.equal(r.status, 200);
+  r = await get('app.choicedeliverysc.com', '/health');
+  assert.equal(r.status, 200, 'the driver app uses app.choicedeliverysc.com for the API');
 });
 
 test('Neon connection strings are cleaned without corrupting the database name', () => {

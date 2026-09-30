@@ -19,9 +19,11 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// ---- Public landing page (www.choicedeliverysc.com) ----
-// Chosen by host name. The bare domain redirects to www. API paths (/public/quote, etc.) work on
-// every host, so the landing page's forms call this same server.
+// ---- Public landing page (choicedeliverysc.com) ----
+// Chosen by host name; www redirects to the bare domain (normally Cloudflare does that before
+// requests reach Railway). API paths (/public/quote, etc.) work on every host, so the landing
+// page's forms call this same server. app.choicedeliverysc.com serves the web app and the API
+// used by the driver app.
 const LANDING_DIR = path.join(__dirname, '..', 'landing');
 const LANDING_HOSTS = (process.env.LANDING_HOSTS || 'www.choicedeliverysc.com,choicedeliverysc.com')
   .split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
@@ -39,9 +41,9 @@ app.use((req, res, next) => {
   if (!LANDING_HOSTS.includes(host) || !['GET', 'HEAD'].includes(req.method)) return next();
   const file = LANDING_FILES[req.path];
   if (!file) return next();
-  // One canonical address: choicedeliverysc.com -> www.choicedeliverysc.com
-  if (!host.startsWith('www.') && LANDING_HOSTS.includes(`www.${host}`)) {
-    return res.redirect(301, `https://www.${host}${req.originalUrl}`);
+  // One canonical address: www.choicedeliverysc.com -> choicedeliverysc.com
+  if (host.startsWith('www.') && LANDING_HOSTS.includes(host.slice(4))) {
+    return res.redirect(301, `https://${host.slice(4)}${req.originalUrl}`);
   }
   res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': file.endsWith('.html') ? 'no-cache' : 'public, max-age=86400' });
   res.sendFile(path.join(LANDING_DIR, file));

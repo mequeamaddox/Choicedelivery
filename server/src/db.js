@@ -29,6 +29,9 @@ const needsSsl = process.env.PGSSL === 'true' ||
 const pool = new Pool({
   connectionString: cleanConnectionString(rawUrl),
   ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
+  // Fail fast instead of hanging forever when the database can't be reached
+  // (Neon may need a few seconds to wake up; startup retries).
+  connectionTimeoutMillis: 10000,
 });
 
 const query = (text, params) => pool.query(text, params);

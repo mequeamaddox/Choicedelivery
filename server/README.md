@@ -19,24 +19,24 @@ and it's set up to deploy on [Railway](https://railway.com) with Postgres on Rai
    | `PUBLIC_URL` | `https://app.choicedeliverysc.com` (password-reset links open the web app) |
    | `LEADS_EMAIL` | *(optional)* where website messages go; default `info@choicedeliverysc.com` |
    | `RESEND_API_KEY`, `MAIL_FROM` | *(optional)* for password-reset emails via Resend; without them reset links are only written to the logs |
-5. **Give it a domain**: *Settings → Networking → Custom Domain* → `api.choicedeliverysc.com`, then add the
-   CNAME record Railway shows at your DNS provider. (Domain plan: `www.` = public landing page,
-   `app.` = future dispatch/shipper web app, `api.` = this service.)
+5. **Give it domains** (*Settings → Networking → Custom Domain*): add `choicedeliverysc.com` and
+   `app.choicedeliverysc.com`, then add the CNAME records Railway shows in Cloudflare DNS. `www` is
+   redirected to the bare domain by a Cloudflare redirect rule, so it doesn't use a Railway domain slot.
 6. **Create the first admin**. The first account can register without logging in:
    ```sh
-   curl -X POST https://api.choicedeliverysc.com/auth/register \
+   curl -X POST https://app.choicedeliverysc.com/auth/register \
      -H 'Content-Type: application/json' \
      -d '{"email":"you@choicedeliverysc.com","password":"<8+ chars>"}'
    ```
    The response includes a `token`. Use it to add drivers:
    ```sh
-   curl -X POST https://api.choicedeliverysc.com/auth/register \
+   curl -X POST https://app.choicedeliverysc.com/auth/register \
      -H "Authorization: Bearer <admin token>" -H 'Content-Type: application/json' \
      -d '{"email":"driver@example.com","password":"<8+ chars>"}'
    ```
    `role` can be `driver` (default), `dispatcher`, `admin` or `shipper` (shippers also need `organizationId`).
    Or, from a shell with `DATABASE_URL` set (for example via `railway run`): `npm run create-user -- driver@example.com <password> driver "Driver Name"`
-7. **The app** already points at `https://api.choicedeliverysc.com` (`extra.apiUrl` in `app.json`). For local
+7. **The app** already points at `https://app.choicedeliverysc.com` (`extra.apiUrl` in `app.json`). For local
    testing, override it with `EXPO_PUBLIC_API_URL` in a root `.env`.
 
 Database changes in `migrations/` are applied automatically when the service starts.
@@ -56,20 +56,21 @@ When everything is verified, you can shut down the Firebase project and the Word
 ## Web app (shippers + dispatch)
 
 The same service also serves the website in `web/` at `/` (and the landing page in `landing/` for the www host). It's plain JavaScript (Preact + htm, vendored in
-`web/static/vendor/`), so there's no build step. Point **all** of these domains at this one Railway service:
+`web/static/vendor/`), so there's no build step. Point both domains at this one Railway service:
 
 | Address | Who uses it |
 |---|---|
-| `www.choicedeliverysc.com` (and `choicedeliverysc.com`, which redirects) | Public landing page from `landing/` |
-| `app.choicedeliverysc.com` | Shippers (sign up, book, track, team) and dispatch/admins (all orders, assign drivers, prices, people, companies) |
-| `api.choicedeliverysc.com` | The driver phone app |
-| `app.choicedeliverysc.com/#/track/<token>` | Public tracking page you can send to recipients (the order page has a *Copy tracking link* button) |
+| `choicedeliverysc.com` | Public landing page from `landing/` (`www.` redirects here via Cloudflare) |
+| `app.choicedeliverysc.com` | Shippers and dispatch in the browser, **and** the driver app's API address |
+| `app.choicedeliverysc.com/#/track/<token>` | Public tracking page you can send to recipients |
+
+Only these two custom domains are needed on Railway (the Hobby plan allows two per service).
 
 Drivers who try to log in on the website are pointed to the phone app.
 
 ## Public website hooks
 
-The landing page at `www.choicedeliverysc.com` (source in `landing/`) calls these no-login endpoints:
+The landing page at `choicedeliverysc.com` (source in `landing/`) calls these no-login endpoints:
 `GET /public/pricing`, `POST /public/quote`, `POST /public/contact`, `POST /public/contract-request`,
 plus `GET /public/geocode?q=` for address suggestions (OpenStreetMap, SC/NC/GA only, cached and throttled
 to their one-request-per-second limit). Messages and plan requests are stored as **leads** (`GET/PATCH /leads`,

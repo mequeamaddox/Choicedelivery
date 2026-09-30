@@ -1,4 +1,4 @@
-# Choice Delivery SC — public website (www.choicedeliverysc.com)
+# Choice Delivery SC — public website (choicedeliverysc.com)
 
 The public landing site. Marketing pages live in their own files so they can change without touching the booking system.
 
@@ -25,6 +25,7 @@ Both forms include a hidden spam trap and are rate limited.
 ## Hosting
 
 Served by the same Railway service as the app and API (see `src/app.js`): requests for
-`www.choicedeliverysc.com` get these files, and `choicedeliverysc.com` redirects to `www`.
+`choicedeliverysc.com` get these files; `www.` is redirected to it by a Cloudflare redirect rule
+(and by the server as a fallback).
 To change the page, edit the files here and push; Railway redeploys automatically.
 The host names can be changed with the `LANDING_HOSTS` variable.
