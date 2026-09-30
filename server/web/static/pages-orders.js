@@ -9,6 +9,7 @@ import {
 const FILTERS = [
   { key: 'active', label: 'In progress', statuses: ['pending', ...ACTIVE_STATUSES] },
   { key: 'pending', label: 'Needs driver', statuses: ['pending'] },
+  { key: 'quotes', label: 'Quotes', statuses: ['quote'] },
   { key: 'completed', label: 'Delivered', statuses: ['completed'] },
   { key: 'cancelled', label: 'Cancelled', statuses: ['cancelled'] },
   { key: 'all', label: 'All', statuses: [] },
@@ -81,7 +82,8 @@ export function OrdersPage() {
       <${Alert} error=${error} />
       ${loading ? html`<${Spinner} />` : rows.length === 0 ? html`
         <${Empty} title="No orders here yet">
-          ${filter === 'active' ? 'New orders you book will show up here.' : 'Try a different filter.'}
+          ${filter === 'active' ? 'New orders you book will show up here.'
+            : filter === 'quotes' ? 'Use "Save quote" on a new order to keep a price and book it later.' : 'Try a different filter.'}
         <//>` : html`
         <div class="table-wrap">
           <table class="orders">
@@ -96,8 +98,8 @@ export function OrdersPage() {
                   <td data-label="Route"><${RouteSummary} stops=${o.stops} /></td>
                   ${isStaff(user) && html`<td data-label="Company">${o.organization?.name || html`<span class="muted">Internal</span>`}</td>`}
                   <td data-label="Driver">${o.driver?.name || html`<span class="muted">—</span>`}</td>
-                  <td data-label="Status"><${StatusBadge} status=${o.status} />${o.paymentStatus === 'unpaid' && o.status !== 'cancelled' && html` <span class="badge amber">Unpaid</span>`}</td>
-                  <td data-label="Booked" class="muted small">${formatDate(o.createdAt)}</td>
+                  <td data-label="Status"><${StatusBadge} status=${o.status} />${o.status === 'quote' && html` <span class="muted small nowrap">${formatMoney(o.priceCents)}</span>`}${o.paymentStatus === 'unpaid' && o.status !== 'cancelled' && html` <span class="badge amber">Unpaid</span>`}</td>
+                  <td data-label="Booked" class="muted small">${o.status === 'quote' ? `Saved ${formatDate(o.createdAt)}` : formatDate(o.bookedAt || o.createdAt)}</td>
                 </tr>`)}
             </tbody>
           </table>
@@ -199,8 +201,11 @@ export function NewOrderPage() {
   const payments = useApi('/payments/config');
   const payByCard = !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
 
-  const submit = async (e) => {
+  // Books the order, or with saveAsQuote keeps it as a quote to book (and pay for) later.
+  const submit = async (e, saveAsQuote = false) => {
     e.preventDefault();
+    const form = e.target.closest('form');
+    if (saveAsQuote && form && !form.reportValidity()) return;
     setError(null);
     if (stops[0].type !== 'pickup' || stops[stops.length - 1].type !== 'dropoff') {
       setError(new Error('The first stop must be a pickup and the last stop a drop-off.'));
@@ -213,13 +218,14 @@ export function NewOrderPage() {
         trackingNumber: v.trackingNumber || undefined,
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
+        saveAsQuote,
       };
       if (staff) {
         if (v.organizationId) body.organizationId = v.organizationId;
         if (v.price !== '') body.priceCents = Math.round(Number(v.price) * 100);
       }
       const order = await api('/orders', { method: 'POST', body });
-      if (order.paymentStatus === 'unpaid') {
+      if (!saveAsQuote && order.paymentStatus === 'unpaid') {
         // Card customers go straight to Stripe's secure payment page.
         try { await startCheckout(order.id); return; } catch { /* fall through to the order page's Pay button */ }
       }
@@ -268,6 +274,7 @@ export function NewOrderPage() {
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
             ${payByCard && html`<p class="small"><strong>Payment:</strong> you'll pay by card on Stripe's secure page after booking. Drivers are notified once it's paid.</p>`}
+            <p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this order under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>
           </div>
         </section>
         <section class="card">
@@ -299,6 +306,8 @@ export function NewOrderPage() {
           </section>`}
         <div class="form-actions">
           <a class="btn" href="#/orders">Cancel</a>
+          <button type="button" class="btn" disabled=${busy} onClick=${(e) => submit(e, true)}
+            title="Keep this price and book it later from Orders → Quotes">Save quote</button>
           <button class="btn primary" disabled=${busy}>${busy ? 'Booking…' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
         </div>
       </form>
@@ -308,6 +317,8 @@ export function NewOrderPage() {
 // ---------- Order detail ----------
 
 const EVENT_LABELS = {
+  quoted: 'Quote saved',
+  repriced: 'Price updated',
   created: 'Order booked',
   accepted: 'Driver accepted',
   assigned: 'Driver assigned by dispatch',
@@ -342,7 +353,7 @@ function DispatchPanel({ order, onChange, setError }) {
   return html`
     <section class="card">
       <h2>Dispatch</h2>
-      <${Field} label="Driver">
+      ${order.status !== 'quote' && html`<${Field} label="Driver">
         <div class="inline">
           <select value=${driverId} onChange=${(e) => setDriverId(e.target.value)} disabled=${closed}>
             <option value="">Unassigned (open to all drivers)</option>
@@ -353,8 +364,8 @@ function DispatchPanel({ order, onChange, setError }) {
             Save
           <//>
         </div>
-      <//>
-      <${Field} label="Price (USD)">
+      <//>`}
+      <${Field} label="Price (USD)" hint=${order.status === 'quote' ? 'A custom price is kept when the customer books this quote.' : undefined}>
         <div class="inline">
           <input type="number" min="0" step="0.01" value=${price} onInput=${(e) => setPrice(e.target.value)} disabled=${closed} />
           <${ActionButton} disabled=${closed} onError=${setError}
@@ -407,6 +418,41 @@ function PaymentPanel({ order, onChange, setError }) {
     </section>`;
 }
 
+// A saved quote: book it (card customers then pay) or delete it. The price is rechecked on booking;
+// if it changed, the server updates the quote and asks the customer to confirm the new price.
+function QuotePanel({ order, onChange, setError }) {
+  const user = getUser();
+  const payments = useApi('/payments/config');
+  const payByCard = user.role === 'shipper' && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
+  const [notice, setNotice] = useState(null);
+  const book = async () => {
+    setNotice(null);
+    try {
+      const booked = await api(`/orders/${order.id}/book`, { method: 'POST', body: { expectedCents: order.priceCents } });
+      if (booked.paymentStatus === 'unpaid') {
+        try { await startCheckout(booked.id); return; } catch { /* the Pay button on the order page still works */ }
+      }
+      onChange(booked);
+    } catch (err) {
+      if (err.data?.priceChanged) { onChange(err.data.order); setNotice(err.message); return; }
+      throw err;
+    }
+  };
+  return html`
+    <section class="card">
+      <h2>Saved quote</h2>
+      <dl class="facts">
+        <dt>Quoted price</dt><dd><strong>${formatMoney(order.priceCents)}</strong></dd>
+        <dt>Saved</dt><dd>${formatDate(order.createdAt)}</dd>
+      </dl>
+      ${notice ? html`<div class="alert warn" role="status">${notice}</div>`
+        : html`<p class="small muted">Not booked yet, so no driver has been notified. The price is rechecked when you book (time of day, weekend, demand and weather can change it)${order.scheduledAt ? '; if the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`}
+      <${ActionButton} class="btn primary block" onError=${setError} onClick=${book}>
+        ${notice ? `Book at ${formatMoney(order.priceCents)}` : payByCard ? `Book & pay ${formatMoney(order.priceCents)}` : `Book for ${formatMoney(order.priceCents)}`}
+      <//>
+    </section>`;
+}
+
 export function OrderPage({ id }) {
   const user = getUser();
   const staff = isStaff(user);
@@ -421,7 +467,8 @@ export function OrderPage({ id }) {
   if (loading && !order) return html`<${Layout}><${Spinner} /><//>`;
   if (!order) return html`<${Layout}><${Alert} error=${loadError} /><a href="#/orders">Back to orders</a><//>`;
 
-  const canCancel = staff ? !['completed', 'cancelled'].includes(order.status) : order.status === 'pending';
+  const isQuote = order.status === 'quote';
+  const canCancel = !isQuote && (staff ? !['completed', 'cancelled'].includes(order.status) : order.status === 'pending');
   const link = order.trackingUrlToken && trackingUrl(order.trackingUrlToken);
   const copyLink = async () => {
     try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); }
@@ -433,12 +480,14 @@ export function OrderPage({ id }) {
       <a class="back" href="#/orders">← Orders</a>
       <${PageHeader}
         title=${html`${order.orderNumber} <${StatusBadge} status=${order.status} /><${DemoBadge} on=${order.isDemo} />`}
-        subtitle=${`Booked ${formatDate(order.createdAt)}${order.organization ? ` · ${order.organization.name}` : ''}`}
+        subtitle=${`${isQuote ? 'Quote saved' : 'Booked'} ${formatDate(isQuote ? order.createdAt : order.bookedAt || order.createdAt)}${order.organization ? ` · ${order.organization.name}` : ''}`}
         actions=${html`
           ${link && html`<button class="btn" onClick=${copyLink}>${copied ? 'Link copied ✓' : 'Copy tracking link'}</button>`}
           ${canCancel && html`<${ActionButton} class="btn danger" onError=${setError}
             confirmText="Cancel this order? The driver (if any) will be notified."
-            onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel order<//>`}`} />
+            onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel order<//>`}
+          ${isQuote && html`<${ActionButton} class="btn danger" onError=${setError} confirmText="Delete this saved quote?"
+            onClick=${async () => { await api(`/orders/${order.id}`, { method: 'DELETE' }); navigate('/orders'); }}>Delete quote<//>`}`} />
       <${Alert} error=${error} />
       <div class="detail-grid">
         <div class="stack">
@@ -464,15 +513,16 @@ export function OrderPage({ id }) {
           </section>
         </div>
         <div class="stack">
-          <${PaymentPanel} order=${order} onChange=${setOverride} setError=${setError} />
-          <section class="card">
+          ${isQuote ? html`<${QuotePanel} order=${order} onChange=${setOverride} setError=${setError} />`
+            : html`<${PaymentPanel} order=${order} onChange=${setOverride} setError=${setError} />`}
+          ${!isQuote && html`<section class="card">
             <h2>Driver</h2>
             ${order.driver ? html`
               <p><strong>${order.driver.name || 'Driver'}</strong></p>
               ${order.driver.phoneNumber && html`<p><a href=${`tel:${order.driver.phoneNumber}`}>${order.driver.phoneNumber}</a></p>`}
               ${order.driver.location && html`<p class="small">Last location ${timeAgo(order.driver.locationUpdatedAt)}${' · '}<a href=${mapsLink(order.driver.location)} target="_blank" rel="noopener">open map</a></p>`}`
             : html`<p class="muted">${order.status === 'cancelled' ? 'No driver.' : 'Waiting for a driver to accept.'}</p>`}
-          </section>
+          </section>`}
           ${staff && html`<${DispatchPanel} key=${order.id} order=${order} onChange=${setOverride} setError=${setError} />`}
           <section class="card">
             <h2>Shipment</h2>

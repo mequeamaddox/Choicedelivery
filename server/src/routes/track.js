@@ -11,7 +11,7 @@ router.get('/:token', asyncH(async (req, res) => {
     `SELECT o.id, o.order_number, o.status, o.completed_at, o.created_at,
             d.name AS driver_name, d.last_location, d.location_updated_at
      FROM orders o LEFT JOIN users d ON d.id = o.driver_id
-     WHERE o.public_token = $1`, [req.params.token]).catch(() => ({ rows: [] }));
+     WHERE o.public_token = $1 AND o.status <> 'quote'`, [req.params.token]).catch(() => ({ rows: [] }));
   const o = rows[0];
   if (!o) throw new HttpError(404, 'Tracking link not found');
   const { rows: stops } = await db.query(

@@ -679,3 +679,76 @@ test('stripe webhook is created automatically and its secret is kept private', a
     delete process.env.PUBLIC_URL;
   }
 });
+
+test('saved quotes: hidden from drivers, booked later at a rechecked price, deletable', async () => {
+  const stripe = require('../src/stripe');
+  const mailer = require('../src/mailer');
+  const sent = [];
+  mailer.setSender(async (m) => { sent.push(m); });
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+  stripe.setFetch(async () => ({ ok: true, json: async () => ({ id: 'cs_q', url: 'https://checkout.stripe.com/pay/cs_q' }) }));
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  try {
+    let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ saveAsQuote: true }) });
+    assert.equal(r.status, 201);
+    const quote = r.data;
+    assert.equal(quote.status, 'quote');
+    assert.equal(quote.bookedAt, null);
+    assert.ok(quote.priceCents > 0, 'quotes are priced');
+    assert.equal(quote.trackingUrlToken, undefined, 'quotes have no tracking link');
+    await settle();
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].subject, /Your quote/);
+    assert.ok(sent[0].html.includes(`#/orders/${quote.id}`) && !sent[0].html.includes('#/track/'));
+
+    r = await call('GET', '/orders?status=quote', { token: t.acme });
+    assert.ok(r.data.some((o) => o.id === quote.id), 'shippers see their quotes');
+    r = await call('GET', '/orders?status=pending,quote', { token: t.d1 });
+    assert.ok(!r.data.some((o) => o.id === quote.id), 'drivers never see quotes');
+    assert.equal((await call('POST', `/orders/${quote.id}/accept`, { token: t.d1 })).status, 409);
+    assert.equal((await call('POST', `/orders/${quote.id}/assign`, { token: t.dispatcher, body: { driverId: ids.d1 } })).status, 409);
+    const { rows: [{ public_token: tok }] } = await db.query('SELECT public_token FROM orders WHERE id = $1', [quote.id]);
+    assert.equal((await call('GET', `/track/${tok}`)).status, 404, 'quotes are not trackable');
+    assert.equal((await call('POST', `/orders/${quote.id}/checkout`, { token: t.acme })).status, 409, 'book before paying');
+    assert.equal((await call('POST', `/orders/${quote.id}/cancel`, { token: t.acme })).status, 409, 'quotes are deleted, not cancelled');
+    assert.equal((await call('POST', `/orders/${quote.id}/book`, { token: t.d1 })).status, 403);
+
+    // The customer saw a different price: nothing is booked, the quote shows the current price.
+    r = await call('POST', `/orders/${quote.id}/book`, { token: t.acme, body: { expectedCents: quote.priceCents + 1 } });
+    assert.equal(r.status, 409);
+    assert.equal(r.data.priceChanged, true);
+    assert.equal(r.data.order.status, 'quote');
+    const current = r.data.order.priceCents;
+
+    sent.length = 0;
+    r = await call('POST', `/orders/${quote.id}/book`, { token: t.acme, body: { expectedCents: current } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.status, 'pending');
+    assert.equal(r.data.paymentStatus, 'unpaid', 'card customers pay after booking');
+    assert.ok(r.data.bookedAt && r.data.trackingUrlToken);
+    assert.deepEqual(r.data.events.map((e) => e.type).filter((x) => x !== 'repriced'), ['quoted', 'created']);
+    r = await call('POST', `/orders/${quote.id}/checkout`, { token: t.acme });
+    assert.equal(r.data.url, 'https://checkout.stripe.com/pay/cs_q');
+    await settle();
+    assert.match(sent[0].subject, /booked/);
+    assert.equal((await call('POST', `/orders/${quote.id}/book`, { token: t.acme })).status, 409, 'already booked');
+    assert.equal((await call('DELETE', `/orders/${quote.id}`, { token: t.acme })).status, 409, 'booked orders are not deleted');
+    await call('POST', `/orders/${quote.id}/cancel`, { token: t.acme });
+
+    // A pickup time that passed while the quote sat is booked as ASAP.
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ saveAsQuote: true, scheduledAt: '2020-01-04T15:00:00Z' }) });
+    r = await call('POST', `/orders/${r.data.id}/book`, { token: t.acme });
+    assert.equal(r.data.status, 'pending');
+    assert.equal(r.data.scheduledAt, null);
+    await call('POST', `/orders/${r.data.id}/cancel`, { token: t.acme });
+
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ saveAsQuote: true }) });
+    assert.equal((await call('DELETE', `/orders/${r.data.id}`, { token: t.acme })).status, 204);
+    assert.equal((await call('GET', `/orders/${r.data.id}`, { token: t.acme })).status, 404);
+  } finally {
+    mailer.setSender(null);
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});

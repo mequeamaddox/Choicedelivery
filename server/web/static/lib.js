@@ -43,6 +43,7 @@ export async function api(path, { method = 'GET', body } = {}) {
     if (res.status === 401 && token && !path.startsWith('/auth/login')) setSession(null, null);
     const err = new Error(data?.message || `Request failed (${res.status})`);
     err.status = res.status;
+    err.data = data;
     throw err;
   }
   return data;
@@ -146,6 +147,7 @@ export function useApi(path, { pollMs } = {}) {
 
 // ---------- Formatting ----------
 export const STATUS = {
+  quote: { label: 'Saved quote', tone: 'gray' },
   pending: { label: 'Waiting for driver', tone: 'amber' },
   accepted: { label: 'Driver assigned', tone: 'blue' },
   at_pickup: { label: 'At pickup', tone: 'blue' },

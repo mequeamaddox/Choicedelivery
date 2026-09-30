@@ -123,6 +123,9 @@ async function loadDemoData(client, actorId) {
       vehicle: 'Car', level: 'standard', description: 'Deposition transcripts', weight: '6 lbs', pieces: '2',
       stops: [place('lawOffice', { status: 'completed', doneMin: 49.5 * 60, signedBy: 'Front desk' }),
         place('vista', { status: 'completed', doneMin: 49 * 60, signedBy: 'A. Moore' })] },
+    { org: realty, by: realtyUser, status: 'quote', createdMin: 3 * 60, vehicle: 'Cargo Van', level: 'standard',
+      description: 'Staging furniture for open house (saved quote)', weight: '300 lbs', pieces: '6',
+      stops: [place('titleCo', { contactName: 'Office' }), place('lexington', { contactName: 'Listing agent' })] },
     { org: medical, by: medUser, status: 'cancelled', createdMin: 30 * 60, cancelledMin: 29.5 * 60, vehicle: 'Car',
       level: 'standard', description: 'Pharmacy transfer (cancelled by office)', weight: '2 lbs', pieces: '1',
       stops: [place('medPark'), place('usc', { contactName: 'Student health' })] },
@@ -138,14 +141,15 @@ async function loadDemoData(client, actorId) {
       // Own numbering (DEMO-1001...) so sample orders don't use up real CD- order numbers.
       `INSERT INTO orders (organization_id, created_by, driver_id, status, vehicle_type, weight, number_of_pieces,
          description, price_cents, price_breakdown, distance_miles, service_level, accepted_at, completed_at,
-         cancelled_at, created_at, updated_at, is_demo, order_number)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16,true,$17) RETURNING id`,
+         cancelled_at, created_at, updated_at, is_demo, order_number, booked_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16,true,$17,
+               CASE WHEN $4 = 'quote' THEN NULL ELSE $16::timestamptz END) RETURNING id`,
       [o.org, o.by, o.driver || null, o.status, o.vehicle, o.weight, o.pieces, o.description, breakdown.totalCents,
         JSON.stringify(breakdown), breakdown.distanceMiles, o.level, o.acceptedMin ? ago(o.acceptedMin) : null,
         o.status === 'completed' && stopsDone ? ago(Math.min(...o.stops.map((s) => s.doneMin))) : null,
         o.cancelledMin ? ago(o.cancelledMin) : null, created, `DEMO-${1001 + index}`]);
 
-    const events = [[created, o.by, 'created', {}]];
+    const events = [[created, o.by, o.status === 'quote' ? 'quoted' : 'created', {}]];
     if (o.acceptedMin) events.push([ago(o.acceptedMin), o.driver, 'accepted', {}]);
     for (let i = 0; i < o.stops.length; i++) {
       const s = o.stops[i];

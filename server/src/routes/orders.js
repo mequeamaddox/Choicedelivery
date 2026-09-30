@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
-  ACTIVE, recordEvent, createOrder, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, bookQuote, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
@@ -58,10 +58,42 @@ router.get('/', asyncH(async (req, res) => {
 router.post('/', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
   const id = await db.withTx((client) => createOrder(client, req.user, req.body || {}));
   const order = await getOrderFor(req.user, id);
+  if (order.status === 'quote') {
+    emailShipper(order.id, 'quote_saved');
+    return res.status(201).json(order);
+  }
   // Card orders notify drivers once paid (see the Stripe webhook).
   if (order.paymentStatus !== 'unpaid') notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
   emailShipper(order.id, 'booked');
   res.status(201).json(order);
+}));
+
+// Books a saved quote. Body: { expectedCents } = the price the customer was shown. If the price has
+// changed since (time of day, demand, weather), the quote is updated and 409 is returned instead.
+router.post('/:id/book', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
+  const current = await getOrderFor(req.user, req.params.id);
+  if (current.status !== 'quote') throw new HttpError(409, 'This order is already booked');
+  const expectedCents = req.body?.expectedCents;
+  const result = await db.withTx((client) => bookQuote(client, req.user, current.id, { expectedCents }));
+  const order = await getOrderFor(req.user, current.id);
+  if (!result.booked) {
+    const money = (c) => `$${(c / 100).toFixed(2)}`;
+    return res.status(409).json({
+      message: `The price is now ${money(result.priceCents)} (it was ${money(expectedCents)}) because of the time of day, demand or weather. Review it and book again.`,
+      priceChanged: true, order,
+    });
+  }
+  if (order.paymentStatus !== 'unpaid') notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+  emailShipper(order.id, 'booked');
+  res.json(order);
+}));
+
+// Deletes a saved quote (booked orders are cancelled instead, so their history is kept).
+router.delete('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
+  const current = await getOrderFor(req.user, req.params.id);
+  if (current.status !== 'quote') throw new HttpError(409, 'Only saved quotes can be deleted; cancel the order instead');
+  await db.query("DELETE FROM orders WHERE id = $1 AND status = 'quote'", [current.id]);
+  res.status(204).end();
 }));
 
 // Driver barcode scan: completes the next pickup stop on the order with that tracking number.
@@ -96,7 +128,7 @@ router.get('/:id', asyncH(async (req, res) => {
 router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
   const current = await getOrderFor(req.user, req.params.id);
   if (['completed', 'cancelled'].includes(current.status)) throw new HttpError(409, `Order is ${current.status}`);
-  if (req.user.role === 'shipper' && current.status !== 'pending') {
+  if (req.user.role === 'shipper' && !['quote', 'pending'].includes(current.status)) {
     throw new HttpError(409, 'A driver has accepted this order; contact dispatch to change it');
   }
   const b = req.body || {};
@@ -146,6 +178,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
 
 router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
   const current = await getOrderFor(req.user, req.params.id);
+  if (current.status === 'quote') throw new HttpError(409, 'This is a saved quote; delete it instead');
   if (req.user.role === 'shipper' && current.status !== 'pending') {
     throw new HttpError(409, 'A driver has accepted this order; contact dispatch to cancel it');
   }
@@ -192,6 +225,7 @@ router.post('/:id/checkout', requireRole('shipper', 'admin', 'dispatcher'), asyn
   const order = await getOrderFor(req.user, req.params.id);
   if (order.paymentStatus !== 'unpaid') throw new HttpError(409, 'This order does not need payment');
   if (order.status === 'cancelled') throw new HttpError(409, 'Order is cancelled');
+  if (order.status === 'quote') throw new HttpError(409, 'Book this quote first');
   if (!order.priceCents || order.priceCents < 50) throw new HttpError(409, 'This order has no price yet; contact dispatch');
   const { rows: [o] } = await db.query('SELECT stripe_session_id FROM orders WHERE id = $1', [order.id]);
   // Only one open payment link per order, so an old amount can't be paid after a change.
@@ -218,6 +252,7 @@ router.post('/:id/payment', requireRole('admin', 'dispatcher'), asyncH(async (re
     throw new HttpError(400, 'status must be paid, waived, invoice or unpaid');
   }
   const order = await getOrderFor(req.user, req.params.id);
+  if (order.status === 'quote') throw new HttpError(409, 'Book this quote first');
   if (order.paymentStatus === 'paid' && order.paymentMethod === 'card' && status !== 'paid') {
     throw new HttpError(409, 'This order was paid by card; cancel it to refund instead');
   }

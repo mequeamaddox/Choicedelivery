@@ -100,6 +100,16 @@ server registers its own webhook with Stripe and stores the signing secret, so n
 (setting `STRIPE_WEBHOOK_SECRET` manually still works and takes precedence). Switching to a live key
 (`sk_live_...`) registers a live webhook automatically. Admins see the status under Account → Online payments.
 
+## Saved quotes
+
+On the new-order page, **Save quote** keeps the order (route, details, price) without booking it. Quotes
+are listed under Orders → Quotes; drivers never see them, they don't count toward high-demand pricing and
+they have no tracking link. Opening one shows **Book & pay** (card customers) or **Book**. The price is
+rechecked at booking (time of day, weekend, demand, weather); if it changed, nothing is booked or charged
+and the customer sees the new price to confirm. A pickup time that has passed is booked as ASAP. A custom
+price dispatch sets on a quote is kept. Quotes can be deleted. API: `POST /orders` with
+`"saveAsQuote": true`, `POST /orders/:id/book {expectedCents}`, `DELETE /orders/:id` (quotes only).
+
 ## Driver portal
 
 Drivers log in at `app.choicedeliverysc.com` from their phone's browser (no app install): go online

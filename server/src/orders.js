@@ -49,8 +49,10 @@ async function insertStops(client, orderId, stops) {
   }
 }
 
+// body.saveAsQuote: save the order as a quote to book (and pay) later instead of booking it now.
 async function createOrder(client, actor, body) {
   const stops = normalizeStops(body.stops);
+  const isQuote = body.saveAsQuote === true;
   let organizationId = body.organizationId || null;
   if (actor.role === 'shipper') organizationId = actor.organization_id;
 
@@ -64,23 +66,19 @@ async function createOrder(client, actor, body) {
     if (!Number.isFinite(priceCents) || priceCents < 0) throw new HttpError(400, 'priceCents must be a positive integer');
   }
 
-  // Who pays how: dispatch-created orders and "invoice" companies are billed outside the app;
-  // card customers pay through Stripe before drivers see the job (when Stripe is set up).
-  let paymentStatus = 'invoice';
-  if (actor.role === 'shipper' && stripe.enabled()) {
-    const { rows: [org] } = await client.query('SELECT billing_mode FROM organizations WHERE id = $1', [organizationId]);
-    if (org?.billing_mode !== 'invoice') paymentStatus = 'unpaid';
-  }
+  const paymentStatus = await paymentStatusFor(client, actor.role, organizationId);
 
   let rows;
   try {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
-                           tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+                           tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status,
+                           status, booked_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END)
+       RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
-        body.scheduledAt || null, serviceLevel, paymentStatus]
+        body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending']
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -91,17 +89,55 @@ async function createOrder(client, actor, body) {
   const orderId = rows[0].id;
   await insertStops(client, orderId, stops);
   await repriceOrder(client, orderId, { fresh: true });
-  await recordEvent(client, orderId, actor.id, 'created');
+  await recordEvent(client, orderId, actor.id, isQuote ? 'quoted' : 'created');
   return orderId;
+}
+
+// Who pays how: dispatch-created orders and "invoice" companies are billed outside the app;
+// card customers pay through Stripe before drivers see the job (when Stripe is set up).
+async function paymentStatusFor(client, creatorRole, organizationId) {
+  if (creatorRole !== 'shipper' || !stripe.enabled()) return 'invoice';
+  const { rows: [org] } = await client.query('SELECT billing_mode FROM organizations WHERE id = $1', [organizationId]);
+  return org?.billing_mode === 'invoice' ? 'invoice' : 'unpaid';
+}
+
+// Books a saved quote. It's re-priced for the actual booking (time of day, weekend, demand, weather)
+// and a pickup time that has already passed becomes "as soon as possible". If the caller passes the
+// price they were shown (expectedCents) and it changed, the quote is updated but NOT booked, so nobody
+// is charged an amount they didn't see. Returns { booked, priceCents }.
+async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
+  const { rows: [o] } = await client.query(
+    `SELECT o.status, o.organization_id, o.scheduled_at, o.price_cents, u.role AS creator_role
+     FROM orders o LEFT JOIN users u ON u.id = o.created_by WHERE o.id = $1 FOR UPDATE OF o`, [orderId]);
+  if (!o) throw new HttpError(404, 'Order not found');
+  if (o.status !== 'quote') throw new HttpError(409, 'This order is already booked');
+  if (o.scheduled_at && new Date(o.scheduled_at) < new Date()) {
+    await client.query('UPDATE orders SET scheduled_at = NULL WHERE id = $1', [orderId]);
+  }
+  await repriceOrder(client, orderId, { fresh: true, at: new Date() });
+  const { rows: [priced] } = await client.query('SELECT price_cents FROM orders WHERE id = $1', [orderId]);
+  if (expectedCents != null && Number(expectedCents) !== priced.price_cents) {
+    await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [orderId]);
+    await recordEvent(client, orderId, actor.id, 'repriced', { fromCents: o.price_cents, toCents: priced.price_cents });
+    return { booked: false, priceCents: priced.price_cents };
+  }
+  // The creator's role decides billing: a quote dispatch prepared for a company is billed to account.
+  const paymentStatus = await paymentStatusFor(client, o.creator_role, o.organization_id);
+  await client.query(
+    `UPDATE orders SET status = 'pending', booked_at = now(), payment_status = $2, updated_at = now() WHERE id = $1`,
+    [orderId, paymentStatus]);
+  await recordEvent(client, orderId, actor.id, 'created', { fromQuote: true });
+  return { booked: true, priceCents: priced.price_cents };
 }
 
 // Recomputes distance and the formula price from the order's stops, service level and pickup time.
 // Demand and weather surcharges are captured when the order is booked (fresh) and kept on later
 // edits, so changing a detail doesn't surprise the customer with a new busy-time fee.
 // A custom price set by dispatch is kept; the breakdown is still updated for reference.
-async function repriceOrder(client, orderId, { fresh = false } = {}) {
+// Unscheduled (ASAP) orders are priced for when they were booked; unbooked quotes for now.
+async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
   const { rows: [o] } = await client.query(
-    'SELECT service_level, scheduled_at, created_at, price_breakdown FROM orders WHERE id = $1', [orderId]);
+    'SELECT status, service_level, scheduled_at, booked_at, created_at, price_breakdown FROM orders WHERE id = $1', [orderId]);
   const { rows: stops } = await client.query(
     'SELECT location FROM stops WHERE order_id = $1 ORDER BY sequence', [orderId]);
   const previous = o.price_breakdown?.context;
@@ -109,7 +145,7 @@ async function repriceOrder(client, orderId, { fresh = false } = {}) {
   const breakdown = calculatePrice({
     distanceMiles: routeMiles(stops.map((s) => s.location)),
     serviceLevel: o.service_level,
-    at: o.scheduled_at || o.created_at,
+    at: o.scheduled_at || at || (o.status === 'quote' ? new Date() : o.booked_at || o.created_at),
     openOrders: context.openOrders,
     badWeather: context.badWeather,
   });
@@ -178,6 +214,7 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
       ...(showDriverLocation ? { location: o.driver_location, locationUpdatedAt: o.driver_location_updated_at } : {}),
     } : null,
     serviceLevel: o.service_level,
+    isQuote: o.status === 'quote',
     distanceMiles: o.distance_miles == null ? null : Number(o.distance_miles),
     priceBreakdown: o.price_breakdown,
     priceIsCustom: o.price_is_custom,
@@ -198,12 +235,13 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
     completedAt: o.completed_at,
     cancelledAt: o.cancelled_at,
     createdAt: o.created_at,
+    bookedAt: o.booked_at || (o.status === 'quote' ? null : o.created_at),
     updatedAt: o.updated_at,
     notes: o.notes,
     stops: stops.map((s) => serializeStop(s, { proof })),
   };
-  if (user && isStaff(user)) out.trackingUrlToken = o.public_token;
-  if (user && user.role === 'shipper') out.trackingUrlToken = o.public_token;
+  // Quotes aren't trackable until they're booked.
+  if (user && (isStaff(user) || user.role === 'shipper') && o.status !== 'quote') out.trackingUrlToken = o.public_token;
   if (events) out.events = events.map((e) => ({ type: e.type, data: e.data, actorId: e.actor_id, at: e.created_at }));
   return out;
 }
@@ -306,6 +344,6 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
 }
 
 module.exports = {
-  ACTIVE, recordEvent, createOrder, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, bookQuote, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 };

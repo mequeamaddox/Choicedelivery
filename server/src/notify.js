@@ -8,6 +8,12 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const money = (c) => (c == null ? '' : `$${(c / 100).toFixed(2)}`);
 
 const MESSAGES = {
+  quote_saved: (o) => ({
+    subject: `Your quote ${o.order_number}: ${money(o.price_cents)}`,
+    line: `Your delivery quote of ${money(o.price_cents)} is saved. Book it any time from Orders → Quotes; the price is
+      rechecked when you book, since time of day, demand and weather can change it.`,
+    quote: true,
+  }),
   booked: (o) => ({
     subject: `Order ${o.order_number} booked`,
     line: o.payment_status === 'unpaid'
@@ -43,7 +49,7 @@ async function emailShipper(orderId, kind, extra = {}) {
        LEFT JOIN users d ON d.id = o.driver_id
        WHERE o.id = $1`, [orderId]);
     if (!o || o.is_demo || o.creator_role !== 'shipper' || !o.email_updates || !MESSAGES[kind]) return;
-    const { subject, line } = MESSAGES[kind](o, extra);
+    const { subject, line, quote } = MESSAGES[kind](o, extra);
     const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
     const track = `${base}/#/track/${o.public_token}`;
     const page = `${base}/#/orders/${o.id}`;
@@ -56,10 +62,12 @@ async function emailShipper(orderId, kind, extra = {}) {
     <p>Hi ${esc((o.shipper_name || '').split(' ')[0] || 'there')},</p>
     <p>${line}</p>
     <p style="color:#4b5563"><strong>${esc(o.order_number)}</strong><br>${esc(o.first_address)} &rarr; ${esc(o.last_address)}</p>
-    <p><a href="${track}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Track delivery</a>
+    ${quote
+    ? `<p><a href="${page}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">View &amp; book quote</a></p>`
+    : `<p><a href="${track}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Track delivery</a>
        &nbsp; <a href="${page}" style="color:#0f766e">View order</a></p>
-    <p style="color:#6b7280;font-size:12px">You can share the tracking link with whoever is receiving the delivery.
-      To stop these emails, turn off "Email updates" on your Account page.</p>
+    <p style="color:#6b7280;font-size:12px">You can share the tracking link with whoever is receiving the delivery.</p>`}
+    <p style="color:#6b7280;font-size:12px">To stop these emails, turn off "Email updates" on your Account page.</p>
   </div></div>`,
     });
   } catch (e) {
