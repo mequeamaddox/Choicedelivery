@@ -357,7 +357,7 @@ export function NewOrderPage() {
             <//>
           </div>
           <${Field} label="What are we moving?"><textarea rows="3" placeholder="Boxes of files, parts, small furniture, fragile items…" ...${bind('description')}></textarea><//>
-          <${Field} label="Your reference / tracking number" hint="Optional. Drivers can scan it as a barcode at pickup.">
+          <${Field} label="Your reference / tracking number" hint="Optional. If your packages have a barcode label, drivers can scan it at pickup to double-check.">
             <input ...${bind('trackingNumber')} />
           <//>
         </section>
@@ -389,6 +389,7 @@ export function NewOrderPage() {
 
 const EVENT_LABELS = {
   quoted: 'Quote saved',
+  barcode_scanned: 'Driver scanned the package barcode',
   review_requested: 'Sent for a custom price',
   price_set: 'Price set by dispatch',
   charge_added: 'Additional charge added',

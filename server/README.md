@@ -246,9 +246,9 @@ New open orders send a push notification to online drivers (or all drivers, if n
 | `POST /orders/:id/assign` | staff | `{driverId}` (or `null` to unassign) |
 | `POST /orders/:id/accept` | driver | Claim an open job (first driver wins) |
 | `POST /orders/:id/stops/:stopId/arrive` | driver | Arrived at the next stop |
-| `POST /orders/:id/stops/:stopId/complete` | driver | `{signature?, photo?, printedName?}` |
+| `POST /orders/:id/stops/:stopId/complete` | driver | `{signature?, photo?, printedName?}`: a signature or photo is required |
 | `POST /orders/:id/notes` | involved users | `{note}` |
-| `POST /orders/scan` | driver | `{barcode}`: picks up the order with that tracking number |
+| `POST /orders/scan` | driver | `{barcode}`: optional check; finds the job with that reference number and records the barcode on your next pickup (never completes it) |
 | `GET /track/:token` | anyone | Public tracking |
 
 ## Local development

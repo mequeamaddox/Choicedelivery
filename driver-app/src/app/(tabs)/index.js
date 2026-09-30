@@ -111,7 +111,7 @@ function JobsList() {
       <ErrorBox error={error || jobs.error} />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <H2>Your jobs</H2>
-        <Button title="Scan" icon="▦" variant="secondary" onPress={() => router.push('/scan')} style={{ minHeight: 40 }} />
+        <Button title="Find by barcode" variant="ghost" onPress={() => router.push('/scan')} style={{ minHeight: 40, paddingHorizontal: 4 }} />
       </View>
       {jobs.loading ? <Muted>Loading…</Muted> : mine.length === 0 ? <Muted>No active jobs. Accept one below.</Muted>
         : mine.map((o) => (

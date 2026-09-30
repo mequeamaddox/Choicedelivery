@@ -87,7 +87,11 @@ test('a driver goes online, accepts a job, works both stops and sees it in histo
   await assert.rejects(d.api.complete(order.id, job.stops[1].id, { signature: 'data:x' }), (e) => e.status === 409, 'stops go in order');
   job = await d.api.arrive(order.id, pickup.id);
   assert.equal(job.status, 'at_pickup');
-  await assert.rejects(d.api.complete(order.id, pickup.id, {}), (e) => /signature, photo or barcode/.test(e.message));
+  await assert.rejects(d.api.complete(order.id, pickup.id, {}), (e) => /signature or photo/.test(e.message));
+  // The optional barcode check records the barcode but doesn't pick anything up.
+  job = await d.api.scan('PKG-777');
+  assert.equal(job.scan.stopId, pickup.id);
+  assert.equal(job.status, 'at_pickup');
   job = await d.api.complete(order.id, pickup.id, { signature: 'data:image/png;base64,AAAA', printedName: 'Front desk' });
   assert.equal(job.status, 'in_transit');
   job = await d.api.addNote(order.id, 'Traffic on Assembly, 10 min out');
@@ -99,10 +103,12 @@ test('a driver goes online, accepts a job, works both stops and sees it in histo
   assert.equal(nextStop(job), null);
   assert.deepEqual((await d.api.history()).map((o) => o.id), [order.id]);
 
-  // Barcode scan at pickup claims the open job and completes the pickup.
+  // Scanning an open job's barcode just finds it; the driver still accepts and confirms the pickup.
   job = await d.api.scan('PKG-888');
   assert.equal(job.id, second.id);
-  assert.equal(job.status, 'in_transit');
+  assert.equal(job.status, 'pending');
+  assert.equal(job.scan.stopId, null);
+  job = await d.api.accept(second.id);
   await assert.rejects(d.api.scan('NOPE'), (e) => e.status === 404);
 
   const tracking = await admin.api.request(`/orders/${second.id}`);

@@ -40,7 +40,7 @@ function Gate() {
       <Stack.Protected guard={!!user}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="job/[id]" options={{ title: 'Job' }} />
-        <Stack.Screen name="scan" options={{ title: 'Scan barcode', presentation: 'modal' }} />
+        <Stack.Screen name="scan" options={{ title: 'Scan a barcode', presentation: 'modal' }} />
         <Stack.Screen name="profile" options={{ title: 'Your profile' }} />
         <Stack.Screen name="password" options={{ title: 'Change password' }} />
       </Stack.Protected>

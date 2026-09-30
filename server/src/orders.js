@@ -404,11 +404,12 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
   const { order, stops } = await lockDriverOrder(client, driver.id, orderId);
   const stop = nextStop(stops);
   if (!stop || stop.id !== stopId) throw new HttpError(409, 'Stops must be completed in order; this is not the next stop');
-  if (!signature && !photo && !barcode) throw new HttpError(400, 'A signature, photo or barcode scan is required');
+  // A scanned barcode is extra proof only; not every shipment has one, so it never replaces these.
+  if (!signature && !photo) throw new HttpError(400, 'A signature or photo is required');
   stop.status = 'completed';
   await client.query(
     `UPDATE stops SET status = 'completed', arrived_at = COALESCE(arrived_at, now()), completed_at = now(),
-       signature = $2, photo = $3, printed_name = $4, barcode = $5 WHERE id = $1`,
+       signature = $2, photo = $3, printed_name = $4, barcode = COALESCE($5, barcode) WHERE id = $1`,
     [stop.id, signature || null, photo || null, str(printedName) || null, barcode || null]
   );
   await recordEvent(client, order.id, driver.id, 'stop_completed', {

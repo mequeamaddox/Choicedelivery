@@ -199,17 +199,30 @@ test('dispatch assigns, reassigns and unassigns; shipper cancels pending orders'
   assert.equal(r.status, 409);
 });
 
-test('barcode scan picks up the matching shipment', async () => {
+test('barcode scan is an optional check: it finds the job and records the barcode, never picks up', async () => {
   let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ trackingNumber: 'SCAN-9' }) });
   const id = r.data.id;
   r = await call('POST', '/orders/scan', { token: t.d1, body: { barcode: 'SCAN-9' } });
-  assert.equal(r.status, 200);
-  assert.equal(r.data.status, 'in_transit');
-  assert.equal(r.data.driver.id, ids.d1);
+  assert.equal(r.status, 200, 'finds an open job');
+  assert.equal(r.data.id, id);
+  assert.equal(r.data.status, 'pending', 'scanning does not accept the job');
+  assert.equal(r.data.scan.stopId, null);
+  r = await call('POST', `/orders/${id}/accept`, { token: t.d1 });
+  const pickup = r.data.stops[0];
   r = await call('POST', '/orders/scan', { token: t.d1, body: { barcode: 'SCAN-9' } });
-  assert.equal(r.status, 409, 'cannot scan twice');
+  assert.equal(r.data.scan.stopId, pickup.id, 'recorded on the next pickup');
+  assert.equal(r.data.status, 'accepted', 'and the pickup is not completed');
+  assert.equal(r.data.stops[0].barcode, 'SCAN-9');
+  r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { barcode: 'SCAN-9' } });
+  assert.equal(r.status, 400, 'a barcode alone is not proof of pickup');
+  assert.match(r.data.message, /signature or photo/);
+  r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x' } });
+  assert.equal(r.data.status, 'in_transit');
+  assert.equal(r.data.stops[0].barcode, 'SCAN-9', 'the scanned barcode is kept with the proof');
   r = await call('POST', '/orders/scan', { token: t.d2, body: { barcode: 'SCAN-9' } });
-  assert.equal(r.status, 404, "cannot scan another driver's shipment");
+  assert.equal(r.status, 404, "other drivers can't find someone else's job");
+  r = await call('POST', '/orders/scan', { token: t.d1, body: { barcode: 'NOPE' } });
+  assert.equal(r.status, 404);
   await call('POST', `/orders/${id}/cancel`, { token: t.admin });
 });
 

@@ -1,5 +1,6 @@
-// Scan a package barcode at pickup: finds the matching shipment (by its reference number), assigns it
-// to you if it's open, and marks the pickup done.
+// Optional barcode check for shipments that have a label (not every shipper uses one). Finds the matching
+// job; on your own job it records the barcode on the pickup. It never accepts a job or completes a pickup:
+// that still takes a signature or photo.
 import { useRef, useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -41,7 +42,8 @@ export default function Scan() {
       <CameraView style={{ flex: 1 }} facing="back" onBarcodeScanned={busy ? undefined : onScan}
         barcodeScannerSettings={{ barcodeTypes: ['code128', 'code39', 'code93', 'ean13', 'ean8', 'upc_a', 'upc_e', 'qr', 'datamatrix', 'pdf417', 'itf14', 'codabar'] }} />
       <View style={{ padding: 16, gap: 10, backgroundColor: '#fff' }}>
-        {busy ? <Notice tone="blue">Looking up that shipment…</Notice> : <Muted>Point the camera at the package barcode.</Muted>}
+        {busy ? <Notice tone="blue">Looking up that shipment…</Notice>
+          : <Muted>Point the camera at the package barcode. This only finds and double-checks the job; you'll still confirm the pickup with a signature or photo.</Muted>}
         <ErrorBox error={error} />
       </View>
     </View>

@@ -19,7 +19,8 @@ dispatch and customers right away.
 - **Accept jobs**, then work through each stop in order: **Navigate** (Google/Apple Maps), **Call** the contact,
   **I've arrived** (starts a wait timer showing the free minutes from your rate card), then confirm with a
   finger **signature** and/or a **photo** plus the printed name.
-- **Scan** a package barcode at pickup to claim and pick up that shipment in one step.
+- **Barcode check (optional)**: for shipments with a barcode label, scan it to find the job and double-check it's the
+  right package. It's recorded with the pickup, but the pickup is always confirmed with a signature or photo.
 - See booked extras (loading help, inside delivery), piece count and heaviest piece, and add **notes** for dispatch.
 - **History** of completed deliveries, and **Account** for name, phone and vehicle.
 

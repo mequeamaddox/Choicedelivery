@@ -117,32 +117,31 @@ router.delete('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(asyn
   res.status(204).end();
 }));
 
-// Driver barcode scan: completes the next pickup stop on the order with that tracking number.
+// Optional barcode check for shipments that have one (not every shipper uses a BOL or labels). Finds the
+// driver's job, or an open job, with that reference number. On the driver's own job it records the barcode
+// on the next pickup as extra proof. It never accepts a job or completes a pickup: the driver still does
+// that with a signature or photo.
 router.post('/scan', driverOnly, asyncH(async (req, res) => {
   const barcode = str(req.body?.barcode);
   if (!barcode) throw new HttpError(400, 'barcode is required');
-  const blocker = driverWorkBlocker(await getUser(req.user.id));
-  if (blocker) throw new HttpError(409, blocker);
-  const id = await db.withTx(async (client) => {
-    // Same rules as accepting: open, not a demo order, and paid (or billed to account).
-    const { rows } = await client.query(
-      `UPDATE orders SET driver_id = $2, status = 'accepted', accepted_at = now(), updated_at = now()
-       WHERE tracking_number = $1 AND status = 'pending' AND driver_id IS NULL AND NOT is_demo
-         AND payment_status <> 'unpaid' RETURNING id`,
-      [barcode, req.user.id]
-    );
-    if (rows[0]) await recordEvent(client, rows[0].id, req.user.id, 'accepted', { via: 'scan' });
-    const { rows: found } = await client.query(
-      'SELECT id FROM orders WHERE tracking_number = $1 AND driver_id = $2', [barcode, req.user.id]);
-    if (!found[0]) throw new HttpError(404, 'No open shipment of yours matches that barcode');
-    const orderId = found[0].id;
-    const stop = nextStop((await loadStops(client, [orderId])).get(orderId));
-    if (!stop || stop.type !== 'pickup') throw new HttpError(409, 'This shipment has already been picked up');
-    await completeStop(client, req.user, orderId, stop.id, { barcode });
-    return orderId;
-  });
-  emailShipper(id, 'picked_up');
-  res.json(await getOrderFor(req.user, id));
+  const params = [barcode];
+  const where = visibilityFilter(req.user, params);
+  const { rows } = await db.query(
+    `SELECT o.id, o.driver_id FROM orders o WHERE o.tracking_number = $1 AND o.status <> 'cancelled' AND ${where}`, params);
+  if (!rows[0]) throw new HttpError(404, 'No job of yours or open job matches that barcode');
+  const { id } = rows[0];
+  let matchedStop = null;
+  if (rows[0].driver_id === req.user.id) {
+    await db.withTx(async (client) => {
+      const stop = nextStop((await loadStops(client, [id])).get(id));
+      if (stop && stop.type === 'pickup') {
+        await client.query('UPDATE stops SET barcode = $2 WHERE id = $1', [stop.id, barcode]);
+        await recordEvent(client, id, req.user.id, 'barcode_scanned', { stopId: stop.id, barcode });
+        matchedStop = stop.id;
+      }
+    });
+  }
+  res.json({ ...(await getOrderFor(req.user, id)), scan: { barcode, stopId: matchedStop } });
 }));
 
 router.get('/:id', asyncH(async (req, res) => {

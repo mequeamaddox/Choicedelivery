@@ -160,8 +160,10 @@ export default function Job() {
           {next.status === 'pending' ? (
             <Button title="I've arrived" big loading={busy} onPress={() => act(() => api.arrive(order.id, next.id))} />
           ) : <WaitTimer stop={next} freeMinutes={freeMinutes} />}
-          {next.type === 'pickup' && order.trackingNumber ? (
-            <Button title="Scan package barcode instead" variant="ghost" onPress={() => router.push('/scan')} />
+          {next.type === 'pickup' && next.barcode ? (
+            <Notice tone="green">✓ Package barcode {next.barcode} matches this job.</Notice>
+          ) : next.type === 'pickup' && order.trackingNumber ? (
+            <Button title="Double-check the package barcode (optional)" variant="ghost" onPress={() => router.push('/scan')} />
           ) : null}
           {next.status !== 'pending' ? <ProofForm key={next.id} order={order} stop={next} onDone={job.setData} /> : null}
         </Card>
