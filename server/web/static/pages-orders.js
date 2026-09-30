@@ -1,5 +1,5 @@
 import {
-  html, useState, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
+  html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
   trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS,
 } from './lib.js';
 import {
@@ -59,7 +59,7 @@ export function OrdersPage() {
               ${rows.map((o) => html`
                 <tr class="clickable" onClick=${() => navigate(`/orders/${o.id}`)}>
                   <td data-label="Order"><a class="nowrap" href=${`#/orders/${o.id}`} onClick=${(e) => e.stopPropagation()}><strong>${o.orderNumber}</strong></a>
-                    <div class="muted small">${o.serviceLevel === 'same_day' ? 'Same-day · ' : ''}${o.vehicleType}</div></td>
+                    <div class="muted small">${o.serviceLevel === 'rush' ? 'Rush · ' : ''}${o.vehicleType}</div></td>
                   <td data-label="Route"><${RouteSummary} stops=${o.stops} /></td>
                   ${isStaff(user) && html`<td data-label="Company">${o.organization?.name || html`<span class="muted">Internal</span>`}</td>`}
                   <td data-label="Driver">${o.driver?.name || html`<span class="muted">—</span>`}</td>
@@ -76,19 +76,37 @@ export function OrdersPage() {
 
 const blankStop = (type) => ({ type, address: '', location: null, contactName: '', contactPhone: '', instructions: '' });
 
-// Approximate road miles along the route (straight line x 1.2), when every stop has coordinates.
-function routeMiles(stops) {
-  if (stops.some((s) => !s.location)) return null;
-  const rad = (d) => (d * Math.PI) / 180;
-  let miles = 0;
-  for (let i = 1; i < stops.length; i++) {
-    const a = stops[i - 1].location;
-    const b = stops[i].location;
-    const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2
-      + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
-    miles += 2 * 3958.8 * Math.asin(Math.sqrt(h));
-  }
-  return Math.round(miles * 1.2 * 10) / 10;
+// Live quote from the server (same formula used when the order is booked).
+function useQuote(stops, serviceLevel, vehicleType) {
+  const [quote, setQuote] = useState(null);
+  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, vehicleType]);
+  useEffect(() => {
+    if (stops.some((s) => !s.address.trim() && !s.location)) { setQuote(null); return undefined; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const q = await api('/public/quote', { method: 'POST', body: {
+          stops: stops.map((s) => ({ address: s.address, location: s.location || undefined })), serviceLevel, vehicleType,
+        } });
+        if (!cancelled) setQuote(q);
+      } catch { /* the estimate is optional */ }
+    }, 600);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [key]);
+  return quote;
+}
+
+// Itemized price, as on the original quote page.
+export function PriceBreakdown({ q, vehicleType }) {
+  if (!q) return null;
+  return html`
+    <dl class="breakdown">
+      <dt>Base fee (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
+      ${q.extraMileageCents > 0 && html`<dt>Extra mileage (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>${formatMoney(q.extraMileageCents)}</dd>`}
+      ${q.vehicleAdjustmentCents > 0 && html`<dt>Vehicle adjustment (${vehicleType || q.vehicleType})</dt><dd>+${formatMoney(q.vehicleAdjustmentCents)}</dd>`}
+      ${q.rushFeeCents > 0 && html`<dt>Rush delivery fee</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
+      <dt class="total">Total</dt><dd class="total">${formatMoney(q.totalCents)}</dd>
+    </dl>`;
 }
 
 function StopEditor({ stops, setStops }) {
@@ -137,12 +155,13 @@ export function NewOrderPage() {
   const pricing = useApi('/public/pricing');
   const [stops, setStops] = useState([blankStop('pickup'), blankStop('dropoff')]);
   const [v, setV] = useState({
-    serviceLevel: 'standard', vehicleType: 'Cargo Van', weight: '', numberOfPieces: '', description: '', trackingNumber: '',
+    serviceLevel: 'standard', vehicleType: 'Car', weight: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '',
   });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
+  const quote = useQuote(stops, v.serviceLevel, v.vehicleType);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -189,25 +208,30 @@ export function NewOrderPage() {
               <label class=${`choice ${v.serviceLevel === l.id ? 'selected' : ''}`}>
                 <input type="radio" name="serviceLevel" value=${l.id} checked=${v.serviceLevel === l.id}
                   onChange=${() => setV({ ...v, serviceLevel: l.id })} />
-                <span><strong>${l.id === 'same_day' ? 'Same-day (rush)' : 'Standard'}</strong>
-                  <span class="muted small">${l.id === 'same_day' ? 'Urgent, delivered today' : 'Reliable next-day delivery'}</span></span>
-                <span class="price push">${formatMoney(l.priceCents)}</span>
+                <span><strong>${l.id === 'rush' ? 'Rush delivery' : 'Standard delivery'}</strong>
+                  <span class="muted small">${l.id === 'rush' ? '2 hours or less' : `${formatMoney(pricing.data.baseFeeCents)} base, first ${pricing.data.baseMiles} miles`}</span></span>
+                <span class="price push">${l.feeCents ? `+${formatMoney(l.feeCents)}` : ''}</span>
               </label>`)}
           </div>
-          ${!staff && pricing.data && html`
-            <div class="estimate">
-              <span>Estimated price${routeMiles(stops) != null ? html` · about ${routeMiles(stops)} miles` : ''}<br /><span class="muted small">Long-distance, oversized or multi-stop deliveries are confirmed by dispatch.</span></span>
-              <span class="price">${formatMoney(pricing.data.serviceLevels.find((l) => l.id === v.serviceLevel)?.priceCents)}</span>
-            </div>`}
+          <${Field} label="Vehicle needed">
+            <select value=${v.vehicleType} onChange=${(e) => setV({ ...v, vehicleType: e.target.value })}>
+              ${(pricing.data?.vehicleTypes || VEHICLE_TYPES).map((t) => html`<option>${t}</option>`)}
+            </select>
+          <//>
+          <div class="estimate">
+            <div class="estimate-head">
+              <span><strong>Estimated price</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
+              <span class="price">${quote ? formatMoney(quote.totalCents) : '—'}</span>
+            </div>
+            ${quote ? html`<${PriceBreakdown} q=${quote} vehicleType=${v.vehicleType} />
+              <p class="muted small">${quote.note}</p>`
+              : html`<p class="muted small">Enter the addresses to see your price.</p>`}
+            ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
+          </div>
         </section>
         <section class="card">
           <h2>Shipment</h2>
           <div class="grid-2">
-            <${Field} label="Vehicle needed">
-              <select ...${bind('vehicleType')} onChange=${(e) => setV({ ...v, vehicleType: e.target.value })}>
-                ${VEHICLE_TYPES.map((t) => html`<option>${t}</option>`)}
-              </select>
-            <//>
             <${Field} label="Pickup time" hint="Leave empty for as soon as possible.">
               <input type="datetime-local" ...${bind('scheduledAt')} />
             <//>
@@ -229,7 +253,7 @@ export function NewOrderPage() {
                   ${(companies.data || []).map((c) => html`<option value=${c.id}>${c.name}</option>`)}
                 </select>
               <//>
-              <${Field} label="Price (USD)" hint="Leave empty to use the standard rate for the service level."><input type="number" min="0" step="0.01" ...${bind('price')} /><//>
+              <${Field} label="Custom price (USD)" hint="Leave empty to use the calculated price."><input type="number" min="0" step="0.01" ...${bind('price')} /><//>
             </div>
           </section>`}
         <div class="form-actions">
@@ -377,8 +401,10 @@ export function OrderPage({ id }) {
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}</dd>
               <dt>Pickup time</dt><dd>${order.scheduledAt ? formatDate(order.scheduledAt) : 'ASAP'}</dd>
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
-              <dt>Price</dt><dd>${formatMoney(order.priceCents)}</dd>
+              <dt>Distance</dt><dd>${order.distanceMiles != null ? `about ${order.distanceMiles} mi` : '—'}</dd>
+              <dt>Price</dt><dd>${formatMoney(order.priceCents)}${order.priceIsCustom ? ' (set by dispatch)' : ''}</dd>
             </dl>
+            ${order.priceBreakdown && !order.priceIsCustom && html`<${PriceBreakdown} q=${order.priceBreakdown} />`}
             ${order.description && html`<p class="small">${order.description}</p>`}
           </section>
           <section class="card">

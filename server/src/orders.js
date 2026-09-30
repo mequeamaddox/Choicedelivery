@@ -2,7 +2,7 @@
 const db = require('./db');
 const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
-const { isServiceLevel, defaultPriceCents } = require('./pricing');
+const { isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles } = require('./pricing');
 
 const ACTIVE = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'];
 
@@ -53,10 +53,10 @@ async function createOrder(client, actor, body) {
   let organizationId = body.organizationId || null;
   if (actor.role === 'shipper') organizationId = actor.organization_id;
 
-  const serviceLevel = body.serviceLevel === undefined ? 'standard' : body.serviceLevel;
-  if (!isServiceLevel(serviceLevel)) throw new HttpError(400, 'serviceLevel must be "standard" or "same_day"');
-  // Published rate by default; dispatch can set a custom price.
-  let priceCents = defaultPriceCents(serviceLevel);
+  const serviceLevel = normalizeServiceLevel(body.serviceLevel === undefined ? 'standard' : body.serviceLevel);
+  if (!isServiceLevel(serviceLevel)) throw new HttpError(400, 'serviceLevel must be "standard" or "rush"');
+  // Priced by the distance formula (see repriceOrder) unless dispatch sets a custom price.
+  let priceCents = null;
   if (body.priceCents != null) {
     if (!isStaff(actor)) throw new HttpError(403, 'Only dispatch can set a price');
     priceCents = Number.parseInt(body.priceCents, 10);
@@ -67,10 +67,11 @@ async function createOrder(client, actor, body) {
   try {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
-                           tracking_number, price_cents, scheduled_at, service_level)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+                           tracking_number, price_cents, price_is_custom, scheduled_at, service_level)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
-        str(body.description), str(body.trackingNumber) || null, priceCents, body.scheduledAt || null, serviceLevel]
+        str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
+        body.scheduledAt || null, serviceLevel]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -80,8 +81,28 @@ async function createOrder(client, actor, body) {
   }
   const orderId = rows[0].id;
   await insertStops(client, orderId, stops);
+  await repriceOrder(client, orderId);
   await recordEvent(client, orderId, actor.id, 'created');
   return orderId;
+}
+
+// Recomputes distance and the formula price from the order's stops, vehicle and service level.
+// A custom price set by dispatch is kept; the breakdown is still updated for reference.
+async function repriceOrder(client, orderId) {
+  const { rows: [o] } = await client.query(
+    'SELECT service_level, vehicle_type, price_is_custom FROM orders WHERE id = $1', [orderId]);
+  const { rows: stops } = await client.query(
+    'SELECT location FROM stops WHERE order_id = $1 ORDER BY sequence', [orderId]);
+  const breakdown = calculatePrice({
+    distanceMiles: routeMiles(stops.map((s) => s.location)),
+    serviceLevel: o.service_level,
+    vehicleType: o.vehicle_type,
+  });
+  await client.query(
+    `UPDATE orders SET distance_miles = $2, price_breakdown = $3,
+       price_cents = CASE WHEN price_is_custom THEN price_cents ELSE $4 END WHERE id = $1`,
+    [orderId, breakdown.distanceMiles, JSON.stringify(breakdown), breakdown.totalCents]
+  );
 }
 
 // SQL fragment + params limiting which orders a user can see.
@@ -138,6 +159,9 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
       ...(showDriverLocation ? { location: o.driver_location, locationUpdatedAt: o.driver_location_updated_at } : {}),
     } : null,
     serviceLevel: o.service_level,
+    distanceMiles: o.distance_miles == null ? null : Number(o.distance_miles),
+    priceBreakdown: o.price_breakdown,
+    priceIsCustom: o.price_is_custom,
     vehicleType: o.vehicle_type,
     weight: o.weight,
     numberOfPieces: o.number_of_pieces,
@@ -258,6 +282,6 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
 }
 
 module.exports = {
-  ACTIVE, recordEvent, createOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 };

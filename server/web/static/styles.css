@@ -265,3 +265,9 @@ tr.inactive td { opacity: .6; }
 .welcome h1 { color: #fff; }
 .welcome p { opacity: .92; margin-top: .35rem; }
 .welcome .btn { background: #fff; color: var(--teal); border-color: #fff; }
+.estimate { display: block; }
+.estimate-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: .5rem; }
+.estimate-head .price { font-size: 1.4rem; }
+.breakdown { display: grid; grid-template-columns: 1fr auto; gap: .25rem 1rem; margin: 0 0 .5rem; font-size: .9rem; }
+.breakdown dd { margin: 0; text-align: right; }
+.breakdown .total { border-top: 1px solid var(--mint-light); padding-top: .35rem; font-weight: 700; }

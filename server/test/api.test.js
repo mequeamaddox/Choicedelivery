@@ -282,17 +282,55 @@ test('web app is served with security headers', async () => {
   assert.equal(res.status, 404);
 });
 
-test('orders are priced by service level; shippers cannot undercut', async () => {
-  let r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
-  assert.equal(r.data.serviceLevel, 'standard');
-  assert.equal(r.data.priceCents, 2500);
+test('pricing formula matches the original quote page', () => {
+  const { calculatePrice, VEHICLE_MULTIPLIERS } = require('../src/pricing');
+  assert.equal(calculatePrice({ distanceMiles: 4 }).totalCents, 2500, 'first 10 miles are the base fee');
+  assert.equal(calculatePrice({ distanceMiles: 10 }).totalCents, 2500);
+  assert.equal(calculatePrice({ distanceMiles: 50 }).totalCents, 8500, '$25 + 40 mi x $1.50');
+  assert.equal(calculatePrice({ distanceMiles: 50, serviceLevel: 'rush' }).totalCents, 13500, 'rush adds $50');
+  assert.equal(calculatePrice({ distanceMiles: 50, serviceLevel: 'same_day' }).rushFeeCents, 5000, 'old name still works');
+  assert.equal(calculatePrice({ distanceMiles: null }).distanceConfirmed, false);
+  const saved = VEHICLE_MULTIPLIERS.Truck;
+  VEHICLE_MULTIPLIERS.Truck = 1.2;
+  const q = calculatePrice({ distanceMiles: 20, vehicleType: 'Truck' });
+  assert.equal(q.subtotalCents, 4000);
+  assert.equal(q.vehicleAdjustmentCents, 800, 'multiplier applies to base + mileage');
+  assert.equal(q.totalCents, 4800);
+  VEHICLE_MULTIPLIERS.Truck = saved;
+});
+
+test('orders are priced on the server by distance; dispatch can override', async () => {
+  const far = orderBody({ stops: [
+    { type: 'pickup', address: 'Columbia', location: { lat: 34.0007, lng: -81.0348 } },
+    { type: 'dropoff', address: 'Charleston', location: { lat: 32.7765, lng: -79.9311 } },
+  ] });
+  let r = await call('POST', '/orders', { token: t.acme, body: { ...far, priceCents: undefined } });
+  const miles = r.data.distanceMiles;
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.ok(miles > 100 && miles < 160, `distance ${miles}`);
+  assert.equal(r.data.priceCents, 2500 + Math.round((miles - 10) * 150));
+  assert.equal(r.data.priceIsCustom, false);
+  assert.equal(r.data.priceBreakdown.totalCents, r.data.priceCents);
   const id = r.data.id;
-  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { serviceLevel: 'same_day' } });
-  assert.equal(r.data.priceCents, 5000, 'switching to rush reprices');
+
+  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { serviceLevel: 'rush' } });
+  assert.equal(r.data.priceCents, 2500 + Math.round((miles - 10) * 150) + 5000, 'switching to rush reprices');
+
   r = await call('POST', '/orders', { token: t.acme, body: orderBody({ serviceLevel: 'teleport' }) });
   assert.equal(r.status, 400);
-  r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ serviceLevel: 'same_day', priceCents: 6500 }) });
-  assert.equal(r.data.priceCents, 6500, 'dispatch can set a custom price');
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+  assert.equal(r.data.priceCents, 2500, 'without map locations the base fee applies');
+  assert.equal(r.data.distanceMiles, null);
+  await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
+
+  r = await call('PATCH', `/orders/${id}`, { token: t.dispatcher, body: { priceCents: 9900 } });
+  assert.equal(r.data.priceCents, 9900);
+  assert.equal(r.data.priceIsCustom, true);
+  r = await call('PATCH', `/orders/${id}`, { token: t.dispatcher, body: { description: 'edited' } });
+  assert.equal(r.data.priceCents, 9900, 'custom price survives other edits');
+  r = await call('PATCH', `/orders/${id}`, { token: t.dispatcher, body: { priceCents: null } });
+  assert.equal(r.data.priceIsCustom, false, 'clearing the price returns to the formula');
+  assert.equal(r.data.priceCents, r.data.priceBreakdown.totalCents);
   await call('POST', `/orders/${id}/cancel`, { token: t.admin });
 });
 
@@ -347,9 +385,10 @@ test('address suggestions and distance-aware quotes', async () => {
   await call('GET', '/public/geocode?q=1515%20Manning%20Ave%20columbia');
   assert.equal(calls, before, 'repeat lookups are cached');
 
-  r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'charleston', serviceLevel: 'same_day' } });
-  assert.equal(r.data.priceCents, 5000);
+  r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'charleston', serviceLevel: 'rush', vehicleType: 'Car' } });
   assert.ok(r.data.distanceMiles > 100 && r.data.distanceMiles < 160, `distance ${r.data.distanceMiles}`);
+  assert.equal(r.data.totalCents, 2500 + Math.round((r.data.distanceMiles - 10) * 150) + 5000);
+  assert.equal(r.data.priceCents, r.data.totalCents);
   assert.equal(r.data.outOfArea, false);
   r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'x',
     dropoffLocation: { lat: 25.76, lng: -80.19 } } });

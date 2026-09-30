@@ -72,7 +72,12 @@ The landing page at `www.choicedeliverysc.com` (source in `/website`) calls thes
 `GET /public/pricing`, `POST /public/quote`, `POST /public/contact`, `POST /public/contract-request`,
 plus `GET /public/geocode?q=` for address suggestions (OpenStreetMap, SC/NC/GA only, cached and throttled
 to their one-request-per-second limit). Messages and plan requests are stored as **leads** (`GET/PATCH /leads`,
-staff only) and emailed to `LEADS_EMAIL` when email is configured. Prices live in `src/pricing.js`.
+staff only) and emailed to `LEADS_EMAIL` when email is configured.
+
+**Pricing** (`src/pricing.js`, from the original quote page): $25 covers the first 10 miles, then $1.50 per
+mile, times a vehicle multiplier (all 1.0 until set), plus $50 for rush (2 hours or less). Distance is
+straight-line x 1.2 between stops that have map coordinates. Orders are priced on the server when booked or
+edited; dispatch can set a custom price, and clearing it returns to the formula.
 
 ## How the data fits together
 

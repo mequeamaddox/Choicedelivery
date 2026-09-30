@@ -2,12 +2,12 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
-  ACTIVE, recordEvent, createOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
-const { isServiceLevel, defaultPriceCents } = require('../pricing');
+const { isServiceLevel, normalizeServiceLevel } = require('../pricing');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -97,12 +97,9 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   const b = req.body || {};
   if (b.priceCents !== undefined && !isStaff(req.user)) throw new HttpError(403, 'Only dispatch can set a price');
   if (b.serviceLevel !== undefined && !isServiceLevel(b.serviceLevel)) {
-    throw new HttpError(400, 'serviceLevel must be "standard" or "same_day"');
+    throw new HttpError(400, 'serviceLevel must be "standard" or "rush"');
   }
-  // A shipper switching service level gets that level's published price.
-  if (b.serviceLevel !== undefined && b.priceCents === undefined && !isStaff(req.user)) {
-    b.priceCents = defaultPriceCents(b.serviceLevel);
-  }
+  if (b.serviceLevel !== undefined) b.serviceLevel = normalizeServiceLevel(b.serviceLevel);
   await db.withTx(async (client) => {
     try {
       await client.query(
@@ -110,6 +107,8 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
            number_of_pieces = COALESCE($4, number_of_pieces), description = COALESCE($5, description),
            tracking_number = CASE WHEN $6::boolean THEN NULLIF($7, '') ELSE tracking_number END,
            price_cents = CASE WHEN $8::boolean THEN $9::int ELSE price_cents END,
+           -- Dispatch setting a price makes it custom; clearing it (null) goes back to the formula.
+           price_is_custom = CASE WHEN $8::boolean THEN $9::int IS NOT NULL ELSE price_is_custom END,
            scheduled_at = CASE WHEN $10::boolean THEN $11::timestamptz ELSE scheduled_at END,
            service_level = COALESCE($12, service_level),
            updated_at = now()
@@ -130,6 +129,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
       await client.query('DELETE FROM stops WHERE order_id = $1', [current.id]);
       await insertStops(client, current.id, stops);
     }
+    await repriceOrder(client, current.id);
     await recordEvent(client, current.id, req.user.id, 'updated', { fields: Object.keys(b) });
   });
   res.json(await getOrderFor(req.user, current.id));

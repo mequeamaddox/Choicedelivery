@@ -523,10 +523,19 @@
                                 <input type="text" id="quote-to" placeholder="Delivery address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                             </div>
                             <div>
-                                <label for="quote-level" class="block text-sm font-medium text-gray-700 mb-1">Service</label>
+                                <label for="quote-level" class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
                                 <select id="quote-level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
-                                    <option value="standard">Standard delivery</option>
-                                    <option value="same_day">Same-day (rush)</option>
+                                    <option value="standard">Standard Delivery</option>
+                                    <option value="rush">Rush Delivery (+$50)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="quote-vehicle" class="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                                <select id="quote-vehicle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                    <option>Car</option>
+                                    <option>Minivan</option>
+                                    <option>Cargo Van</option>
+                                    <option>Truck</option>
                                 </select>
                             </div>
                             <button onclick="calculateQuote()" class="w-full bg-choice-mint text-choice-teal py-2 rounded-lg font-semibold hover:bg-opacity-80">
@@ -534,7 +543,8 @@
                             </button>
                             <div id="quote-result" class="text-center hidden" aria-live="polite">
                                 <div id="quote-price" class="text-lg font-bold text-choice-teal"></div>
-                                <div id="quote-note" class="text-sm text-gray-600 mt-1"></div>
+                                <ul id="quote-breakdown" class="text-sm text-gray-700 mt-2 space-y-1 text-left"></ul>
+                                <div id="quote-note" class="text-sm text-gray-600 mt-2"></div>
                                 <a href="https://app.choicedeliverysc.com/#/signup" target="_blank" rel="noopener" class="inline-block mt-3 text-choice-teal font-semibold hover:underline">Book this delivery →</a>
                             </div>
                         </div>
@@ -784,13 +794,29 @@
                 const q = await postJson('/public/quote', {
                     pickupAddress: from,
                     dropoffAddress: to,
-                    serviceLevel: document.getElementById('quote-level').value
+                    serviceLevel: document.getElementById('quote-level').value,
+                    vehicleType: document.getElementById('quote-vehicle').value
                 });
-                document.getElementById('quote-price').textContent = `Estimated: $${(q.priceCents / 100).toFixed(2)}`;
+                const money = (c) => `$${(c / 100).toFixed(2)}`;
+                document.getElementById('quote-price').textContent = `Estimated: ${money(q.totalCents)}`;
+                const lines = [[`Base fee (first ${q.baseMiles} miles)`, money(q.baseFeeCents)]];
+                if (q.extraMileageCents > 0) lines.push([`Extra mileage (${q.extraMiles} mi × ${money(q.perMileCents)})`, money(q.extraMileageCents)]);
+                if (q.vehicleAdjustmentCents > 0) lines.push([`Vehicle adjustment (${q.vehicleType})`, '+' + money(q.vehicleAdjustmentCents)]);
+                if (q.rushFeeCents > 0) lines.push(['Rush delivery fee', '+' + money(q.rushFeeCents)]);
+                const list = document.getElementById('quote-breakdown');
+                list.replaceChildren(...lines.map(([label, value]) => {
+                    const li = document.createElement('li');
+                    li.className = 'flex justify-between gap-4';
+                    const l = document.createElement('span'); l.textContent = label;
+                    const v = document.createElement('span'); v.textContent = value;
+                    li.append(l, v);
+                    return li;
+                }));
                 document.getElementById('quote-note').textContent =
                     (q.distanceMiles != null ? `About ${q.distanceMiles} miles. ` : '') + q.note;
             } catch (err) {
                 document.getElementById('quote-price').textContent = 'Starting at $25.00';
+                document.getElementById('quote-breakdown').replaceChildren();
                 document.getElementById('quote-note').textContent = 'Call (803) 949-7034 for an exact quote.';
             }
             resultDiv.classList.remove('hidden');

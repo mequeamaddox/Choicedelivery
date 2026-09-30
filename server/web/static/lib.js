@@ -153,9 +153,9 @@ export const STATUS = {
 
 export const ACTIVE_STATUSES = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'];
 
-export const SERVICE_LEVEL_LABELS = { standard: 'Standard', same_day: 'Same-day (rush)' };
+export const SERVICE_LEVEL_LABELS = { standard: 'Standard', rush: 'Rush (2 hours or less)' };
 
-export const VEHICLE_TYPES = ['Car', 'SUV', 'Pickup Truck', 'Cargo Van', 'Sprinter Van', 'Box Truck', 'Flatbed'];
+export const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Truck'];
 
 export function formatDate(value) {
   if (!value) return '—';

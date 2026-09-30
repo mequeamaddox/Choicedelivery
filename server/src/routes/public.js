@@ -3,7 +3,10 @@ const express = require('express');
 const db = require('../db');
 const { sendMail } = require('../mailer');
 const { rateLimit } = require('../rate-limit');
-const { SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, isServiceLevel, defaultPriceCents } = require('../pricing');
+const {
+  SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, VEHICLE_TYPES, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS,
+  isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles,
+} = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
 const { searchAddresses, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
 
@@ -17,6 +20,11 @@ const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 router.get('/pricing', (req, res) => {
   res.json({
+    baseFeeCents: BASE_FEE_CENTS,
+    baseMiles: BASE_MILES,
+    perMileCents: PER_MILE_CENTS,
+    rushFeeCents: RUSH_FEE_CENTS,
+    vehicleTypes: VEHICLE_TYPES,
     serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, s]) => ({ id, ...s })),
     businessPlans: Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })),
     overageCents: OVERAGE_CENTS,
@@ -33,31 +41,37 @@ router.get('/geocode', rateLimit({ windowMs: 60 * 1000, max: 40 }), asyncH(async
   }
 }));
 
-// Road miles are roughly 1.2x straight-line distance; good enough for an estimate.
-const approxRoadMiles = (a, b) => Math.round(haversineMiles(a, b) * 1.2 * 10) / 10;
-
 async function locate(address, given) {
   const loc = parseLocation(given);
   if (loc) return loc;
+  if (!str(address)) return null;
   try { return (await searchAddresses(address))[0]?.location || null; } catch { return null; }
 }
 
-// Instant estimate at the published rate, with approximate distance and a service-area check.
+// Instant quote using the same formula orders are priced with.
+// Body: { stops: [{address, location?}, ...] } or { pickupAddress, dropoffAddress, pickupLocation?, dropoffLocation? },
+// plus serviceLevel ('standard' | 'rush') and vehicleType.
 router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
-  const { pickupAddress, dropoffAddress } = req.body || {};
-  const serviceLevel = isServiceLevel(req.body?.serviceLevel) ? req.body.serviceLevel : 'standard';
-  if (!str(pickupAddress) || !str(dropoffAddress)) throw new HttpError(400, 'Please enter both pickup and delivery addresses');
-  const [from, to] = await Promise.all([locate(pickupAddress, req.body.pickupLocation), locate(dropoffAddress, req.body.dropoffLocation)]);
-  const distanceMiles = from && to ? approxRoadMiles(from, to) : null;
-  const outOfArea = [from, to].some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
+  const b = req.body || {};
+  const stops = Array.isArray(b.stops) && b.stops.length >= 2
+    ? b.stops.slice(0, 20)
+    : [{ address: b.pickupAddress, location: b.pickupLocation }, { address: b.dropoffAddress, location: b.dropoffLocation }];
+  if (stops.some((st) => !str(st?.address) && !parseLocation(st?.location))) {
+    throw new HttpError(400, 'Please enter both pickup and delivery addresses');
+  }
+  const serviceLevel = isServiceLevel(b.serviceLevel) ? normalizeServiceLevel(b.serviceLevel) : 'standard';
+  const locations = await Promise.all(stops.map((st) => locate(st.address, st.location)));
+  const quote = calculatePrice({ distanceMiles: routeMiles(locations), serviceLevel, vehicleType: str(b.vehicleType) });
+  const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
   res.json({
-    serviceLevel,
-    priceCents: defaultPriceCents(serviceLevel),
-    distanceMiles,
+    ...quote,
+    priceCents: quote.totalCents,
     outOfArea,
     note: outOfArea
       ? `One of these addresses is outside our ${SERVICE_RADIUS_MILES}-mile service area. Call (803) 949-7034 and we'll see what we can do.`
-      : 'Estimate for a local delivery. Long-distance, oversized or multi-stop deliveries are confirmed by dispatch.',
+      : quote.distanceConfirmed
+        ? 'Estimate based on approximate driving distance. Final price is confirmed when your order is booked.'
+        : "We couldn't pinpoint one of the addresses, so this is the base price. Final price is confirmed when your order is booked.",
   });
 }));
 
