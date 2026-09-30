@@ -81,7 +81,7 @@ by vehicle, each base covering the first 10 miles: Car $25 then $1.50/mile, Mini
 Pickup Truck (half-ton) $45 then $2.50/mile (Cargo Van exists but is off). Rush (2 hours or less) +$50.
 Surcharges: holiday +$25 (New Year's Day, Memorial Day, July 4th, Labor Day, Thanksgiving and the day after,
 Christmas Eve/Day, New Year's Eve by default; replaces the weekend charge), weekend +$15, and from the original app
-lunch rush 11:30am–1:30pm +$5, high demand (3+ open orders) +$15, bad weather +$15 (dispatch switch); each can be
+high demand (3+ open orders) +$15, bad weather +$15 (dispatch switch); lunch rush 11:30am–1:30pm +$5 is off; each can be
 switched off. Times are Columbia local time; scheduled pickups use the pickup time. Distance is straight-line x 1.2
 between stops with map coordinates. Orders are priced on the server when booked; demand/weather are locked in at
 booking. Dispatch can set a custom price, and clearing it returns to the formula.

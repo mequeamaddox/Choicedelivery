@@ -300,7 +300,7 @@ test('rate card: vehicle base covers 10 miles, then per mile; rush, weekend, hol
   assert.equal(price({ distanceMiles: 12, serviceLevel: 'rush' }).totalCents, 7800, 'rush adds $50');
   assert.equal(price({ distanceMiles: 12, serviceLevel: 'same_day' }).rushFeeCents, 5000, 'old name still works');
   assert.equal(price({ distanceMiles: null }).distanceConfirmed, false);
-  assert.deepEqual(price({ distanceMiles: 3, at: wedLunch }).surcharges.map((x) => x.key), ['lunch']);
+  assert.equal(price({ distanceMiles: 3, at: wedLunch }).surcharges.length, 0, 'lunch rush is off by default');
   assert.equal(price({ distanceMiles: 3, at: saturday }).totalCents, 4000, 'weekend +$15');
   assert.equal(price({ distanceMiles: 3, openOrders: 3 }).totalCents, 4000, 'high demand +$15 at 3 open orders');
   assert.equal(price({ distanceMiles: 3, badWeather: true }).totalCents, 4000, 'bad weather +$15');
@@ -318,8 +318,9 @@ test('rate card: vehicle base covers 10 miles, then per mile; rush, weekend, hol
   const withMlk = normalizeFees({ ...DEFAULT_FEES, holidays: { ...DEFAULT_FEES.holidays, mlk_day: true }, extraHolidayDates: ['2026-10-07'] });
   assert.equal(price({ distanceMiles: 3, at: mlk, fees: withMlk }).totalCents, 5000);
   assert.equal(price({ distanceMiles: 3, at: new Date('2026-10-07T15:00:00Z'), fees: withMlk }).surcharges[0].key, 'holiday', 'extra dates count');
-  const noLunch = normalizeFees({ ...DEFAULT_FEES, surcharges: { ...DEFAULT_FEES.surcharges, lunch: { cents: 500, enabled: false } } });
-  assert.equal(price({ distanceMiles: 3, at: wedLunch, fees: noLunch }).surcharges.length, 0, 'surcharges can be switched off');
+  const withLunch = normalizeFees({ ...DEFAULT_FEES, surcharges: { ...DEFAULT_FEES.surcharges, lunch: { cents: 500, enabled: true } } });
+  assert.deepEqual(price({ distanceMiles: 3, at: wedLunch, fees: withLunch }).surcharges.map((x) => [x.key, x.cents]), [['lunch', 500]],
+    'surcharges can be switched back on');
 
   // Settings saved under the old rate card don't override the new vehicle rates.
   assert.equal(normalizeFees({ vehicles: { Car: { feeCents: 0, perMileCents: 999 } } }).vehicles.Car.perMileCents, 150);

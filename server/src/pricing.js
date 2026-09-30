@@ -5,8 +5,8 @@
 //     Car $25 then $1.50/mile · Minivan $35 then $2.00/mile · Pickup Truck $45 then $2.50/mile
 //   + $50 rush (2 hours or less)
 //   + surcharges: weekend $15, holiday $25 (instead of the weekend charge, not on top of it),
-//     and from the original app: lunch rush (11:30am-1:30pm) $5, high demand (3+ open orders) $15,
-//     bad weather $15 (switched on by dispatch)
+//     and from the original app: high demand (3+ open orders) $15, bad weather $15 (switched on by
+//     dispatch); lunch rush (11:30am-1:30pm) $5 exists but is off
 //   + weight tiers, $10 per extra stop, optional add-ons (loading help, inside delivery/stairs),
 //     and wait time billed after the order (first 15 minutes at each stop free, then $10 per 15 minutes).
 //
@@ -114,7 +114,8 @@ const DEFAULT_FEES = {
     'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', baseCents: 4500, includedMiles: 10, perMileCents: 250, maxLbs: 1000, enabled: true },
   },
   rushCents: RUSH_FEE_CENTS,
-  surcharges: Object.fromEntries(Object.entries(SURCHARGES).map(([k, sc]) => [k, { cents: sc.cents, enabled: true }])),
+  // Lunch rush is off by the owner's choice (it can be switched back on).
+  surcharges: Object.fromEntries(Object.entries(SURCHARGES).map(([k, sc]) => [k, { cents: sc.cents, enabled: k !== 'lunch' }])),
   holidays: Object.fromEntries(Object.entries(HOLIDAYS).map(([k, h]) => [k, h.on])),
   extraHolidayDates: [], // 'YYYY-MM-DD' (Columbia time), e.g. a closure you want charged as a holiday
   maxPieceLbs: 75, // no single piece heavier than this is accepted (one person has to lift it)
