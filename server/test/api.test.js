@@ -444,3 +444,13 @@ test('landing page is served on www; the app on other hosts', async () => {
   r = await get('api.choicedeliverysc.com', '/health');
   assert.equal(r.status, 200);
 });
+
+test('Neon connection strings are cleaned without corrupting the database name', () => {
+  const { cleanConnectionString } = require('../src/db');
+  assert.equal(
+    cleanConnectionString('postgresql://u:p@ep-x.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'),
+    'postgresql://u:p@ep-x.us-east-2.aws.neon.tech/neondb');
+  assert.equal(cleanConnectionString('postgres://u:p@h:5432/db?application_name=cd&sslmode=require'),
+    'postgres://u:p@h:5432/db?application_name=cd');
+  assert.throws(() => cleanConnectionString('not a url'), /not a valid/);
+});

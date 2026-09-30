@@ -6,12 +6,28 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set. On Railway, reference your Postgres/Neon connection string.');
 }
 
+// Tolerate copy/paste leftovers like surrounding quotes or a "DATABASE_URL=" prefix.
+const rawUrl = process.env.DATABASE_URL.trim().replace(/^DATABASE_URL=/, '').replace(/^["']|["']$/g, '');
+
+// SSL is configured below rather than via URL parameters, so remove sslmode/channel_binding
+// (Neon adds both) while keeping any other parameters intact.
+function cleanConnectionString(url) {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete('sslmode');
+    u.searchParams.delete('channel_binding');
+    return u.toString();
+  } catch {
+    throw new Error('DATABASE_URL is not a valid postgres:// connection string. Check for typos or extra characters.');
+  }
+}
+
 // Railway's private network (*.railway.internal) doesn't use SSL; its public proxy and Neon do.
 const needsSsl = process.env.PGSSL === 'true' ||
-  (process.env.PGSSL !== 'false' && /rlwy\.net|proxy\.railway|neon\.tech|sslmode=require/.test(process.env.DATABASE_URL));
+  (process.env.PGSSL !== 'false' && /rlwy\.net|proxy\.railway|neon\.tech|sslmode=require/.test(rawUrl));
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL.replace(/[?&]sslmode=[^&]*/, ''),
+  connectionString: cleanConnectionString(rawUrl),
   ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
 });
 
@@ -65,4 +81,4 @@ async function migrate() {
   }
 }
 
-module.exports = { pool, query, withTx, migrate };
+module.exports = { pool, query, withTx, migrate, cleanConnectionString };
