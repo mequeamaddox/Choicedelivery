@@ -17,7 +17,7 @@ router.get('/me', requireUser, asyncH(async (req, res) => {
 }));
 
 router.put('/me', requireUser, asyncH(async (req, res) => {
-  const { email, name, phoneNumber, vehicleType, profilePictureUrl } = req.body || {};
+  const { email, name, phoneNumber, vehicleType, profilePictureUrl, emailUpdates } = req.body || {};
   await db.withTx(async (client) => {
     try {
       await client.query(
@@ -26,9 +26,11 @@ router.put('/me', requireUser, asyncH(async (req, res) => {
            name = COALESCE($2, name),
            phone_number = COALESCE($3, phone_number),
            profile_picture_url = COALESCE($4, profile_picture_url),
+           email_updates = COALESCE($6, email_updates),
            updated_at = now()
          WHERE id = $5`,
-        [str(email), name ?? null, phoneNumber ?? null, profilePictureUrl ?? null, req.user.id]
+        [str(email), name ?? null, phoneNumber ?? null, profilePictureUrl ?? null, req.user.id,
+          typeof emailUpdates === 'boolean' ? emailUpdates : null]
       );
     } catch (e) {
       if (e.code === '23505') throw new HttpError(409, 'That email is already in use');

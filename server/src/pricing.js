@@ -32,9 +32,8 @@ const SERVICE_LEVELS = {
   rush: { label: 'Rush delivery', description: '2 hours or less', feeCents: RUSH_FEE_CENTS },
 };
 
-// Business plans as advertised on www.choicedeliverysc.com.
-// NOTE: the original app's code had different included deliveries and overage fees
-// (law 10/$40, medical 8/$30, real estate 8/$35, USC 6/$25). Confirm which is right.
+// Business plans as advertised on choicedeliverysc.com (chosen over the original app's code, which
+// had 10/8/8/6 included deliveries with $40/$30/$35/$25 overages).
 const BUSINESS_PLANS = {
   law_firm: { name: 'Law Firm Plan', monthlyCents: 50000, includedDeliveries: 20 },
   medical: { name: 'Medical Office Plan', monthlyCents: 30000, includedDeliveries: 15 },

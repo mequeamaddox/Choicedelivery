@@ -21,6 +21,7 @@ function publicUser(u, { includeLocation = false } = {}) {
     profilePictureUrl: u.profile_picture_url,
     isActive: u.is_active,
     isDemo: u.is_demo,
+    emailUpdates: u.email_updates,
   };
   if (u.role === 'driver') out.isOnline = u.is_online;
   if (includeLocation) {

@@ -1,5 +1,9 @@
 // Sends mail through Resend (https://resend.com) when RESEND_API_KEY is set; otherwise logs.
+let override = null;
+const setSender = (fn) => { override = fn; }; // for tests
+
 async function sendMail({ to, subject, html }) {
+  if (override) return override({ to, subject, html });
   if (!process.env.RESEND_API_KEY) {
     console.log(`[mail disabled] To: ${to} | ${subject}\n${html}`);
     return;
@@ -20,4 +24,4 @@ async function sendMail({ to, subject, html }) {
   if (!res.ok) throw new Error(`Email send failed: ${res.status} ${await res.text()}`);
 }
 
-module.exports = { sendMail };
+module.exports = { sendMail, setSender };

@@ -8,6 +8,7 @@ const {
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
+const { emailShipper } = require('../notify');
 const { isServiceLevel, normalizeServiceLevel } = require('../pricing');
 
 const router = express.Router();
@@ -59,6 +60,7 @@ router.post('/', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (re
   const order = await getOrderFor(req.user, id);
   // Card orders notify drivers once paid (see the Stripe webhook).
   if (order.paymentStatus !== 'unpaid') notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+  emailShipper(order.id, 'booked');
   res.status(201).json(order);
 }));
 
@@ -82,6 +84,7 @@ router.post('/scan', driverOnly, asyncH(async (req, res) => {
     await completeStop(client, req.user, orderId, stop.id, { barcode });
     return orderId;
   });
+  emailShipper(id, 'picked_up');
   res.json(await getOrderFor(req.user, id));
 }));
 
@@ -175,6 +178,7 @@ router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH
     return r;
   });
   if (!rows[0]) throw new HttpError(409, `Order is ${current.status}`);
+  if (req.user.role !== 'shipper') emailShipper(current.id, 'cancelled');
   if (rows[0].driver_id) {
     notifyUser(rows[0].driver_id, 'Order cancelled', `${current.orderNumber} was cancelled`, { orderId: current.id })
       .catch((e) => console.error('Push notify failed:', e));
@@ -269,6 +273,7 @@ router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req
   if (driverId) {
     notifyUser(driverId, 'New job assigned', 'Dispatch assigned you a job', { orderId: req.params.id })
       .catch((e) => console.error('Push notify failed:', e));
+    emailShipper(req.params.id, 'driver_assigned');
   }
   res.json(await getOrderFor(req.user, req.params.id));
 }));
@@ -285,6 +290,7 @@ router.post('/:id/accept', driverOnly, asyncH(async (req, res) => {
     if (!rows[0]) throw new HttpError(409, 'This job is no longer available');
     await recordEvent(client, req.params.id, req.user.id, 'accepted');
   });
+  emailShipper(req.params.id, 'driver_assigned');
   res.json(await getOrderFor(req.user, req.params.id));
 }));
 
@@ -298,7 +304,11 @@ router.post('/:id/stops/:stopId/complete', driverOnly, asyncH(async (req, res) =
   const { signature, photo, printedName } = req.body || {};
   await db.withTx((client) => completeStop(client, req.user, req.params.id, req.params.stopId,
     { signature, photo, printedName }));
-  res.json(await getOrderFor(req.user, req.params.id));
+  const updated = await getOrderFor(req.user, req.params.id);
+  const stop = updated.stops.find((s) => s.id === req.params.stopId);
+  if (updated.status === 'completed') emailShipper(updated.id, 'delivered', { printedName: str(printedName) });
+  else if (stop?.type === 'pickup' && updated.status === 'in_transit') emailShipper(updated.id, 'picked_up');
+  res.json(updated);
 }));
 
 router.post('/:id/notes', asyncH(async (req, res) => {

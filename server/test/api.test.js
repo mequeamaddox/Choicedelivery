@@ -588,3 +588,52 @@ test('payments: card orders wait for Stripe payment; invoice companies dispatch 
     delete process.env.STRIPE_WEBHOOK_SECRET;
   }
 });
+
+test('shippers get status emails with a tracking link; opt-out and demo respected', async () => {
+  const mailer = require('../src/mailer');
+  const sent = [];
+  mailer.setSender(async (m) => { sent.push(m); });
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  try {
+    const shipperEmail = (await call('GET', '/users/me', { token: t.acme })).data.email;
+    let r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+    const order = r.data;
+    await settle();
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, shipperEmail);
+    assert.match(sent[0].subject, /booked/);
+    assert.ok(sent[0].html.includes(`#/track/${order.trackingUrlToken}`), 'includes the tracking link');
+
+    await call('POST', `/orders/${order.id}/accept`, { token: t.d1 });
+    await call('POST', `/orders/${order.id}/stops/${order.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:x' } });
+    await call('POST', `/orders/${order.id}/stops/${order.stops[1].id}/complete`, { token: t.d1, body: { photo: 'data:y', printedName: 'Jane <Q>' } });
+    await settle();
+    assert.deepEqual(sent.map((m) => m.subject.split(/[:\s]/)[0]), ['Order', 'A', 'Picked', 'Delivered']);
+    assert.ok(sent[3].html.includes('Jane &lt;Q&gt;'), 'names are escaped');
+
+    await call('PUT', '/users/me', { token: t.acme, body: { emailUpdates: false } });
+    sent.length = 0;
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+    await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
+    await settle();
+    assert.equal(sent.length, 0, 'opted-out shippers get no emails');
+    await call('PUT', '/users/me', { token: t.acme, body: { emailUpdates: true } });
+
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+    await settle();
+    sent.length = 0;
+    await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
+    await settle();
+    assert.deepEqual(sent.map((m) => m.subject), [`Order ${r.data.orderNumber} cancelled`], 'dispatch cancellations are emailed');
+
+    sent.length = 0;
+    await call('POST', '/demo', { token: t.admin });
+    await call('DELETE', '/demo', { token: t.admin });
+    r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ organizationId: ids.acmeOrg }) });
+    await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
+    await settle();
+    assert.equal(sent.length, 0, 'no emails for demo data or dispatch-booked orders');
+  } finally {
+    mailer.setSender(null);
+  }
+});

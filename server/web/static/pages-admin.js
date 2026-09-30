@@ -186,7 +186,8 @@ export function TeamPage() {
 export function AccountPage() {
   const me = getUser();
   const [v, setV] = useState({ name: me.name || '', email: me.email, phoneNumber: me.phoneNumber || '',
-    ...(me.role === 'driver' ? { vehicleType: me.vehicleType || 'Car' } : {}) });
+    ...(me.role === 'driver' ? { vehicleType: me.vehicleType || 'Car' } : {}),
+    ...(me.role === 'shipper' ? { emailUpdates: me.emailUpdates !== false } : {}) });
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '' });
   const [msg, setMsg] = useState({});
   const bind = (k) => ({ value: v[k], onInput: (e) => setV({ ...v, [k]: e.target.value }) });
@@ -214,6 +215,10 @@ export function AccountPage() {
           <${Field} label="Name"><input ...${bind('name')} /><//>
           <${Field} label="Email"><input type="email" required ...${bind('email')} /><//>
           <${Field} label="Phone"><input type="tel" ...${bind('phoneNumber')} /><//>
+          ${me.role === 'shipper' && html`<label class="check-row">
+            <input type="checkbox" checked=${v.emailUpdates} onChange=${(e) => setV({ ...v, emailUpdates: e.target.checked })} />
+            <span><strong>Email updates</strong><br /><span class="muted small">Get an email when your orders are booked, picked up and delivered.</span></span>
+          </label>`}
           ${me.role === 'driver' && html`<${Field} label="Vehicle">
             <select value=${v.vehicleType} onChange=${(e) => setV({ ...v, vehicleType: e.target.value })}>
               ${VEHICLE_TYPES.map((t) => html`<option>${t}</option>`)}

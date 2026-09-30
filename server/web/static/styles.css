@@ -297,3 +297,5 @@ tr.inactive td { opacity: .6; }
 .photo-preview { max-width: 100%; max-height: 220px; border-radius: 10px; border: 1px solid var(--border); align-self: flex-start; }
 .done-card { text-align: center; background: #ecfdf5; border-color: #a7f3d0; margin-bottom: 1rem; }
 h3 { margin: .25rem 0 0; font-size: 1rem; }
+.check-row { display: flex; gap: .6rem; align-items: flex-start; }
+.check-row input { margin-top: .3rem; }
