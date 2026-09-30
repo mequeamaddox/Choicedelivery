@@ -36,8 +36,8 @@ and it's set up to deploy on [Railway](https://railway.com) with Postgres on Rai
    ```
    `role` can be `driver` (default), `dispatcher`, `admin` or `shipper` (shippers also need `organizationId`).
    Or, from a shell with `DATABASE_URL` set (for example via `railway run`): `npm run create-user -- driver@example.com <password> driver "Driver Name"`
-7. **The app** already points at `https://app.choicedeliverysc.com` (`extra.apiUrl` in `app.json`). For local
-   testing, override it with `EXPO_PUBLIC_API_URL` in a root `.env`.
+7. **The driver app** (`driver-app/` in this repo) talks to `https://app.choicedeliverysc.com` (`extra.apiUrl` in
+   `driver-app/app.json`). See `driver-app/README.md` to build and install it.
 
 Database changes in `migrations/` are applied automatically when the service starts.
 

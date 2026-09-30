@@ -1,7 +1,0 @@
-{
-    "name": "react-native-reanimated",
-    "hooks": {
-      "postinstall": "patch-package"
-    }
-  }
-  

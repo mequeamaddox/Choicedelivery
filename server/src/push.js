@@ -26,15 +26,18 @@ async function notifyDriversOfOrder(order) {
   await sendExpo(targets.map((to) => ({
     to,
     sound: 'default',
-    title: 'New Pickup Request',
+    channelId: 'jobs', // the driver app's high-priority Android channel
+    title: order.serviceLevel === 'rush' ? 'New RUSH job available' : 'New job available',
     body: `${pickup?.address} → ${dropoff?.address}`,
-    data: { requestId: order.id },
+    data: { orderId: order.id, requestId: order.id },
   })));
 }
 
 async function notifyUser(userId, title, body, data = {}) {
   const { rows } = await db.query('SELECT push_token FROM users WHERE id = $1', [userId]);
-  if (isExpoToken(rows[0]?.push_token)) await sendExpo([{ to: rows[0].push_token, sound: 'default', title, body, data }]);
+  if (isExpoToken(rows[0]?.push_token)) {
+    await sendExpo([{ to: rows[0].push_token, sound: 'default', channelId: 'jobs', title, body, data }]);
+  }
 }
 
 module.exports = { notifyDriversOfOrder, notifyUser };

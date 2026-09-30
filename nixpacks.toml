@@ -1,5 +1,5 @@
 # Railway: if the service's Root Directory is left at the repo root, build and run the server
-# (in server/) instead of the Expo phone app. With Root Directory = "server" this file is ignored.
+# (in server/). The driver phone app in driver-app/ is built separately with EAS. With Root Directory = "server" this file is ignored.
 providers = ["node"]
 
 [variables]

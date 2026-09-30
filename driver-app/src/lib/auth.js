@@ -1,0 +1,55 @@
+// Who's signed in. Only driver accounts can use the app; everyone else is pointed to the website.
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { api, saveToken, getToken, onUnauthorized } from './client';
+import { stopTracking } from './tracking';
+
+const AuthContext = createContext(null);
+export const useAuth = () => useContext(AuthContext);
+
+const NOT_A_DRIVER = 'This app is for drivers. Shippers and dispatch sign in at app.choicedeliverysc.com.';
+
+export function AuthProvider({ children }) {
+  const [state, setState] = useState({ loading: true, user: null });
+
+  const signOut = useCallback(async ({ goOffline = true } = {}) => {
+    await stopTracking().catch(() => {});
+    if (goOffline) await api.setOnline(false).catch(() => {});
+    await saveToken(null);
+    setState({ loading: false, user: null });
+  }, []);
+
+  useEffect(() => {
+    onUnauthorized(() => signOut({ goOffline: false }));
+    (async () => {
+      if (!(await getToken())) return setState({ loading: false, user: null });
+      try {
+        const user = await api.me();
+        if (user.role !== 'driver') throw new Error(NOT_A_DRIVER);
+        setState({ loading: false, user });
+      } catch (e) {
+        // Offline at launch: keep the saved login and let screens retry.
+        if (e.status === 0) setState({ loading: false, user: { offline: true } });
+        else { await saveToken(null); setState({ loading: false, user: null }); }
+      }
+    })();
+  }, [signOut]);
+
+  const signIn = useCallback(async (email, password) => {
+    const { token, user } = await api.login(email.trim(), password);
+    if (user.role !== 'driver') throw new Error(NOT_A_DRIVER);
+    await saveToken(token);
+    setState({ loading: false, user });
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const user = await api.me();
+    setState({ loading: false, user });
+    return user;
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ ...state, signIn, signOut, refresh, setUser: (user) => setState({ loading: false, user }) }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
