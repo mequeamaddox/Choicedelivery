@@ -1,0 +1,15 @@
+# Railway: if the service's Root Directory is left at the repo root, build and run the server
+# (in server/) instead of the Expo phone app. With Root Directory = "server" this file is ignored.
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
+[phases.install]
+cmds = ["cd server && npm ci --omit=dev"]
+
+[phases.build]
+cmds = ["echo 'No build step'"]
+
+[start]
+cmd = "cd server && npm start"
