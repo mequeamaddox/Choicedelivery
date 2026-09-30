@@ -1,4 +1,4 @@
-import { html, useState, api, getUser, refreshUser, useApi, timeAgo, mapsLink, ROLE_LABELS } from './lib.js';
+import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton } from './components.js';
 
 function AddAccountForm({ roles, companies, fixedCompanyId, onCreated, submitPath }) {
@@ -219,5 +219,52 @@ export function AccountPage() {
           <div><button class="btn primary">Change password</button></div>
         </form>
       </div>
+    <//>`;
+}
+
+const LEAD_TABS = [
+  { key: 'new', label: 'New' },
+  { key: 'contacted', label: 'Contacted' },
+  { key: 'won,closed', label: 'Done' },
+  { key: '', label: 'All' },
+];
+const LEAD_STATUS = { new: 'New', contacted: 'Contacted', won: 'Won', closed: 'Closed' };
+
+// Messages and business-plan requests from www.choicedeliverysc.com.
+export function LeadsPage() {
+  const [tab, setTab] = useState('new');
+  const { data, error, loading, reload } = useApi(`/leads${tab ? `?status=${tab}` : ''}`, { pollMs: 60000 });
+  const [actionError, setActionError] = useState(null);
+  const setStatus = async (id, status) => { await api(`/leads/${id}`, { method: 'PATCH', body: { status } }); reload(); };
+  return html`
+    <${Layout}>
+      <${PageHeader} title="Leads" subtitle="Contact messages and business plan requests from the website." />
+      <div class="tabs" role="tablist">
+        ${LEAD_TABS.map((t) => html`<button role="tab" aria-selected=${tab === t.key}
+          class=${tab === t.key ? 'tab active' : 'tab'} onClick=${() => setTab(t.key)}>${t.label}</button>`)}
+      </div>
+      <${Alert} error=${error || actionError} />
+      ${loading ? html`<${Spinner} />` : !data?.length ? html`
+        <${Empty} title=${tab === 'new' ? 'No new leads' : 'Nothing here'}>New website messages and plan requests show up here.<//>` : html`
+        <div class="stack">
+          ${data.map((l) => html`
+            <article class="card">
+              <div class="card-head">
+                <div>
+                  <h2>${l.type === 'contract' ? `${l.planName} request` : 'Website message'}</h2>
+                  <div class="muted small">${formatDate(l.createdAt)}${l.company ? ` · ${l.company}` : ''}</div>
+                </div>
+                <span class=${`badge ${l.status === 'new' ? 'amber' : l.status === 'won' ? 'green' : l.status === 'contacted' ? 'blue' : 'gray'}`}>${LEAD_STATUS[l.status]}</span>
+              </div>
+              <p><strong>${l.name}</strong>${' · '}<a href=${`mailto:${l.email}`}>${l.email}</a>${l.phone && html`${' · '}<a href=${`tel:${l.phone}`}>${l.phone}</a>`}</p>
+              ${l.message && html`<p class="lead-message">${l.message}</p>`}
+              <div class="actions">
+                ${l.status !== 'contacted' && html`<${ActionButton} class="btn small" onError=${setActionError} onClick=${() => setStatus(l.id, 'contacted')}>Mark contacted<//>`}
+                ${l.status !== 'won' && html`<${ActionButton} class="btn small" onError=${setActionError} onClick=${() => setStatus(l.id, 'won')}>Won<//>`}
+                ${l.status !== 'closed' && html`<${ActionButton} class="btn small" onError=${setActionError} onClick=${() => setStatus(l.id, 'closed')}>Close<//>`}
+                ${l.status !== 'new' && html`<${ActionButton} class="btn small" onError=${setActionError} onClick=${() => setStatus(l.id, 'new')}>Reopen<//>`}
+              </div>
+            </article>`)}
+        </div>`}
     <//>`;
 }

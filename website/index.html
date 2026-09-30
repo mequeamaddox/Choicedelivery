@@ -9,11 +9,11 @@
     <!-- Open Graph tags for social media -->
     <meta property="og:title" content="Choice Delivery SC - Professional Courier Services">
     <meta property="og:description" content="Fast, reliable delivery services in Columbia, SC and surrounding areas. Business contracts available for law firms, medical offices, and more.">
-    <meta property="og:image" content="https://choicedeliverysc.com/wp-content/uploads/2024/03/Choice-Delivery_Primary-Stacked-logo_mint-1024x512.png">
+    <meta property="og:image" content="https://www.choicedeliverysc.com/logo.png">
     <meta property="og:url" content="https://choicedeliverysc.com">
     
     <!-- Favicon -->
-    <link rel="icon" type="image/png" href="https://choicedeliverysc.com/wp-content/uploads/2024/03/Choice-Delivery_Primary-Stacked-logo_mint-1024x512.png">
+    <link rel="icon" type="image/png" href="favicon.png">
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -82,14 +82,14 @@
         <div class="max-w-6xl mx-auto px-4">
             <div class="flex justify-between items-center py-4">
                 <div class="flex items-center">
-                    <img src="https://choicedeliverysc.com/wp-content/uploads/2024/03/Choice-Delivery_Primary-Stacked-logo_mint-1024x512.png" 
+                    <img src="logo.png" 
                          alt="Choice Delivery SC" class="h-12 w-auto">
                 </div>
                 <div class="hidden md:flex space-x-6">
                     <a href="#services" class="text-gray-700 hover:text-choice-teal">Services</a>
                     <a href="#business" class="text-gray-700 hover:text-choice-teal">Business Plans</a>
                     <a href="#contact" class="text-gray-700 hover:text-choice-teal">Contact</a>
-                    <a href="https://app.choicedeliverysc.com" target="_blank" class="bg-choice-teal text-white px-4 py-2 rounded-lg hover:bg-opacity-90">Launch App</a>
+                    <a href="https://app.choicedeliverysc.com" target="_blank" rel="noopener" class="bg-choice-teal text-white px-4 py-2 rounded-lg hover:bg-opacity-90">Launch App</a>
                 </div>
                 <!-- Mobile menu button -->
                 <div class="md:hidden">
@@ -113,7 +113,7 @@
     <!-- Hero Section -->
     <section class="gradient-bg text-white pt-20 pb-16">
         <div class="max-w-6xl mx-auto px-4 text-center fade-in-up">
-            <img src="https://choicedeliverysc.com/wp-content/uploads/2024/03/Choice-Delivery_Primary-Stacked-logo_mint-1024x512.png" 
+            <img src="logo.png" 
                  alt="Choice Delivery SC" class="h-24 w-auto mx-auto mb-8 filter brightness-0 invert">
             
             <h1 class="text-5xl md:text-7xl font-bold mb-6">
@@ -126,7 +126,7 @@
             
             <!-- CTA Buttons -->
             <div class="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-                <a href="https://app.choicedeliverysc.com" target="_blank" class="bg-white text-choice-teal px-8 py-4 rounded-lg text-lg font-semibold hover-scale hover:shadow-lg">
+                <a href="#app" class="bg-white text-choice-teal px-8 py-4 rounded-lg text-lg font-semibold hover-scale hover:shadow-lg">
                     Get Quote Now
                 </a>
                 <a href="#business" class="border-2 border-white text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal hover-scale">
@@ -498,12 +498,17 @@
                                 <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                 </svg>
-                                Secure payments
+                                Signature &amp; photo proof of delivery
                             </li>
                         </ul>
-                        <button onclick="window.open('https://app.choicedeliverysc.com', '_blank')" class="bg-choice-teal text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-opacity-90 hover-scale">
-                            Launch App Now
-                        </button>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <a href="https://app.choicedeliverysc.com/#/signup" target="_blank" rel="noopener" class="bg-choice-teal text-white px-6 py-4 rounded-lg text-lg font-semibold hover:bg-opacity-90 hover-scale text-center">
+                                Create Account
+                            </a>
+                            <a href="https://app.choicedeliverysc.com" target="_blank" rel="noopener" class="border-2 border-choice-teal text-choice-teal px-6 py-4 rounded-lg text-lg font-semibold hover-scale text-center">
+                                Log In
+                            </a>
+                        </div>
                     </div>
                     
                     <div class="bg-white rounded-lg p-6 shadow-lg">
@@ -511,17 +516,26 @@
                         <div class="space-y-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
-                                <input type="text" placeholder="Pickup address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                <input type="text" id="quote-from" placeholder="Pickup address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
-                                <input type="text" placeholder="Delivery address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                <input type="text" id="quote-to" placeholder="Delivery address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                            </div>
+                            <div>
+                                <label for="quote-level" class="block text-sm font-medium text-gray-700 mb-1">Service</label>
+                                <select id="quote-level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                    <option value="standard">Standard delivery</option>
+                                    <option value="same_day">Same-day (rush)</option>
+                                </select>
                             </div>
                             <button onclick="calculateQuote()" class="w-full bg-choice-mint text-choice-teal py-2 rounded-lg font-semibold hover:bg-opacity-80">
                                 Calculate Quote
                             </button>
-                            <div id="quote-result" class="text-center text-lg font-bold text-choice-teal hidden">
-                                Estimated: $25.00
+                            <div id="quote-result" class="text-center hidden" aria-live="polite">
+                                <div id="quote-price" class="text-lg font-bold text-choice-teal"></div>
+                                <div id="quote-note" class="text-sm text-gray-600 mt-1"></div>
+                                <a href="https://app.choicedeliverysc.com/#/signup" target="_blank" rel="noopener" class="inline-block mt-3 text-choice-teal font-semibold hover:underline">Book this delivery →</a>
                             </div>
                         </div>
                     </div>
@@ -612,21 +626,66 @@
                             <textarea name="message" rows="4" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent"></textarea>
                         </div>
                         
+                        <!-- Leave empty: spam trap -->
+                        <input type="text" name="website" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true">
+
                         <button type="submit" class="w-full bg-choice-teal text-white py-3 rounded-lg font-semibold hover:bg-opacity-90 hover-scale">
                             Send Message
                         </button>
+                        <p id="contact-status" class="text-center text-sm hidden" aria-live="polite"></p>
                     </form>
                 </div>
             </div>
         </div>
     </section>
 
+    <!-- Business plan request dialog -->
+    <div id="plan-dialog" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-50 p-4" role="dialog" aria-modal="true" aria-labelledby="plan-title">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h3 id="plan-title" class="text-2xl font-bold">Request a plan</h3>
+                    <p id="plan-subtitle" class="text-gray-600"></p>
+                </div>
+                <button type="button" onclick="closePlanDialog()" class="text-gray-500 hover:text-gray-800 text-2xl leading-none" aria-label="Close">&times;</button>
+            </div>
+            <form id="plan-form" class="space-y-4">
+                <input type="hidden" name="plan">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Your name</label>
+                    <input type="text" name="name" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Business / department</label>
+                    <input type="text" name="company" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                        <input type="tel" name="phone" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Anything we should know? <span class="text-gray-500">(optional)</span></label>
+                    <textarea name="message" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent"></textarea>
+                </div>
+                <input type="text" name="website" tabindex="-1" autocomplete="off" class="hidden" aria-hidden="true">
+                <button type="submit" class="w-full bg-choice-teal text-white py-3 rounded-lg font-semibold hover:bg-opacity-90">Send Request</button>
+                <p id="plan-status" class="text-center text-sm hidden" aria-live="polite"></p>
+            </form>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="bg-choice-teal text-white py-12">
         <div class="max-w-6xl mx-auto px-4">
             <div class="grid md:grid-cols-4 gap-8">
                 <div>
-                    <img src="https://choicedeliverysc.com/wp-content/uploads/2024/03/Choice-Delivery_Primary-Stacked-logo_mint-1024x512.png" 
+                    <img src="logo.png" 
                          alt="Choice Delivery SC" class="h-16 w-auto mb-4 filter brightness-0 invert">
                     <p class="text-choice-mint-light">
                         Professional courier services throughout the Southeast. Your choice, our priority.
@@ -648,8 +707,8 @@
                     <ul class="space-y-2 text-choice-mint-light">
                         <li><a href="#contact" class="hover:text-white">Contact Us</a></li>
                         <li><a href="#services" class="hover:text-white">Service Area</a></li>
-                        <li><a href="#app" class="hover:text-white">Track Package</a></li>
-                        <li><a href="/privacy" class="hover:text-white">Privacy Policy</a></li>
+                        <li><a href="https://app.choicedeliverysc.com" class="hover:text-white">Track Package</a></li>
+                        <li><a href="privacy.html" class="hover:text-white">Privacy Policy</a></li>
                     </ul>
                 </div>
                 
@@ -692,52 +751,111 @@
             });
         });
 
+        // All website forms send to the Choice Delivery backend.
+        const API = 'https://api.choicedeliverysc.com';
+
+        async function postJson(path, body) {
+            const res = await fetch(API + path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || 'Something went wrong. Please call (803) 949-7034.');
+            return data;
+        }
+
+        function showStatus(el, text, ok) {
+            el.textContent = text;
+            el.classList.remove('hidden', 'text-red-600', 'text-green-700');
+            el.classList.add(ok ? 'text-green-700' : 'text-red-600');
+        }
+
         // Quote calculator
-        function calculateQuote() {
-            const fromInput = document.querySelector('input[placeholder="Pickup address"]');
-            const toInput = document.querySelector('input[placeholder="Delivery address"]');
+        async function calculateQuote() {
+            const from = document.getElementById('quote-from').value.trim();
+            const to = document.getElementById('quote-to').value.trim();
             const resultDiv = document.getElementById('quote-result');
-            
-            if (fromInput.value && toInput.value) {
-                // Simple calculation - in real app this would call your API
-                const basePrice = 25;
-                resultDiv.textContent = `Estimated: $${basePrice}.00`;
-                resultDiv.classList.remove('hidden');
-            } else {
+            if (!from || !to) {
                 alert('Please enter both pickup and delivery addresses');
+                return;
             }
+            try {
+                const q = await postJson('/public/quote', {
+                    pickupAddress: from,
+                    dropoffAddress: to,
+                    serviceLevel: document.getElementById('quote-level').value
+                });
+                document.getElementById('quote-price').textContent = `Estimated: $${(q.priceCents / 100).toFixed(2)}`;
+                document.getElementById('quote-note').textContent =
+                    (q.distanceMiles != null ? `About ${q.distanceMiles} miles. ` : '') + q.note;
+            } catch (err) {
+                document.getElementById('quote-price').textContent = 'Starting at $25.00';
+                document.getElementById('quote-note').textContent = 'Call (803) 949-7034 for an exact quote.';
+            }
+            resultDiv.classList.remove('hidden');
         }
 
         // Business contract request
+        const PLANS = {
+            law_firm: { name: 'Law Firm Plan', price: 500 },
+            medical: { name: 'Medical Office Plan', price: 300 },
+            real_estate: { name: 'Real Estate Plan', price: 400 },
+            usc_department: { name: 'USC Department Plan', price: 200 }
+        };
+        const planDialog = document.getElementById('plan-dialog');
+        const planForm = document.getElementById('plan-form');
+
         function requestBusinessContract(planType) {
-            // This would integrate with your actual contract request endpoint
-            const plans = {
-                'law_firm': { name: 'Law Firm Plan', price: 500 },
-                'medical': { name: 'Medical Office Plan', price: 300 },
-                'real_estate': { name: 'Real Estate Plan', price: 400 },
-                'usc_department': { name: 'USC Department Plan', price: 200 }
-            };
-            
-            const plan = plans[planType];
-            if (confirm(`Request ${plan.name} at $${plan.price}/month? You'll be contacted within 24 hours to discuss details.`)) {
-                // In production, this would call your /api/contracts/request endpoint
-                alert(`Thank you! Your request for the ${plan.name} has been submitted. We'll contact you within 24 hours to discuss your delivery needs and finalize the contract.`);
-            }
+            const plan = PLANS[planType];
+            planForm.reset();
+            planForm.elements.plan.value = planType;
+            document.getElementById('plan-title').textContent = `Request the ${plan.name}`;
+            document.getElementById('plan-subtitle').textContent = `$${plan.price}/month. We'll contact you within 24 hours to finalize details.`;
+            document.getElementById('plan-status').classList.add('hidden');
+            planForm.querySelector('button[type=submit]').disabled = false;
+            planDialog.classList.remove('hidden');
+            planDialog.classList.add('flex');
+            planForm.elements.name.focus();
         }
 
-        // Contact form submission
-        document.getElementById('contact-form').addEventListener('submit', function(e) {
+        function closePlanDialog() {
+            planDialog.classList.add('hidden');
+            planDialog.classList.remove('flex');
+        }
+        planDialog.addEventListener('click', (e) => { if (e.target === planDialog) closePlanDialog(); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlanDialog(); });
+
+        planForm.addEventListener('submit', async function (e) {
             e.preventDefault();
-            
-            // Get form data
-            const formData = new FormData(this);
-            const data = Object.fromEntries(formData);
-            
-            // In production, this would submit to your backend
-            console.log('Contact form submission:', data);
-            
-            alert('Thank you for your message! We\'ll get back to you within 24 hours.');
-            this.reset();
+            const button = this.querySelector('button[type=submit]');
+            const status = document.getElementById('plan-status');
+            button.disabled = true;
+            try {
+                const r = await postJson('/public/contract-request', Object.fromEntries(new FormData(this)));
+                showStatus(status, r.message, true);
+                setTimeout(closePlanDialog, 3500);
+            } catch (err) {
+                showStatus(status, err.message, false);
+                button.disabled = false;
+            }
+        });
+
+        // Contact form submission
+        document.getElementById('contact-form').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const button = this.querySelector('button[type=submit]');
+            const status = document.getElementById('contact-status');
+            button.disabled = true;
+            try {
+                const r = await postJson('/public/contact', Object.fromEntries(new FormData(this)));
+                showStatus(status, r.message, true);
+                this.reset();
+            } catch (err) {
+                showStatus(status, err.message, false);
+            } finally {
+                button.disabled = false;
+            }
         });
 
         // Add scroll animations

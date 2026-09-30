@@ -17,6 +17,7 @@ and it's set up to deploy on [Railway](https://railway.com) with Postgres on Rai
    | `JWT_SECRET` | a long random string (`openssl rand -hex 32`) |
    | `DISPATCH_API_KEY` | *(optional)* random string that lets your website or order form create orders |
    | `PUBLIC_URL` | `https://app.choicedeliverysc.com` (password-reset links open the web app) |
+   | `LEADS_EMAIL` | *(optional)* where website messages go; default `info@choicedeliverysc.com` |
    | `RESEND_API_KEY`, `MAIL_FROM` | *(optional)* for password-reset emails via Resend; without them reset links are only written to the logs |
 5. **Give it a domain**: *Settings → Networking → Custom Domain* → `api.choicedeliverysc.com`, then add the
    CNAME record Railway shows at your DNS provider. (Domain plan: `www.` = public landing page,
@@ -64,6 +65,14 @@ The same service also serves the website in `web/` at `/`. It's plain JavaScript
 | `app.choicedeliverysc.com/#/track/<token>` | Public tracking page you can send to recipients (the order page has a *Copy tracking link* button) |
 
 Drivers who try to log in on the website are pointed to the phone app.
+
+## Public website hooks
+
+The landing page at `www.choicedeliverysc.com` (source in `/website`) calls these no-login endpoints:
+`GET /public/pricing`, `POST /public/quote`, `POST /public/contact`, `POST /public/contract-request`,
+plus `GET /public/geocode?q=` for address suggestions (OpenStreetMap, SC/NC/GA only, cached and throttled
+to their one-request-per-second limit). Messages and plan requests are stored as **leads** (`GET/PATCH /leads`,
+staff only) and emailed to `LEADS_EMAIL` when email is configured. Prices live in `src/pricing.js`.
 
 ## How the data fits together
 

@@ -2,7 +2,7 @@ import { html, render, useState, useEffect, useRoute, match, navigate, getUser, 
 import { Spinner } from './components.js';
 import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
-import { PeoplePage, CompaniesPage, TeamPage, AccountPage } from './pages-admin.js';
+import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage } from './pages-admin.js';
 
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage };
 
@@ -42,6 +42,7 @@ function App() {
   if (path === '/account') return html`<${AccountPage} />`;
   if (path === '/team' && user.role === 'shipper') return html`<${TeamPage} />`;
   if (path === '/people' && isStaff(getUser())) return html`<${PeoplePage} />`;
+  if (path === '/leads' && isStaff(getUser())) return html`<${LeadsPage} />`;
   if (path === '/companies' && isStaff(getUser())) return html`<${CompaniesPage} />`;
   navigate('/orders');
   return null;

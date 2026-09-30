@@ -1,9 +1,9 @@
 import {
   html, useState, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
-  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES,
+  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS,
 } from './lib.js';
 import {
-  Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton,
+  Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput,
 } from './components.js';
 
 const FILTERS = [
@@ -27,9 +27,16 @@ export function OrdersPage() {
 
   return html`
     <${Layout}>
-      <${PageHeader} title="Orders"
-        subtitle=${isStaff(user) ? 'Every order across all companies.' : `Deliveries for ${user.organization?.name}.`}
-        actions=${html`<a class="btn primary" href="#/orders/new">+ New order</a>`} />
+      ${isStaff(user) ? html`
+        <${PageHeader} title="Orders" subtitle="Every order across all companies."
+          actions=${html`<a class="btn primary" href="#/orders/new">+ New order</a>`} />` : html`
+        <section class="welcome">
+          <div>
+            <h1>Welcome back${user.name ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
+            <p>Ready for delivery across the Southeast? We deliver up to 200 miles from Columbia.</p>
+          </div>
+          <a class="btn" href="#/orders/new">+ New order</a>
+        </section>`}
       <div class="toolbar">
         <div class="tabs" role="tablist">
           ${FILTERS.map((x) => html`<button role="tab" aria-selected=${filter === x.key}
@@ -51,8 +58,8 @@ export function OrdersPage() {
             <tbody>
               ${rows.map((o) => html`
                 <tr class="clickable" onClick=${() => navigate(`/orders/${o.id}`)}>
-                  <td data-label="Order" class="nowrap"><a href=${`#/orders/${o.id}`} onClick=${(e) => e.stopPropagation()}><strong>${o.orderNumber}</strong></a>
-                    ${o.vehicleType && html`<div class="muted small">${o.vehicleType}</div>`}</td>
+                  <td data-label="Order"><a class="nowrap" href=${`#/orders/${o.id}`} onClick=${(e) => e.stopPropagation()}><strong>${o.orderNumber}</strong></a>
+                    <div class="muted small">${o.serviceLevel === 'same_day' ? 'Same-day · ' : ''}${o.vehicleType}</div></td>
                   <td data-label="Route"><${RouteSummary} stops=${o.stops} /></td>
                   ${isStaff(user) && html`<td data-label="Company">${o.organization?.name || html`<span class="muted">Internal</span>`}</td>`}
                   <td data-label="Driver">${o.driver?.name || html`<span class="muted">—</span>`}</td>
@@ -67,7 +74,22 @@ export function OrdersPage() {
 
 // ---------- New order ----------
 
-const blankStop = (type) => ({ type, address: '', contactName: '', contactPhone: '', instructions: '' });
+const blankStop = (type) => ({ type, address: '', location: null, contactName: '', contactPhone: '', instructions: '' });
+
+// Approximate road miles along the route (straight line x 1.2), when every stop has coordinates.
+function routeMiles(stops) {
+  if (stops.some((s) => !s.location)) return null;
+  const rad = (d) => (d * Math.PI) / 180;
+  let miles = 0;
+  for (let i = 1; i < stops.length; i++) {
+    const a = stops[i - 1].location;
+    const b = stops[i].location;
+    const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2
+      + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+    miles += 2 * 3958.8 * Math.asin(Math.sqrt(h));
+  }
+  return Math.round(miles * 1.2 * 10) / 10;
+}
 
 function StopEditor({ stops, setStops }) {
   const update = (i, patch) => setStops(stops.map((s, j) => (j === i ? { ...s, ...patch } : s)));
@@ -93,8 +115,10 @@ function StopEditor({ stops, setStops }) {
             <button type="button" class="icon-btn" disabled=${i === stops.length - 1} onClick=${() => move(i, 1)} aria-label="Move down">↓</button>
             <button type="button" class="icon-btn" disabled=${stops.length <= 2} onClick=${() => remove(i)} aria-label="Remove stop">✕</button>
           </div>
-          <${Field} label="Address"><input required placeholder="Street, city, state, ZIP" value=${s.address}
-            onInput=${(e) => update(i, { address: e.target.value })} /><//>
+          <${Field} label="Address" hint=${s.location ? '✓ Located on the map' : 'Start typing and pick a suggestion so drivers get a map pin.'}>
+            <${AddressInput} required placeholder="Street, city, state, ZIP" value=${s.address}
+              onChange=${(patch) => update(i, patch)} />
+          <//>
           <div class="grid-2">
             <${Field} label="Contact name"><input value=${s.contactName} onInput=${(e) => update(i, { contactName: e.target.value })} /><//>
             <${Field} label="Contact phone"><input type="tel" value=${s.contactPhone} onInput=${(e) => update(i, { contactPhone: e.target.value })} /><//>
@@ -110,9 +134,10 @@ export function NewOrderPage() {
   const user = getUser();
   const staff = isStaff(user);
   const companies = useApi(staff ? '/organizations' : null);
+  const pricing = useApi('/public/pricing');
   const [stops, setStops] = useState([blankStop('pickup'), blankStop('dropoff')]);
   const [v, setV] = useState({
-    vehicleType: 'Cargo Van', weight: '', numberOfPieces: '', description: '', trackingNumber: '',
+    serviceLevel: 'standard', vehicleType: 'Cargo Van', weight: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '',
   });
   const [error, setError] = useState(null);
@@ -129,7 +154,7 @@ export function NewOrderPage() {
     setBusy(true);
     try {
       const body = {
-        vehicleType: v.vehicleType, weight: v.weight, numberOfPieces: v.numberOfPieces, description: v.description,
+        serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weight, numberOfPieces: v.numberOfPieces, description: v.description,
         trackingNumber: v.trackingNumber || undefined,
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
@@ -156,6 +181,24 @@ export function NewOrderPage() {
         <section class="card">
           <h2>Route</h2>
           <${StopEditor} stops=${stops} setStops=${setStops} />
+        </section>
+        <section class="card">
+          <h2>Service</h2>
+          <div class="choice-grid" role="radiogroup" aria-label="Service level">
+            ${(pricing.data?.serviceLevels || []).map((l) => html`
+              <label class=${`choice ${v.serviceLevel === l.id ? 'selected' : ''}`}>
+                <input type="radio" name="serviceLevel" value=${l.id} checked=${v.serviceLevel === l.id}
+                  onChange=${() => setV({ ...v, serviceLevel: l.id })} />
+                <span><strong>${l.id === 'same_day' ? 'Same-day (rush)' : 'Standard'}</strong>
+                  <span class="muted small">${l.id === 'same_day' ? 'Urgent, delivered today' : 'Reliable next-day delivery'}</span></span>
+                <span class="price push">${formatMoney(l.priceCents)}</span>
+              </label>`)}
+          </div>
+          ${!staff && pricing.data && html`
+            <div class="estimate">
+              <span>Estimated price${routeMiles(stops) != null ? html` · about ${routeMiles(stops)} miles` : ''}<br /><span class="muted small">Long-distance, oversized or multi-stop deliveries are confirmed by dispatch.</span></span>
+              <span class="price">${formatMoney(pricing.data.serviceLevels.find((l) => l.id === v.serviceLevel)?.priceCents)}</span>
+            </div>`}
         </section>
         <section class="card">
           <h2>Shipment</h2>
@@ -186,7 +229,7 @@ export function NewOrderPage() {
                   ${(companies.data || []).map((c) => html`<option value=${c.id}>${c.name}</option>`)}
                 </select>
               <//>
-              <${Field} label="Price (USD)"><input type="number" min="0" step="0.01" ...${bind('price')} /><//>
+              <${Field} label="Price (USD)" hint="Leave empty to use the standard rate for the service level."><input type="number" min="0" step="0.01" ...${bind('price')} /><//>
             </div>
           </section>`}
         <div class="form-actions">
@@ -328,6 +371,7 @@ export function OrderPage({ id }) {
           <section class="card">
             <h2>Shipment</h2>
             <dl class="facts">
+              <dt>Service</dt><dd>${SERVICE_LEVEL_LABELS[order.serviceLevel] || '—'}</dd>
               <dt>Vehicle</dt><dd>${order.vehicleType || '—'}</dd>
               <dt>Weight</dt><dd>${order.weight || '—'}</dd>
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}</dd>

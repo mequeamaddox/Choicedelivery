@@ -7,6 +7,7 @@ const {
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
+const { isServiceLevel, defaultPriceCents } = require('../pricing');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -95,6 +96,13 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   }
   const b = req.body || {};
   if (b.priceCents !== undefined && !isStaff(req.user)) throw new HttpError(403, 'Only dispatch can set a price');
+  if (b.serviceLevel !== undefined && !isServiceLevel(b.serviceLevel)) {
+    throw new HttpError(400, 'serviceLevel must be "standard" or "same_day"');
+  }
+  // A shipper switching service level gets that level's published price.
+  if (b.serviceLevel !== undefined && b.priceCents === undefined && !isStaff(req.user)) {
+    b.priceCents = defaultPriceCents(b.serviceLevel);
+  }
   await db.withTx(async (client) => {
     try {
       await client.query(
@@ -103,11 +111,12 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
            tracking_number = CASE WHEN $6::boolean THEN NULLIF($7, '') ELSE tracking_number END,
            price_cents = CASE WHEN $8::boolean THEN $9::int ELSE price_cents END,
            scheduled_at = CASE WHEN $10::boolean THEN $11::timestamptz ELSE scheduled_at END,
+           service_level = COALESCE($12, service_level),
            updated_at = now()
          WHERE id = $1`,
         [current.id, b.vehicleType ?? null, b.weight ?? null, b.numberOfPieces ?? null, b.description ?? null,
           b.trackingNumber !== undefined, str(b.trackingNumber), b.priceCents !== undefined, b.priceCents ?? null,
-          b.scheduledAt !== undefined, b.scheduledAt || null]
+          b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null]
       );
     } catch (e) {
       if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');

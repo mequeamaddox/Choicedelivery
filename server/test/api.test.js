@@ -281,3 +281,81 @@ test('web app is served with security headers', async () => {
   res = await fetch(`${base}/static/nope.js`);
   assert.equal(res.status, 404);
 });
+
+test('orders are priced by service level; shippers cannot undercut', async () => {
+  let r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+  assert.equal(r.data.serviceLevel, 'standard');
+  assert.equal(r.data.priceCents, 2500);
+  const id = r.data.id;
+  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { serviceLevel: 'same_day' } });
+  assert.equal(r.data.priceCents, 5000, 'switching to rush reprices');
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ serviceLevel: 'teleport' }) });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ serviceLevel: 'same_day', priceCents: 6500 }) });
+  assert.equal(r.data.priceCents, 6500, 'dispatch can set a custom price');
+  await call('POST', `/orders/${id}/cancel`, { token: t.admin });
+});
+
+test('website: contact messages and plan requests become leads', async () => {
+  let r = await call('GET', '/public/pricing');
+  assert.equal(r.data.businessPlans.length, 4);
+
+  r = await call('POST', '/public/contact', { body: { firstName: 'Jo', lastName: 'Ray', email: 'jo@x.com', message: 'Need weekly runs' } });
+  assert.equal(r.status, 201);
+  r = await call('POST', '/public/contact', { body: { firstName: 'Jo', email: 'not-an-email', message: 'x' } });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/public/contact', { body: { firstName: 'Bot', email: 'b@x.com', message: 'spam', website: 'http://spam' } });
+  assert.equal(r.status, 201, 'honeypot submissions look accepted');
+  r = await call('POST', '/public/contract-request', { body: { plan: 'law_firm', name: 'Ann', company: 'Smith Law', email: 'ann@smith.law' } });
+  assert.equal(r.status, 201);
+  r = await call('POST', '/public/contract-request', { body: { plan: 'free_stuff', name: 'A', email: 'a@b.co' } });
+  assert.equal(r.status, 400);
+
+  r = await call('GET', '/leads', { token: t.acme });
+  assert.equal(r.status, 403, 'shippers cannot see leads');
+  r = await call('GET', '/leads?status=new', { token: t.dispatcher });
+  assert.deepEqual(r.data.map((l) => l.type).sort(), ['contact', 'contract'], 'spam was dropped');
+  const contract = r.data.find((l) => l.type === 'contract');
+  assert.equal(contract.planName, 'Law Firm Plan');
+  r = await call('PATCH', `/leads/${contract.id}`, { token: t.dispatcher, body: { status: 'contacted' } });
+  assert.equal(r.data.status, 'contacted');
+});
+
+test('address suggestions and distance-aware quotes', async () => {
+  const geocode = require('../src/geocode');
+  const places = {
+    'columbia': { lat: '34.0007', lon: '-81.0348', address: { house_number: '1515', road: 'Manning Ave', city: 'Columbia', state: 'South Carolina', postcode: '29203' } },
+    'charleston': { lat: '32.7765', lon: '-79.9311', address: { road: 'King St', city: 'Charleston', state: 'South Carolina' } },
+    'atlanta': { lat: '33.749', lon: '-84.388', address: { city: 'Atlanta', state: 'Georgia' } },
+    'nashville': { lat: '36.16', lon: '-86.78', address: { city: 'Nashville', state: 'Tennessee' } },
+    'miami': { lat: '25.76', lon: '-80.19', address: { city: 'Miami', state: 'Florida' } },
+  };
+  let calls = 0;
+  geocode.setFetch(async (url) => {
+    calls++;
+    const q = new URL(url).searchParams.get('q').toLowerCase();
+    const hits = Object.entries(places).filter(([k]) => q.includes(k)).map(([, v]) => v);
+    return { ok: true, json: async () => hits };
+  });
+
+  let r = await call('GET', '/public/geocode?q=1515%20Manning%20Ave%20columbia');
+  assert.equal(r.data[0].label, '1515 Manning Ave, Columbia, SC 29203');
+  assert.deepEqual(r.data[0].location, { lat: 34.0007, lng: -81.0348 });
+  r = await call('GET', '/public/geocode?q=Nashville');
+  assert.equal(r.data.length, 0, 'outside SC/NC/GA is filtered out');
+  const before = calls;
+  await call('GET', '/public/geocode?q=1515%20Manning%20Ave%20columbia');
+  assert.equal(calls, before, 'repeat lookups are cached');
+
+  r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'charleston', serviceLevel: 'same_day' } });
+  assert.equal(r.data.priceCents, 5000);
+  assert.ok(r.data.distanceMiles > 100 && r.data.distanceMiles < 160, `distance ${r.data.distanceMiles}`);
+  assert.equal(r.data.outOfArea, false);
+  r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'x',
+    dropoffLocation: { lat: 25.76, lng: -80.19 } } });
+  assert.equal(r.data.outOfArea, true, 'Miami is beyond 200 miles');
+
+  geocode.setFetch(async () => ({ ok: false, status: 503 }));
+  r = await call('GET', '/public/geocode?q=somewhere%20new');
+  assert.equal(r.status, 502, 'lookup outages degrade gracefully');
+});

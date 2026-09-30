@@ -2,6 +2,7 @@
 const db = require('./db');
 const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
+const { isServiceLevel, defaultPriceCents } = require('./pricing');
 
 const ACTIVE = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'];
 
@@ -52,7 +53,10 @@ async function createOrder(client, actor, body) {
   let organizationId = body.organizationId || null;
   if (actor.role === 'shipper') organizationId = actor.organization_id;
 
-  let priceCents = null;
+  const serviceLevel = body.serviceLevel === undefined ? 'standard' : body.serviceLevel;
+  if (!isServiceLevel(serviceLevel)) throw new HttpError(400, 'serviceLevel must be "standard" or "same_day"');
+  // Published rate by default; dispatch can set a custom price.
+  let priceCents = defaultPriceCents(serviceLevel);
   if (body.priceCents != null) {
     if (!isStaff(actor)) throw new HttpError(403, 'Only dispatch can set a price');
     priceCents = Number.parseInt(body.priceCents, 10);
@@ -63,10 +67,10 @@ async function createOrder(client, actor, body) {
   try {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
-                           tracking_number, price_cents, scheduled_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+                           tracking_number, price_cents, scheduled_at, service_level)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
-        str(body.description), str(body.trackingNumber) || null, priceCents, body.scheduledAt || null]
+        str(body.description), str(body.trackingNumber) || null, priceCents, body.scheduledAt || null, serviceLevel]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -133,6 +137,7 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
       phoneNumber: o.driver_phone,
       ...(showDriverLocation ? { location: o.driver_location, locationUpdatedAt: o.driver_location_updated_at } : {}),
     } : null,
+    serviceLevel: o.service_level,
     vehicleType: o.vehicle_type,
     weight: o.weight,
     numberOfPieces: o.number_of_pieces,
