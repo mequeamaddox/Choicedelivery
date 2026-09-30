@@ -23,7 +23,7 @@ function Gate() {
     if (!user) return;
     setUpNotifications().catch(() => {});
     // Back online after the phone restarted or the app was closed: resume sharing location.
-    if (user.isOnline) startTracking().catch(() => {});
+    if (user.isOnline && !user.workBlocker) startTracking().catch(() => {});
   }, [user?.id]);
 
   useEffect(() => {
@@ -41,10 +41,13 @@ function Gate() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="job/[id]" options={{ title: 'Job' }} />
         <Stack.Screen name="scan" options={{ title: 'Scan barcode', presentation: 'modal' }} />
+        <Stack.Screen name="profile" options={{ title: 'Your profile' }} />
+        <Stack.Screen name="password" options={{ title: 'Change password' }} />
       </Stack.Protected>
       <Stack.Protected guard={!user}>
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="forgot" options={{ title: 'Reset password' }} />
+        <Stack.Screen name="apply" options={{ title: 'Apply to drive' }} />
       </Stack.Protected>
     </Stack>
   );

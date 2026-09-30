@@ -1,6 +1,6 @@
 // Driver portal: works in any phone browser at app.choicedeliverysc.com, no app install needed.
 import {
-  html, useState, useEffect, useRef, api, navigate, useApi, formatDate, timeAgo, mapsLink, STATUS, ACTIVE_STATUSES,
+  html, useState, useEffect, useRef, api, navigate, useApi, getUser, formatDate, timeAgo, mapsLink, STATUS, ACTIVE_STATUSES,
   SERVICE_LEVEL_LABELS,
 } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, StatusBadge, RouteSummary, ActionButton, StopTimeline } from './components.js';
@@ -67,7 +67,29 @@ function JobCard({ o, action }) {
     </article>`;
 }
 
+// Shown instead of jobs until the driver is approved (or while they're on hold / have expired documents).
+function DriverStatusCard({ user }) {
+  const c = user.checklist || { missing: [], expired: [] };
+  const title = { applied: 'Application received', rejected: 'Application not approved', suspended: 'Your account is on hold' }[user.driverStatus]
+    || 'Action needed';
+  return html`
+    <section class="card stack">
+      <h2>${title}</h2>
+      <p>${user.workBlocker}</p>
+      ${user.reviewNote && user.driverStatus !== 'applied' && html`<p class="small muted">${user.reviewNote}</p>`}
+      ${c.missing.length > 0 && html`<div class="small"><strong>Finish your profile in the driver app:</strong>
+        <ul>${c.missing.map((m) => html`<li>${m}</li>`)}</ul></div>`}
+      <a class="btn primary" href="#/driver-app">Get the driver app</a>
+    </section>`;
+}
+
 export function DriverJobsPage() {
+  const me = getUser();
+  if (me.workBlocker) return html`<${Layout}><${PageHeader} title="Jobs" /><${DriverStatusCard} user=${me} /><//>`;
+  return html`<${DriverJobsList} />`;
+}
+
+function DriverJobsList() {
   const mine = useApi(`/orders?mine=true&status=${ACTIVE_STATUSES.join(',')}`, { pollMs: 15000 });
   const open = useApi('/orders?status=pending', { pollMs: 15000 });
   const [error, setError] = useState(null);

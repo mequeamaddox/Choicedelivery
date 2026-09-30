@@ -19,8 +19,14 @@ function OnlineCard() {
   const toggle = async (next) => {
     setBusy(true); setError(null);
     try {
-      if (next) await startTracking(); else await stopTracking();
-      await api.setOnline(next);
+      if (next) {
+        // The server decides first (e.g. expired insurance), so tracking never runs for a driver who can't work.
+        await api.setOnline(true);
+        try { await startTracking(); } catch (e) { await api.setOnline(false).catch(() => {}); throw e; }
+      } else {
+        await stopTracking();
+        await api.setOnline(false);
+      }
       setUser({ ...user, isOnline: next });
       tracking.reload();
     } catch (e) { setError(e); } finally { setBusy(false); }
@@ -50,7 +56,40 @@ function OnlineCard() {
   );
 }
 
+// Until a driver is approved (or while on hold / with expired documents) they see this instead of jobs.
+function StatusCard({ user }) {
+  const router = useRouter();
+  const c = user.checklist || { missing: [], expired: [] };
+  const title = { applied: 'Application received', rejected: 'Application not approved', suspended: 'Account on hold' }[user.driverStatus]
+    || 'Action needed';
+  return (
+    <Card>
+      <H2>{title}</H2>
+      <Muted>{user.workBlocker}</Muted>
+      {user.reviewNote && user.driverStatus !== 'applied' ? <Notice>{user.reviewNote}</Notice> : null}
+      {c.missing.length ? (
+        <View style={{ gap: 4 }}>
+          <Text style={{ fontWeight: '700', color: colors.text }}>Finish your profile{user.driverStatus === 'applied' ? ' to get approved faster' : ''}:</Text>
+          {c.missing.map((m) => <Muted key={m} small>•  {m}</Muted>)}
+        </View>
+      ) : user.driverStatus === 'applied' ? <Notice tone="green">✓ Your profile is complete. We'll email you once you're approved.</Notice> : null}
+      {user.driverStatus !== 'rejected' ? <Button title={c.missing.length || c.expired.length ? 'Finish profile' : 'View profile'} onPress={() => router.push('/profile')} /> : null}
+      <Button title="Call dispatch" variant="secondary" onPress={() => Linking.openURL('tel:8039497034')} />
+    </Card>
+  );
+}
+
 export default function Jobs() {
+  const { user, refresh } = useAuth();
+  // Pick up approval (or a hold) without signing out and back in.
+  useLoader(() => refresh(), { pollMs: user?.workBlocker ? 30000 : 0 });
+  if (user?.workBlocker) {
+    return <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}><StatusCard user={user} /></ScrollView>;
+  }
+  return <JobsList />;
+}
+
+function JobsList() {
   const router = useRouter();
   const [error, setError] = useState(null);
   const [accepting, setAccepting] = useState(null);

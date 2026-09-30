@@ -214,10 +214,11 @@ function visibilityFilter(user, params) {
     return `o.organization_id = $${params.length}`;
   }
   params.push(user.id);
-  // Drivers never see sample (demo) orders.
-  // Unpaid card orders stay hidden until payment clears.
-  return `NOT o.is_demo AND (o.driver_id = $${params.length}
-    OR (o.status = 'pending' AND o.driver_id IS NULL AND o.payment_status <> 'unpaid'))`;
+  // Drivers never see sample (demo) orders. Unpaid card orders stay hidden until payment clears.
+  // Drivers who aren't approved yet (applied, rejected, suspended) see no open jobs.
+  const openPool = user.driver_status && user.driver_status !== 'approved' ? 'FALSE'
+    : "(o.status = 'pending' AND o.driver_id IS NULL AND o.payment_status <> 'unpaid')";
+  return `NOT o.is_demo AND (o.driver_id = $${params.length} OR ${openPool})`;
 }
 
 const ORDER_SELECT = `
@@ -225,10 +226,15 @@ const ORDER_SELECT = `
          (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status = 'due')::int AS balance_due_cents,
          (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status <> 'waived')::int AS extra_charges_cents,
          d.name AS driver_name, d.phone_number AS driver_phone,
-         d.last_location AS driver_location, d.location_updated_at AS driver_location_updated_at
+         d.last_location AS driver_location, d.location_updated_at AS driver_location_updated_at,
+         dv.color AS driver_vehicle_color, dv.make AS driver_vehicle_make, dv.model AS driver_vehicle_model,
+         dv.plate AS driver_vehicle_plate, dp.updated_at AS driver_photo_at
   FROM orders o
   LEFT JOIN organizations org ON org.id = o.organization_id
-  LEFT JOIN users d ON d.id = o.driver_id`;
+  LEFT JOIN users d ON d.id = o.driver_id
+  LEFT JOIN LATERAL (SELECT color, make, model, plate FROM vehicles v WHERE v.driver_id = o.driver_id
+                     ORDER BY v.created_at LIMIT 1) dv ON true
+  LEFT JOIN LATERAL (SELECT updated_at FROM driver_documents dd WHERE dd.user_id = o.driver_id AND dd.kind = 'photo') dp ON true`;
 
 function serializeStop(s, { proof }) {
   const out = {
@@ -270,6 +276,9 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
       id: o.driver_id,
       name: o.driver_name,
       phoneNumber: o.driver_phone,
+      vehicle: [o.driver_vehicle_color, o.driver_vehicle_make, o.driver_vehicle_model].filter(Boolean).join(' ') || null,
+      plate: o.driver_vehicle_plate || null,
+      photoUrl: o.driver_photo_at ? `/public/driver-photo/${o.driver_id}?v=${new Date(o.driver_photo_at).getTime()}` : null,
       ...(showDriverLocation ? { location: o.driver_location, locationUpdatedAt: o.driver_location_updated_at } : {}),
     } : null,
     serviceLevel: o.service_level,

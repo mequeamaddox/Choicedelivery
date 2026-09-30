@@ -41,6 +41,12 @@ export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch
   return {
     request,
     login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password } }),
+    // Apply to drive: { name, email, password, phoneNumber, city, zip, vehicle: {...}, agreed: true }
+    driverSignup: (fields) => request('/auth/driver-signup', { method: 'POST', body: fields }),
+    changePassword: (currentPassword, newPassword) => request('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword } }),
+    // kind: photo | license_front | license_back | insurance | vehicle | registration; data: image data URL
+    uploadDocument: (kind, data) => request(`/users/me/documents/${kind}`, { method: 'PUT', body: { data }, timeoutMs: 60000 }),
+    document: (userId, kind) => request(`/users/${encodeURIComponent(userId)}/documents/${kind}`),
     forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: { email } }),
     me: () => request('/users/me'),
     updateMe: (fields) => request('/users/me', { method: 'PUT', body: fields }),

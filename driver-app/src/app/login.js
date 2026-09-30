@@ -32,7 +32,10 @@ export default function Login() {
           textContentType="password" returnKeyType="go" onSubmitEditing={submit} />
         <Button title="Sign in" big onPress={submit} loading={busy} />
         <Link href="/forgot" style={{ color: colors.teal, textAlign: 'center', fontWeight: '600', padding: 8 }}>Forgot password?</Link>
-        <Muted small style={{ textAlign: 'center' }}>Want to drive for us? Call (803) 949-7034.</Muted>
+        <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 16, gap: 8 }}>
+          <Muted style={{ textAlign: 'center' }}>New to Choice Delivery?</Muted>
+          <Link href="/apply" asChild><Button title="Apply to drive" variant="secondary" /></Link>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -18,7 +18,8 @@ const isExpoToken = (t) => typeof t === 'string' && t.startsWith('ExponentPushTo
 async function notifyDriversOfOrder(order) {
   if (order.status !== 'pending') return;
   const { rows } = await db.query(
-    "SELECT push_token, is_online FROM users WHERE role = 'driver' AND is_active AND push_token IS NOT NULL");
+    `SELECT push_token, is_online FROM users
+     WHERE role = 'driver' AND is_active AND driver_status = 'approved' AND NOT is_demo AND push_token IS NOT NULL`);
   const online = rows.filter((r) => r.is_online);
   const targets = (online.length ? online : rows).map((r) => r.push_token).filter(isExpoToken);
   const pickup = order.stops.find((s) => s.type === 'pickup');

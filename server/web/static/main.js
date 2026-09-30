@@ -1,11 +1,11 @@
 import { html, render, useState, useEffect, useRoute, match, navigate, getUser, isStaff, onSessionChange, restoreSession } from './lib.js';
 import { Spinner } from './components.js';
-import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage } from './pages-public.js';
+import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage, DriverSignupPage, DriverAppPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
-import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage } from './pages-admin.js';
+import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDetailPage } from './pages-admin.js';
 import { DriverJobsPage, DriverJobPage, DriverHistoryPage } from './pages-driver.js';
 
-const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage };
+const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
 
 function App() {
   const path = useRoute();
@@ -23,6 +23,7 @@ function App() {
   if (track) return html`<${TrackPage} token=${track.token} />`;
   const reset = match('/reset/:token', path);
   if (reset) return html`<${ResetPage} token=${reset.token} />`;
+  if (path.split('?')[0] === '/driver-app') return html`<${DriverAppPage} />`;
   if (!ready) return html`<div class="page"><${Spinner} /></div>`;
 
   if (!user) {
@@ -54,6 +55,8 @@ function App() {
   if (path === '/account') return html`<${AccountPage} />`;
   if (path === '/team' && user.role === 'shipper') return html`<${TeamPage} />`;
   if (path === '/people' && isStaff(getUser())) return html`<${PeoplePage} />`;
+  const person = match('/people/:id', path);
+  if (person && isStaff(getUser())) return html`<${DriverDetailPage} key=${person.id} id=${person.id} />`;
   if (path === '/leads' && isStaff(getUser())) return html`<${LeadsPage} />`;
   if (path === '/companies' && isStaff(getUser())) return html`<${CompaniesPage} />`;
   navigate('/orders');

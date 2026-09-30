@@ -714,7 +714,11 @@ export function OrderPage({ id }) {
           ${!isQuote && html`<section class="card">
             <h2>Driver</h2>
             ${order.driver ? html`
-              <p><strong>${order.driver.name || 'Driver'}</strong></p>
+              <div class="driver-head">
+                ${order.driver.photoUrl && html`<img class="avatar" src=${order.driver.photoUrl} alt="" />`}
+                <div><p><strong>${order.driver.name || 'Driver'}</strong></p>
+                  ${order.driver.vehicle && html`<p class="small muted">${order.driver.vehicle}${order.driver.plate ? ` · ${order.driver.plate}` : ''}</p>`}</div>
+              </div>
               ${order.driver.phoneNumber && html`<p><a href=${`tel:${order.driver.phoneNumber}`}>${order.driver.phoneNumber}</a></p>`}
               ${order.driver.location && html`<p class="small">Last location ${timeAgo(order.driver.locationUpdatedAt)}${' · '}<a href=${mapsLink(order.driver.location)} target="_blank" rel="noopener">open map</a></p>`}`
             : html`<p class="muted">${order.status === 'cancelled' ? 'No driver.' : 'Waiting for a driver to accept.'}</p>`}

@@ -24,6 +24,17 @@ router.put('/bad-weather', asyncH(async (req, res) => {
   res.json({ bad_weather: req.body.enabled });
 }));
 
+// The driver app's install link (e.g. the latest EAS build or Play Store page). Owner only.
+router.put('/driver-app', requireRole('admin'), asyncH(async (req, res) => {
+  const url = String(req.body?.url || '').trim();
+  if (url && !/^https:\/\/\S+$/.test(url)) throw new HttpError(400, 'Enter a link starting with https://');
+  await db.query(
+    `INSERT INTO settings (key, value, updated_by, updated_at) VALUES ('driver_app_url', $1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [JSON.stringify(url || null), req.user.id]);
+  res.json({ url: url || null });
+}));
+
 // Weight tiers, extra stop, add-on and wait-time amounts. Owner (admin) only.
 router.get('/fees', asyncH(async (req, res) => {
   res.json({ fees: await getFees(db), defaults: normalizeFees(DEFAULT_FEES) });

@@ -2,8 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Image, Linking, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { pickPhoto } from '../../lib/photos';
 import { api } from '../../lib/client';
 import { useAuth } from '../../lib/auth';
 import { formatDate, mapsUrl, minutesSince, nextStop } from '../../lib/api';
@@ -13,20 +12,6 @@ import { Badge, Button, Card, ErrorBox, H2, Loading, Muted, Notice, Row, styles 
 import SignatureModal from '../../components/SignatureModal';
 
 const ADD_ON_LABELS = { loading_help: 'Loading/unloading help', inside_delivery: 'Inside delivery / stairs' };
-
-// Camera photo, shrunk to at most 1280px so it uploads quickly on mobile data. Returns a data URL.
-async function takePhoto() {
-  const perm = await ImagePicker.requestCameraPermissionsAsync();
-  if (!perm.granted) throw new Error('Camera access is off for Choice Delivery. Turn it on in your phone settings.');
-  const shot = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
-  if (shot.canceled || !shot.assets?.[0]) return null;
-  const a = shot.assets[0];
-  const ctx = ImageManipulator.manipulate(a.uri);
-  if (Math.max(a.width || 0, a.height || 0) > 1280) ctx.resize(a.width >= a.height ? { width: 1280 } : { height: 1280 });
-  const img = await ctx.renderAsync();
-  const out = await img.saveAsync({ format: SaveFormat.JPEG, compress: 0.7, base64: true });
-  return `data:image/jpeg;base64,${out.base64}`;
-}
 
 // Minutes since the driver arrived at the stop, with the free wait time from the rate card.
 function WaitTimer({ stop, freeMinutes }) {
@@ -52,7 +37,7 @@ function ProofForm({ order, stop, onDone }) {
   const pickup = stop.type === 'pickup';
   const photograph = async () => {
     setError(null);
-    try { const p = await takePhoto(); if (p) setPhoto(p); } catch (e) { setError(e); }
+    try { const p = await pickPhoto(); if (p) setPhoto(p); } catch (e) { setError(e); }
   };
   const submit = async () => {
     if (!signature && !photo) { setError(new Error('Add a signature or a photo as proof.')); return; }

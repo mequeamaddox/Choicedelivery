@@ -6,7 +6,12 @@ dispatch and customers right away.
 
 ## What drivers can do
 
-- **Sign in** with the account you create for them (People page on the website). Only driver accounts work.
+- **Apply to drive** right in the app (or at app.choicedeliverysc.com/#/drive). New drivers can sign in and
+  finish their profile, but see no jobs until you approve them on the People page. Or invite a driver from the
+  People page and they get an email to choose their password.
+- **Profile**: photo, contact and emergency contact, vehicle details, driver's license and insurance with
+  expiration dates, and photos of the license, insurance card, vehicle and registration. Expired documents pause
+  the account until updated. **Change password** is under Account.
 - **Go online / offline.** While online, the phone shares its location (every ~30 seconds while driving) so
   the order page and the customer's tracking link show the driver on the map, **even with the screen off**
   when the driver allows location "All the time". Android shows a small "You're online" notification while it runs.

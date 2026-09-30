@@ -208,7 +208,7 @@ test('barcode scan picks up the matching shipment', async () => {
   assert.equal(r.data.driver.id, ids.d1);
   r = await call('POST', '/orders/scan', { token: t.d1, body: { barcode: 'SCAN-9' } });
   assert.equal(r.status, 409, 'cannot scan twice');
-  r = await call('POST', '/orders/scan', { token: t.d2, body: { barcode: 'TRK-1' } });
+  r = await call('POST', '/orders/scan', { token: t.d2, body: { barcode: 'SCAN-9' } });
   assert.equal(r.status, 404, "cannot scan another driver's shipment");
   await call('POST', `/orders/${id}/cancel`, { token: t.admin });
 });
@@ -998,4 +998,118 @@ test('no single piece over 75 lbs can be booked', async () => {
   assert.match(r.data.pieceProblem, /over 75 lbs/);
   assert.equal(r.data.maxPieceLbs, 75);
   await call('POST', `/orders/${id}/cancel`, { token: t.acme });
+});
+
+test('drivers apply, finish their profile, get reviewed and are emailed at each step', async () => {
+  const mailer = require('../src/mailer');
+  const sent = [];
+  mailer.setSender(async (m) => { sent.push(m); });
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  try {
+    const apply = { name: 'Dana Wheels', email: 'dana@drivers.test', password: 'danapass1', phoneNumber: '803-555-0199',
+      city: 'Columbia', zip: '29201', vehicle: { type: 'Car', make: 'Honda', model: 'Civic', year: '2019', color: 'White', plate: 'abc123' }, agreed: true };
+    let r = await call('POST', '/auth/driver-signup', { body: { ...apply, agreed: false } });
+    assert.equal(r.status, 400, 'must agree to the terms');
+    r = await call('POST', '/auth/driver-signup', { body: apply });
+    assert.equal(r.status, 201);
+    const dana = r.data.token;
+    const danaId = r.data.user.id;
+    assert.equal(r.data.user.driverStatus, 'applied');
+    assert.equal(r.data.user.vehicle.plate, 'ABC123');
+    assert.equal(r.data.user.checklist.complete, false);
+    await settle();
+    assert.ok(sent.some((m) => m.to === 'dana@drivers.test' && /got your .* application/.test(m.subject)), 'driver is emailed');
+    assert.ok(sent.some((m) => /New driver application: Dana Wheels/.test(m.subject) && m.html.includes(`#/people/${danaId}`)), 'dispatch is emailed');
+
+    // Applied: can sign in and edit the profile, but no jobs, can't go online or be assigned.
+    const order = (await call('POST', '/orders', { token: t.admin, body: orderBody() })).data;
+    r = await call('GET', '/orders?status=pending', { token: dana });
+    assert.equal(r.data.length, 0, 'no open jobs before approval');
+    r = await call('PUT', '/users/me/availability', { token: dana, body: { online: true } });
+    assert.equal(r.status, 409);
+    assert.match(r.data.message, /still being reviewed/);
+    assert.equal((await call('POST', `/orders/${order.id}/accept`, { token: dana })).status, 409);
+    r = await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: danaId } });
+    assert.equal(r.status, 400);
+    assert.match(r.data.message, /can't take jobs/);
+
+    r = await call('PUT', '/users/me', { token: dana, body: {
+      driverProfile: { license: { number: 'D123', state: 'sc', expires: '2030-01-31' },
+        insurance: { company: 'State Farm', policyNumber: 'P-9', expires: '2030-06-30' },
+        emergencyContact: { name: 'Sam', phone: '803-555-0000' }, bogus: 'x' } } });
+    assert.equal(r.data.driverProfile.license.state, 'SC');
+    assert.equal(r.data.driverProfile.bogus, undefined);
+    assert.equal(r.data.driverProfile.city, 'Columbia', 'earlier fields are kept');
+    assert.equal((await call('PUT', '/users/me/documents/license_front', { token: dana, body: { data: 'not an image' } })).status, 400);
+    assert.equal((await call('PUT', '/users/me/documents/passport', { token: dana, body: { data: png } })).status, 400);
+    for (const kind of ['photo', 'license_front', 'insurance', 'vehicle']) {
+      r = await call('PUT', `/users/me/documents/${kind}`, { token: dana, body: { data: png } });
+    }
+    assert.equal(r.data.checklist.complete, true, JSON.stringify(r.data.checklist));
+    assert.ok(r.data.photoUrl);
+    assert.equal((await call('GET', `/users/${danaId}/documents/insurance`, { token: t.dispatcher })).data.data, png, 'staff can review documents');
+    assert.equal((await call('GET', `/users/${danaId}/documents/insurance`, { token: t.d1 })).status, 403, 'other drivers cannot');
+    const photo = await fetch(base + r.data.photoUrl);
+    assert.equal(photo.headers.get('content-type'), 'image/png');
+    assert.equal((await photo.arrayBuffer()).byteLength > 50, true);
+
+    // Approval unlocks work.
+    sent.length = 0;
+    assert.equal((await call('POST', `/users/${danaId}/review`, { token: t.acme, body: { status: 'approved' } })).status, 403);
+    r = await call('POST', `/users/${danaId}/review`, { token: t.dispatcher, body: { status: 'approved' } });
+    assert.equal(r.data.driverStatus, 'approved');
+    await settle();
+    assert.ok(sent.some((m) => m.to === 'dana@drivers.test' && /approved/.test(m.subject) && m.html.includes('#/driver-app')));
+    assert.equal((await call('PUT', '/users/me/availability', { token: dana, body: { online: true } })).status, 200);
+    assert.ok((await call('GET', '/orders?status=pending', { token: dana })).data.some((o) => o.id === order.id));
+    r = await call('POST', `/orders/${order.id}/accept`, { token: dana });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.driver.vehicle, 'White Honda Civic');
+    const tokenRow = (await db.query('SELECT public_token FROM orders WHERE id = $1', [order.id])).rows[0];
+    r = await call('GET', `/track/${tokenRow.public_token}`);
+    assert.equal(r.data.driver.vehicle, 'White Honda Civic', 'customers see the car');
+    assert.ok(r.data.driver.photoUrl, 'and the driver photo');
+    await call('POST', `/orders/${order.id}/cancel`, { token: t.admin });
+
+    // Expired insurance pauses work until a new one is entered.
+    await call('PUT', '/users/me', { token: dana, body: { driverProfile: { insurance: { expires: '2020-01-01' } } } });
+    const o2 = (await call('POST', '/orders', { token: t.admin, body: orderBody() })).data;
+    r = await call('POST', `/orders/${o2.id}/accept`, { token: dana });
+    assert.equal(r.status, 409);
+    assert.match(r.data.message, /Insurance expired/);
+    await call('PUT', '/users/me', { token: dana, body: { driverProfile: { insurance: { expires: '2031-01-01' } } } });
+
+    // Suspension hides jobs again and is emailed with the note.
+    sent.length = 0;
+    await call('POST', `/users/${danaId}/review`, { token: t.dispatcher, body: { status: 'suspended', note: 'Missed two pickups' } });
+    assert.equal((await call('GET', '/users/me', { token: dana })).data.isOnline, false, 'suspension takes them offline');
+    assert.equal((await call('GET', '/orders?status=pending', { token: dana })).data.length, 0);
+    await settle();
+    assert.ok(sent.some((m) => /on hold/.test(m.subject) && m.html.includes('Missed two pickups')));
+    await call('POST', `/orders/${o2.id}/cancel`, { token: t.admin });
+
+    // Invites: approved right away, email links to choosing a password (valid 7 days).
+    sent.length = 0;
+    r = await call('POST', '/users/invite', { token: t.dispatcher, body: { name: 'Ivy Invite', email: 'ivy@drivers.test', vehicleType: 'Minivan' } });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.driverStatus, 'approved');
+    await settle();
+    const invite = sent.find((m) => m.to === 'ivy@drivers.test');
+    const resetToken = invite.html.match(/#\/reset\/([a-f0-9]{64})/)[1];
+    const exp = (await db.query("SELECT reset_token_expires > now() + interval '6 days' AS long FROM users WHERE email = 'ivy@drivers.test'")).rows[0];
+    assert.equal(exp.long, true);
+    r = await call('POST', '/auth/reset-password', { body: { token: resetToken, password: 'ivypass12' } });
+    assert.equal(r.status, 200);
+    assert.equal((await call('POST', '/auth/login', { body: { email: 'ivy@drivers.test', password: 'ivypass12' } })).status, 200);
+    assert.equal((await call('POST', '/users/invite', { token: t.acme, body: { name: 'x', email: 'x@y.z' } })).status, 403);
+
+    // The app download link is an owner setting.
+    assert.equal((await call('PUT', '/settings/driver-app', { token: t.dispatcher, body: { url: 'https://x.y' } })).status, 403);
+    assert.equal((await call('PUT', '/settings/driver-app', { token: t.admin, body: { url: 'http://insecure' } })).status, 400);
+    await call('PUT', '/settings/driver-app', { token: t.admin, body: { url: 'https://expo.dev/artifacts/eas/abc.apk' } });
+    assert.equal((await call('GET', '/public/driver-app')).data.url, 'https://expo.dev/artifacts/eas/abc.apk');
+  } finally {
+    mailer.setSender(null);
+  }
 });

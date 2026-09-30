@@ -41,6 +41,23 @@ router.get('/pricing', asyncH(async (req, res) => {
   });
 }));
 
+// A driver's profile photo, shown to customers on the tracking page and to dispatch.
+router.get('/driver-photo/:id', asyncH(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT d.data FROM driver_documents d JOIN users u ON u.id = d.user_id
+     WHERE d.user_id = $1 AND d.kind = 'photo' AND u.role = 'driver'`, [req.params.id]).catch(() => ({ rows: [] }));
+  const m = rows[0] && /^data:(image\/[a-z]+);base64,(.*)$/.exec(rows[0].data);
+  if (!m) throw new HttpError(404, 'No photo');
+  res.set({ 'Content-Type': m[1], 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+  res.send(Buffer.from(m[2], 'base64'));
+}));
+
+// Where drivers download the app (the latest install link, set by the owner).
+router.get('/driver-app', asyncH(async (req, res) => {
+  const { rows } = await db.query("SELECT value FROM settings WHERE key = 'driver_app_url'");
+  res.json({ url: typeof rows[0]?.value === 'string' ? rows[0].value : null });
+}));
+
 // Address suggestions for the booking form (SC/NC/GA only).
 router.get('/geocode', rateLimit({ windowMs: 60 * 1000, max: 40 }), asyncH(async (req, res) => {
   try {

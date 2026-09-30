@@ -1,7 +1,24 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, ROLES } = require('../auth');
-const { USER_SELECT, publicUser, getUser, setVehicleType } = require('../users');
+const crypto = require('crypto');
+const {
+  USER_SELECT, publicUser, getUser, createUser, setVehicleType, setVehicle, mergeDriverProfile, driverWorkBlocker, DOC_KINDS,
+} = require('../users');
+const driverEmails = require('../driver-emails');
+
+const isImageDataUrl = (v) => typeof v === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v);
+const MAX_DOC_BYTES = 4 * 1024 * 1024;
+
+// Drivers (and staff for them) can edit profile fields and vehicle details.
+async function saveDriverDetails(client, target, { driverProfile, vehicle }) {
+  if (target.role !== 'driver') return;
+  if (driverProfile && typeof driverProfile === 'object') {
+    await client.query('UPDATE users SET driver_profile = $2, updated_at = now() WHERE id = $1',
+      [target.id, JSON.stringify(mergeDriverProfile(target.driver_profile || {}, driverProfile))]);
+  }
+  if (vehicle && typeof vehicle === 'object') await setVehicle(target.id, vehicle, client);
+}
 const { asyncH, HttpError, parseLocation, str } = require('../util');
 
 const router = express.Router();
@@ -17,7 +34,7 @@ router.get('/me', requireUser, asyncH(async (req, res) => {
 }));
 
 router.put('/me', requireUser, asyncH(async (req, res) => {
-  const { email, name, phoneNumber, vehicleType, profilePictureUrl, emailUpdates } = req.body || {};
+  const { email, name, phoneNumber, vehicleType, profilePictureUrl, emailUpdates, driverProfile, vehicle } = req.body || {};
   await db.withTx(async (client) => {
     try {
       await client.query(
@@ -37,8 +54,32 @@ router.put('/me', requireUser, asyncH(async (req, res) => {
       throw e;
     }
     if (vehicleType !== undefined && req.user.role === 'driver') await setVehicleType(req.user.id, vehicleType, client);
+    await saveDriverDetails(client, await getUser(req.user.id, client), { driverProfile, vehicle });
   });
   res.json(publicUser(await getUser(req.user.id)));
+}));
+
+// Drivers upload their profile photo and document photos (license, insurance card, vehicle, registration).
+router.put('/me/documents/:kind', requireUser, requireRole('driver'), asyncH(async (req, res) => {
+  const { kind } = req.params;
+  if (!DOC_KINDS[kind]) throw new HttpError(400, `kind must be one of: ${Object.keys(DOC_KINDS).join(', ')}`);
+  const data = req.body?.data;
+  if (!isImageDataUrl(data)) throw new HttpError(400, 'Send the photo as a JPEG or PNG image');
+  if (data.length > MAX_DOC_BYTES) throw new HttpError(413, 'That photo is too large');
+  await db.query(
+    `INSERT INTO driver_documents (user_id, kind, data) VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, kind) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [req.user.id, kind, data]);
+  res.json(publicUser(await getUser(req.user.id)));
+}));
+
+// A driver's document photo: the driver themself, or staff reviewing them.
+router.get('/:id/documents/:kind', asyncH(async (req, res) => {
+  const self = req.user.id === req.params.id;
+  if (!self && !['admin', 'dispatcher'].includes(req.user.role)) throw new HttpError(403, 'Not allowed');
+  const { rows } = await db.query('SELECT kind, data, updated_at FROM driver_documents WHERE user_id = $1 AND kind = $2',
+    [req.params.id, req.params.kind]).catch(() => ({ rows: [] }));
+  if (!rows[0]) throw new HttpError(404, 'No photo uploaded yet');
+  res.json({ kind: rows[0].kind, label: DOC_KINDS[rows[0].kind], data: rows[0].data, updatedAt: rows[0].updated_at });
 }));
 
 router.put('/me/push-token', requireUser, asyncH(async (req, res) => {
@@ -58,11 +99,53 @@ router.put('/me/location', requireUser, requireRole('driver'), asyncH(async (req
 }));
 
 router.put('/me/availability', requireUser, requireRole('driver'), asyncH(async (req, res) => {
+  if (req.body?.online) {
+    const blocker = driverWorkBlocker(await getUser(req.user.id));
+    if (blocker) throw new HttpError(409, blocker);
+  }
   await db.query('UPDATE users SET is_online = $1 WHERE id = $2', [!!req.body?.online, req.user.id]);
   res.json({ online: !!req.body?.online });
 }));
 
 // ---- Staff: manage people ----
+
+// Staff invite a driver by email: the account is approved, and the email has a link to choose a
+// password (valid 7 days) and to get the app.
+router.post('/invite', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const b = req.body || {};
+  if (!str(b.name)) throw new HttpError(400, 'Name is required');
+  const { user, token } = await db.withTx(async (client) => {
+    const u = await createUser({ email: b.email, password: crypto.randomBytes(24).toString('hex'), name: b.name,
+      phoneNumber: b.phoneNumber, role: 'driver' }, client);
+    if (b.vehicleType) await setVehicle(u.id, { type: b.vehicleType }, client);
+    const t = crypto.randomBytes(32).toString('hex');
+    await client.query(
+      "UPDATE users SET reset_token_hash = $2, reset_token_expires = now() + interval '7 days' WHERE id = $1",
+      [u.id, crypto.createHash('sha256').update(t).digest('hex')]);
+    return { user: await getUser(u.id, client), token: t };
+  });
+  driverEmails.invite(user, token);
+  res.status(201).json(publicUser(user, { includeLocation: true }));
+}));
+
+// Staff approve, reject, suspend or reinstate a driver. The driver is emailed.
+router.post('/:id/review', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const { status, note } = req.body || {};
+  if (!['approved', 'rejected', 'suspended'].includes(status)) throw new HttpError(400, 'status must be approved, rejected or suspended');
+  const target = await getUser(req.params.id).catch(() => null);
+  if (!target || target.role !== 'driver') throw new HttpError(404, 'Driver not found');
+  await db.query(
+    `UPDATE users SET driver_status = $2, review_note = $3, reviewed_at = now(), reviewed_by = $4,
+       is_online = CASE WHEN $2 = 'approved' THEN is_online ELSE false END, updated_at = now() WHERE id = $1`,
+    [target.id, status, str(note).slice(0, 500), req.user.id]);
+  const updated = await getUser(target.id);
+  if (status !== target.driver_status) {
+    if (status === 'approved') driverEmails.approved(updated);
+    else if (status === 'rejected') driverEmails.rejected(updated, str(note));
+    else driverEmails.suspended(updated, str(note));
+  }
+  res.json(publicUser(updated, { includeLocation: true }));
+}));
 
 // GET /users?role=driver&online=true
 router.get('/', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
@@ -86,7 +169,7 @@ router.get('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res) =
 router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   const target = await getUser(req.params.id).catch(() => null);
   if (!target) throw new HttpError(404, 'User not found');
-  const { role, organizationId, isActive, name, phoneNumber, vehicleType } = req.body || {};
+  const { role, organizationId, isActive, name, phoneNumber, vehicleType, driverProfile, vehicle } = req.body || {};
   if (req.user.role !== 'admin') {
     if (['admin', 'dispatcher'].includes(target.role) || role !== undefined || organizationId !== undefined) {
       throw new HttpError(403, 'Only admins can change roles or companies');
@@ -113,6 +196,7 @@ router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res)
       throw e;
     }
     if (vehicleType !== undefined) await setVehicleType(target.id, vehicleType, client);
+    await saveDriverDetails(client, target, { driverProfile, vehicle });
   });
   res.json(publicUser(await getUser(target.id), { includeLocation: true }));
 }));

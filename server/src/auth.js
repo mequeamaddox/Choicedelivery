@@ -33,7 +33,7 @@ async function requireAuth(req, res, next) {
   }
   try {
     const { rows } = await db.query(
-      'SELECT id, role, organization_id, is_active FROM users WHERE id = $1', [payload.sub]);
+      'SELECT id, role, organization_id, is_active, driver_status FROM users WHERE id = $1', [payload.sub]);
     if (!rows[0] || !rows[0].is_active) return res.status(401).json({ message: 'Account is disabled' });
     req.user = rows[0];
     next();

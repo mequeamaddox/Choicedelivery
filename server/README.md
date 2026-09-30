@@ -134,6 +134,27 @@ and the customer sees the new price to confirm. A pickup time that has passed is
 price dispatch sets on a quote is kept. Quotes can be deleted. API: `POST /orders` with
 `"saveAsQuote": true`, `POST /orders/:id/book {expectedCents}`, `DELETE /orders/:id` (quotes only).
 
+## Drivers: applying, profiles and approval
+
+- **Apply to drive**: `app.choicedeliverysc.com/#/drive` (linked from the website as "Drive with us") or "Apply to drive"
+  in the driver app. The account starts as an **application**: the driver can sign in and finish their profile, but
+  sees no jobs, can't go online and can't be assigned until approved.
+- **Profile** (in the driver app): photo, phone, city/ZIP, emergency contact, vehicle (type, make, model, year,
+  color, plate), driver's license (number, state, expiration), insurance (company, policy, expiration) and document
+  photos (license front/back, insurance card, vehicle, registration). Required: photo, license front, insurance card,
+  vehicle photo and the license/insurance details.
+- **Review** (People → click a driver): see everything, open the document photos, then **Approve**, **Reject** or
+  **Put on hold** (with an optional note). An **expired license or insurance** pauses an approved driver
+  (no accepting, scanning, going online or being assigned) until they enter the new date.
+- **Invite a driver** (People → Add an account → Driver, "Email them an invite"): approved right away; the email
+  has a link to choose their password (valid 7 days) and to get the app.
+- **Emails to drivers** (through Resend, like the shipper emails): application received, approved, not approved,
+  on hold, and invites. Dispatch (`LEADS_EMAIL`) is emailed about each new application.
+- **App download link**: set it under Account → Driver app download link (e.g. the Install link from the latest
+  "Build driver app" run). It's shown at `/#/driver-app` and in approval and invite emails.
+- Customers see the driver's photo and car ("White Honda Civic") on the tracking page; dispatch and the shipper
+  also see the plate on the order page.
+
 ## Driver portal
 
 Drivers log in at `app.choicedeliverysc.com` from their phone's browser (no app install): go online

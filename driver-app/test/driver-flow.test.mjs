@@ -125,3 +125,33 @@ test('network failures give a readable error', async () => {
   const api = createApi({ baseUrl: 'http://127.0.0.1:1', getToken: async () => null });
   await assert.rejects(api.openJobs(), (e) => e.status === 0 && /internet connection/.test(e.message));
 });
+
+test('a new driver applies in the app, fills in their profile and gets approved', { skip: !DB && 'set TEST_DATABASE_URL' }, async () => {
+  const admin = clientFor();
+  admin.setToken((await admin.api.login('owner@t.dev', 'ownerpass1')).token);
+  const d = clientFor();
+  await assert.rejects(d.api.driverSignup({ name: 'New', email: 'new@t.dev', password: 'newpass12', phoneNumber: '1', vehicle: { type: 'Car' } }),
+    (e) => e.status === 400 && /agree/.test(e.message));
+  const { token, user } = await d.api.driverSignup({ name: 'Nia New', email: 'nia@t.dev', password: 'niapass12', phoneNumber: '803-555-0123',
+    city: 'Columbia', zip: '29205', agreed: true, vehicle: { type: 'Minivan', make: 'Toyota', model: 'Sienna', year: '2018', color: 'Gray', plate: 'nia1' } });
+  d.setToken(token);
+  assert.equal(user.driverStatus, 'applied');
+  assert.match(user.workBlocker, /being reviewed/);
+  assert.deepEqual(await d.api.openJobs(), []);
+  await assert.rejects(d.api.setOnline(true), (e) => e.status === 409);
+
+  const img = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==';
+  let me = await d.api.updateMe({ driverProfile: {
+    license: { number: 'L1', state: 'SC', expires: '2031-01-01' }, insurance: { company: 'Geico', expires: '2031-01-01' } } });
+  for (const kind of ['photo', 'license_front', 'insurance', 'vehicle']) me = await d.api.uploadDocument(kind, img);
+  assert.equal(me.checklist.complete, true, JSON.stringify(me.checklist));
+  assert.equal((await d.api.document(me.id, 'insurance')).data, img);
+  await d.api.changePassword('niapass12', 'niapass34');
+  await assert.rejects(d.api.changePassword('wrong', 'whatever1'), (e) => e.status === 400);
+
+  await admin.api.request(`/users/${me.id}/review`, { method: 'POST', body: { status: 'approved' } });
+  me = await d.api.me();
+  assert.equal(me.workBlocker, null);
+  assert.deepEqual(await d.api.setOnline(true), { online: true });
+  assert.equal((await d.api.login('nia@t.dev', 'niapass34')).user.driverStatus, 'approved');
+});

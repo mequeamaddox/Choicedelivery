@@ -1,4 +1,4 @@
-import { html, useState, useEffect, api, login, signup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink } from './lib.js';
+import { html, useState, useEffect, api, login, signup, driverSignup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink, VEHICLE_TYPES } from './lib.js';
 import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo, LiveMap } from './components.js';
 
 function useForm(initial) {
@@ -64,6 +64,7 @@ function LoginForm() {
         <button class="btn primary block" disabled=${busy}>${busy ? 'Logging in…' : 'Log in'}</button>
       </form>
       <p class="auth-links"><a href="#/forgot">Forgot password?</a> · <a href="#/signup">Create a shipper account</a></p>
+      <p class="auth-links">Want to drive for us? <a href="#/drive">Apply to drive</a></p>
     <//>`;
 }
 
@@ -85,6 +86,73 @@ export function SignupPage() {
         <button class="btn primary block" disabled=${busy}>${busy ? 'Creating account…' : 'Create account'}</button>
       </form>
       <p class="auth-links">Already have an account? <a href="#/login">Log in</a></p>
+    <//>`;
+}
+
+// Public "Apply to drive" form. The account starts as an application; staff approve it.
+export function DriverSignupPage() {
+  const [v, bind] = useForm({ name: '', email: '', phoneNumber: '', password: '', city: '', zip: '',
+    type: 'Car', make: '', model: '', year: '', color: '', plate: '' });
+  const [agreed, setAgreed] = useState(false);
+  const { onSubmit, error, busy } = useSubmit(async () => {
+    await driverSignup({
+      name: v.name, email: v.email, phoneNumber: v.phoneNumber, password: v.password, city: v.city, zip: v.zip, agreed,
+      vehicle: { type: v.type, make: v.make, model: v.model, year: v.year, color: v.color, plate: v.plate },
+    });
+    navigate('/driver-app?applied=1');
+  });
+  return html`
+    <${AuthShell} title="Drive with Choice Delivery" subtitle="Deliver in and around Columbia on your schedule. Apply in 2 minutes; we'll review it and email you.">
+      <form onSubmit=${onSubmit} class="stack">
+        <${Alert} error=${error} />
+        <h3>About you</h3>
+        <${Field} label="Full name"><input required autocomplete="name" ...${bind('name')} /><//>
+        <div class="grid-2 tight">
+          <${Field} label="Mobile phone"><input type="tel" required autocomplete="tel" ...${bind('phoneNumber')} /><//>
+          <${Field} label="ZIP code"><input inputmode="numeric" required maxlength="10" autocomplete="postal-code" ...${bind('zip')} /><//>
+        </div>
+        <${Field} label="City"><input required autocomplete="address-level2" ...${bind('city')} /><//>
+        <${Field} label="Email"><input type="email" required autocomplete="email" ...${bind('email')} /><//>
+        <${Field} label="Password" hint="At least 8 characters. You'll use it to sign in to the driver app."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>
+        <h3>Your vehicle</h3>
+        <${Field} label="Type">
+          <select value=${v.type} onChange=${(e) => bind('type').onInput(e)}>${VEHICLE_TYPES.map((t) => html`<option>${t}</option>`)}</select>
+        <//>
+        <div class="grid-2 tight">
+          <${Field} label="Make"><input required placeholder="Honda" ...${bind('make')} /><//>
+          <${Field} label="Model"><input required placeholder="Civic" ...${bind('model')} /><//>
+          <${Field} label="Year"><input required inputmode="numeric" maxlength="4" placeholder="2019" ...${bind('year')} /><//>
+          <${Field} label="Color"><input required placeholder="White" ...${bind('color')} /><//>
+        </div>
+        <${Field} label="License plate"><input required maxlength="12" ...${bind('plate')} /><//>
+        <label class="check-row">
+          <input type="checkbox" checked=${agreed} onChange=${(e) => setAgreed(e.target.checked)} />
+          <span class="small">I'm 21 or older with a valid driver's license and auto insurance, I agree to work as an independent
+            contractor, and I consent to a background and driving-record check.</span>
+        </label>
+        <button class="btn primary block" disabled=${busy || !agreed}>${busy ? 'Sending…' : 'Apply to drive'}</button>
+      </form>
+      <p class="auth-links">Already a driver? <a href="#/driver-app">Get the driver app</a> · <a href="#/login">Log in</a></p>
+    <//>`;
+}
+
+// Where drivers get the phone app (the install link is set by the owner under Account).
+export function DriverAppPage() {
+  const { data } = useApi('/public/driver-app');
+  const applied = location.hash.includes('applied=1');
+  return html`
+    <${AuthShell} title=${applied ? 'Application received!' : 'Choice Delivery Driver app'}
+      subtitle=${applied ? "We'll review it and email you, usually within 1–2 business days." : 'For Choice Delivery drivers.'}>
+      <div class="stack">
+        ${applied && html`<${Alert} tone="success">Next: install the app and sign in with the email and password you just chose to
+          add your profile photo, driver's license, insurance and vehicle photo. Complete profiles get approved faster.<//>`}
+        ${data?.url ? html`
+          <a class="btn primary block big" href=${data.url} rel="noopener">Download for Android</a>
+          <p class="small muted">Open this page on your phone. After downloading, tap the file and allow installing from your browser if asked.
+            iPhone version coming soon.</p>` : html`
+          <p class="muted">The app download link will be here soon. Until then you can sign in on this website from your phone's browser.</p>`}
+        <a class="btn block" href="#/login">Sign in on the website instead</a>
+      </div>
     <//>`;
 }
 
@@ -120,7 +188,8 @@ export function ResetPage({ token }) {
     <${AuthShell} title="Choose a new password">
       ${done ? html`
         <${Alert} tone="success">${done}<//>
-        <p class="auth-links"><a href="#/login">Log in with your new password</a></p>` : html`
+        <p class="auth-links"><a href="#/login">Log in with your new password</a></p>
+        <p class="auth-links">Driver? <a href="#/driver-app">Get the driver app</a> and sign in there.</p>` : html`
         <form onSubmit=${onSubmit} class="stack">
           <${Alert} error=${error} />
           <${Field} label="New password" hint="At least 8 characters."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>
@@ -145,7 +214,9 @@ export function TrackPage({ token }) {
               <div><div class="muted small">Order</div><h1>${data.orderNumber}</h1></div>
               <${StatusBadge} status=${data.status} />
             </div>
-            ${data.driver && html`<p>Your driver is <strong>${data.driver.name}</strong>.
+            ${data.driver && html`<div class="driver-head">${data.driver.photoUrl && html`<img class="avatar big" src=${data.driver.photoUrl} alt="" />`}
+              <div><p>Your driver is <strong>${data.driver.name}</strong>${data.driver.vehicle ? html`, driving a <strong>${data.driver.vehicle}</strong>` : ''}.</p></div></div>
+              <p>
               ${data.driver.location && html` Last seen ${timeAgo(data.driver.locationUpdatedAt)}${' · '}<a href=${mapsLink(data.driver.location)} target="_blank" rel="noopener">view on map</a>`}</p>`}
             ${data.completedAt && html`<p>Delivered ${formatDate(data.completedAt)}.</p>`}
             ${data.status !== 'cancelled' && html`<${LiveMap} stops=${data.stops} driver=${data.driver} />`}

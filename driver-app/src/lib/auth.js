@@ -41,6 +41,12 @@ export function AuthProvider({ children }) {
     setState({ loading: false, user });
   }, []);
 
+  const signUp = useCallback(async (fields) => {
+    const { token, user } = await api.driverSignup(fields);
+    await saveToken(token);
+    setState({ loading: false, user });
+  }, []);
+
   const refresh = useCallback(async () => {
     const user = await api.me();
     setState({ loading: false, user });
@@ -48,7 +54,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, signIn, signOut, refresh, setUser: (user) => setState({ loading: false, user }) }}>
+    <AuthContext.Provider value={{ ...state, signIn, signUp, signOut, refresh, setUser: (user) => setState({ loading: false, user }) }}>
       {children}
     </AuthContext.Provider>
   );

@@ -74,6 +74,13 @@ export async function createOwner(fields) {
   return user;
 }
 
+// "Apply to drive": creates a driver account waiting for review and signs them in.
+export async function driverSignup(fields) {
+  const { token: t, user } = await api('/auth/driver-signup', { method: 'POST', body: fields });
+  setSession(t, user);
+  return user;
+}
+
 export async function signup(fields) {
   const { token: t, user } = await api('/auth/signup', { method: 'POST', body: fields });
   setSession(t, user);

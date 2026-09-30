@@ -3,7 +3,9 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { signToken, requireAuth, isStaff } = require('../auth');
-const { publicUser, getUser, createUser } = require('../users');
+const { publicUser, getUser, createUser, setVehicle, mergeDriverProfile } = require('../users');
+const driverEmails = require('../driver-emails');
+const { rateLimit } = require('../rate-limit');
 const { sendMail } = require('../mailer');
 const { asyncH, HttpError, str } = require('../util');
 
@@ -39,6 +41,29 @@ router.post('/signup', asyncH(async (req, res) => {
     );
     return createUser({ email, password, name, phoneNumber, role: 'shipper', organizationId: rows[0].id }, client);
   });
+  res.status(201).json({ token: signToken(user), user: publicUser(user) });
+}));
+
+// "Apply to drive": creates a driver account waiting for review. The driver can sign in right away to
+// finish their profile (photo, license, insurance), but sees no jobs until staff approve them.
+router.post('/driver-signup', rateLimit({ windowMs: 10 * 60 * 1000, max: 6 }), asyncH(async (req, res) => {
+  const b = req.body || {};
+  if (!str(b.name)) throw new HttpError(400, 'Please enter your name');
+  if (!str(b.phoneNumber)) throw new HttpError(400, 'Please enter your phone number');
+  if (!str(b.vehicle?.type)) throw new HttpError(400, 'Please choose your vehicle type');
+  if (b.agreed !== true) {
+    throw new HttpError(400, 'Please confirm you have a valid license and insurance and agree to the driver terms');
+  }
+  const user = await db.withTx(async (client) => {
+    const u = await createUser({ email: b.email, password: b.password, name: b.name, phoneNumber: b.phoneNumber,
+      role: 'driver', driverStatus: 'applied' }, client);
+    await setVehicle(u.id, b.vehicle, client);
+    const profile = { ...mergeDriverProfile({}, { city: b.city, zip: b.zip }), agreedAt: new Date().toISOString() };
+    await client.query('UPDATE users SET driver_profile = $2 WHERE id = $1', [u.id, JSON.stringify(profile)]);
+    return getUser(u.id, client);
+  });
+  driverEmails.applicationReceived(user);
+  driverEmails.newApplication(user);
   res.status(201).json({ token: signToken(user), user: publicUser(user) });
 }));
 

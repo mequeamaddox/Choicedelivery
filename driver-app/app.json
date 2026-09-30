@@ -73,7 +73,7 @@
         "expo-image-picker",
         {
           "cameraPermission": "Choice Delivery uses the camera to take proof-of-pickup and delivery photos.",
-          "photosPermission": false,
+          "photosPermission": "Choice Delivery lets you pick your profile photo and document photos from your library.",
           "microphonePermission": false
         }
       ]

@@ -10,6 +10,7 @@ const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
 const { emailShipper } = require('../notify');
 const { sendMail } = require('../mailer');
+const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
 
 const router = express.Router();
@@ -120,10 +121,14 @@ router.delete('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(asyn
 router.post('/scan', driverOnly, asyncH(async (req, res) => {
   const barcode = str(req.body?.barcode);
   if (!barcode) throw new HttpError(400, 'barcode is required');
+  const blocker = driverWorkBlocker(await getUser(req.user.id));
+  if (blocker) throw new HttpError(409, blocker);
   const id = await db.withTx(async (client) => {
+    // Same rules as accepting: open, not a demo order, and paid (or billed to account).
     const { rows } = await client.query(
       `UPDATE orders SET driver_id = $2, status = 'accepted', accepted_at = now(), updated_at = now()
-       WHERE tracking_number = $1 AND status = 'pending' AND driver_id IS NULL RETURNING id`,
+       WHERE tracking_number = $1 AND status = 'pending' AND driver_id IS NULL AND NOT is_demo
+         AND payment_status <> 'unpaid' RETURNING id`,
       [barcode, req.user.id]
     );
     if (rows[0]) await recordEvent(client, rows[0].id, req.user.id, 'accepted', { via: 'scan' });
@@ -391,6 +396,8 @@ router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req
         "SELECT id, is_demo FROM users WHERE id = $1 AND role = 'driver' AND is_active", [driverId]).catch(() => ({ rows: [] }));
       if (!rows[0]) throw new HttpError(400, 'Driver not found');
       driverIsDemo = rows[0].is_demo;
+      const blocker = rows[0].is_demo ? null : driverWorkBlocker(await getUser(driverId, client));
+      if (blocker) throw new HttpError(400, `That driver can't take jobs right now: ${blocker}`);
     }
     const { rows } = await client.query('SELECT status, is_demo FROM orders WHERE id = $1 FOR UPDATE', [req.params.id])
       .catch(() => ({ rows: [] }));
@@ -422,6 +429,8 @@ router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req
 
 // Driver claims an open job. Atomic, so two drivers can't accept the same order.
 router.post('/:id/accept', driverOnly, asyncH(async (req, res) => {
+  const blocker = driverWorkBlocker(await getUser(req.user.id));
+  if (blocker) throw new HttpError(409, blocker);
   await db.withTx(async (client) => {
     const { rows } = await client.query(
       `UPDATE orders SET driver_id = $2, status = 'accepted', accepted_at = now(), updated_at = now()
