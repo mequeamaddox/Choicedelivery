@@ -282,21 +282,26 @@ test('web app is served with security headers', async () => {
   assert.equal(res.status, 404);
 });
 
-test('pricing formula matches the original quote page', () => {
-  const { calculatePrice, VEHICLE_MULTIPLIERS } = require('../src/pricing');
-  assert.equal(calculatePrice({ distanceMiles: 4 }).totalCents, 2500, 'first 10 miles are the base fee');
-  assert.equal(calculatePrice({ distanceMiles: 10 }).totalCents, 2500);
-  assert.equal(calculatePrice({ distanceMiles: 50 }).totalCents, 8500, '$25 + 40 mi x $1.50');
-  assert.equal(calculatePrice({ distanceMiles: 50, serviceLevel: 'rush' }).totalCents, 13500, 'rush adds $50');
-  assert.equal(calculatePrice({ distanceMiles: 50, serviceLevel: 'same_day' }).rushFeeCents, 5000, 'old name still works');
-  assert.equal(calculatePrice({ distanceMiles: null }).distanceConfirmed, false);
-  const saved = VEHICLE_MULTIPLIERS.Truck;
-  VEHICLE_MULTIPLIERS.Truck = 1.2;
-  const q = calculatePrice({ distanceMiles: 20, vehicleType: 'Truck' });
-  assert.equal(q.subtotalCents, 4000);
-  assert.equal(q.vehicleAdjustmentCents, 800, 'multiplier applies to base + mileage');
-  assert.equal(q.totalCents, 4800);
-  VEHICLE_MULTIPLIERS.Truck = saved;
+test('pricing formula matches the original shared/pricing.ts', () => {
+  const { calculatePrice } = require('../src/pricing');
+  const wedMorning = new Date('2026-09-30T14:00:00Z'); // 10:00 in Columbia
+  const wedLunch = new Date('2026-09-30T16:15:00Z'); // 12:15
+  const saturday = new Date('2026-10-03T13:00:00Z'); // Sat 09:00
+  const price = (o) => calculatePrice({ at: wedMorning, ...o });
+  assert.equal(price({ distanceMiles: 3 }).totalCents, 2500, 'first 5 miles are the base fee');
+  assert.equal(price({ distanceMiles: 5 }).totalCents, 2500);
+  assert.equal(price({ distanceMiles: 12 }).totalCents, 3550, '$25 + 7 mi x $1.50');
+  assert.equal(price({ distanceMiles: 12, serviceLevel: 'rush' }).totalCents, 8550, 'rush adds $50');
+  assert.equal(price({ distanceMiles: 12, serviceLevel: 'same_day' }).rushFeeCents, 5000, 'old name still works');
+  assert.equal(price({ distanceMiles: null }).distanceConfirmed, false);
+  assert.deepEqual(calculatePrice({ distanceMiles: 3, at: wedLunch }).surcharges.map((x) => x.key), ['lunch']);
+  assert.equal(calculatePrice({ distanceMiles: 3, at: wedLunch }).totalCents, 3000, 'lunch rush +$5');
+  assert.equal(calculatePrice({ distanceMiles: 3, at: saturday }).totalCents, 3500, 'weekend +$10');
+  assert.equal(price({ distanceMiles: 3, openOrders: 2 }).totalCents, 2500);
+  assert.equal(price({ distanceMiles: 3, openOrders: 3 }).totalCents, 4000, 'high demand +$15 at 3 open orders');
+  assert.equal(price({ distanceMiles: 3, badWeather: true }).totalCents, 4000, 'bad weather +$15');
+  const all = calculatePrice({ distanceMiles: 12, serviceLevel: 'rush', at: saturday, openOrders: 5, badWeather: true });
+  assert.equal(all.totalCents, 2500 + 1050 + 5000 + 1000 + 1500 + 1500);
 });
 
 test('orders are priced on the server by distance; dispatch can override', async () => {
@@ -304,22 +309,34 @@ test('orders are priced on the server by distance; dispatch can override', async
     { type: 'pickup', address: 'Columbia', location: { lat: 34.0007, lng: -81.0348 } },
     { type: 'dropoff', address: 'Charleston', location: { lat: 32.7765, lng: -79.9311 } },
   ] });
-  let r = await call('POST', '/orders', { token: t.acme, body: { ...far, priceCents: undefined } });
-  const miles = r.data.distanceMiles;
+  const surchargeTotal = (b) => b.surcharges.reduce((sum, x) => sum + x.cents, 0);
+  let r = await call('POST', '/orders', { token: t.acme, body: far });
   assert.equal(r.status, 201, JSON.stringify(r.data));
+  const miles = r.data.distanceMiles;
   assert.ok(miles > 100 && miles < 160, `distance ${miles}`);
-  assert.equal(r.data.priceCents, 2500 + Math.round((miles - 10) * 150));
+  const bd = r.data.priceBreakdown;
+  assert.equal(bd.extraMileageCents, Math.round((miles - 5) * 150));
+  assert.equal(r.data.priceCents, 2500 + bd.extraMileageCents + surchargeTotal(bd));
   assert.equal(r.data.priceIsCustom, false);
-  assert.equal(r.data.priceBreakdown.totalCents, r.data.priceCents);
   const id = r.data.id;
 
+  // Turning on bad weather affects new orders only.
+  r = await call('PUT', '/settings/bad-weather', { token: t.acme, body: { enabled: true } });
+  assert.equal(r.status, 403, 'only dispatch can switch weather pricing');
+  await call('PUT', '/settings/bad-weather', { token: t.dispatcher, body: { enabled: true } });
+  r = await call('POST', '/public/quote', { body: { stops: far.stops } });
+  assert.ok(r.data.surcharges.some((x) => x.key === 'weather'), 'quotes include weather while on');
+
   r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { serviceLevel: 'rush' } });
-  assert.equal(r.data.priceCents, 2500 + Math.round((miles - 10) * 150) + 5000, 'switching to rush reprices');
+  assert.equal(r.data.priceBreakdown.rushFeeCents, 5000, 'switching to rush reprices');
+  assert.ok(!r.data.priceBreakdown.surcharges.some((x) => x.key === 'weather'), 'booking-time conditions are kept');
+  assert.equal(r.data.priceCents, r.data.priceBreakdown.totalCents);
+  await call('PUT', '/settings/bad-weather', { token: t.dispatcher, body: { enabled: false } });
 
   r = await call('POST', '/orders', { token: t.acme, body: orderBody({ serviceLevel: 'teleport' }) });
   assert.equal(r.status, 400);
   r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
-  assert.equal(r.data.priceCents, 2500, 'without map locations the base fee applies');
+  assert.equal(r.data.priceCents, 2500 + surchargeTotal(r.data.priceBreakdown), 'without map locations no distance fee');
   assert.equal(r.data.distanceMiles, null);
   await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
 
@@ -385,9 +402,11 @@ test('address suggestions and distance-aware quotes', async () => {
   await call('GET', '/public/geocode?q=1515%20Manning%20Ave%20columbia');
   assert.equal(calls, before, 'repeat lookups are cached');
 
-  r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'charleston', serviceLevel: 'rush', vehicleType: 'Car' } });
+  r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'charleston', serviceLevel: 'rush',
+    scheduledAt: '2026-09-30T14:00:00Z' } });
   assert.ok(r.data.distanceMiles > 100 && r.data.distanceMiles < 160, `distance ${r.data.distanceMiles}`);
-  assert.equal(r.data.totalCents, 2500 + Math.round((r.data.distanceMiles - 10) * 150) + 5000);
+  const demand = r.data.surcharges.reduce((sum, x) => sum + x.cents, 0);
+  assert.equal(r.data.totalCents, 2500 + Math.round((r.data.distanceMiles - 5) * 150) + 5000 + demand);
   assert.equal(r.data.priceCents, r.data.totalCents);
   assert.equal(r.data.outOfArea, false);
   r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'x',

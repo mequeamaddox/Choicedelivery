@@ -14,6 +14,18 @@ const FILTERS = [
   { key: 'all', label: 'All', statuses: [] },
 ];
 
+// Dispatch switch for the $15 bad-weather surcharge on new orders.
+function WeatherSwitch() {
+  const settings = useApi('/settings');
+  const on = settings.data?.bad_weather === true;
+  return html`
+    <${ActionButton} class=${`btn ${on ? 'warn' : ''}`}
+      confirmText=${on ? 'Turn off bad-weather pricing?' : 'Turn on bad-weather pricing? New orders get a $15 weather surcharge until you turn it off.'}
+      onClick=${async () => { await api('/settings/bad-weather', { method: 'PUT', body: { enabled: !on } }); settings.reload(); }}>
+      ${on ? '⛈ Bad weather: ON' : 'Bad weather: off'}
+    <//>`;
+}
+
 export function OrdersPage() {
   const user = getUser();
   const [filter, setFilter] = useState('active');
@@ -29,7 +41,7 @@ export function OrdersPage() {
     <${Layout}>
       ${isStaff(user) ? html`
         <${PageHeader} title="Orders" subtitle="Every order across all companies."
-          actions=${html`<a class="btn primary" href="#/orders/new">+ New order</a>`} />` : html`
+          actions=${html`<${WeatherSwitch} /><a class="btn primary" href="#/orders/new">+ New order</a>`} />` : html`
         <section class="welcome">
           <div>
             <h1>Welcome back${user.name ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
@@ -77,16 +89,17 @@ export function OrdersPage() {
 const blankStop = (type) => ({ type, address: '', location: null, contactName: '', contactPhone: '', instructions: '' });
 
 // Live quote from the server (same formula used when the order is booked).
-function useQuote(stops, serviceLevel, vehicleType) {
+function useQuote(stops, serviceLevel, scheduledAt) {
   const [quote, setQuote] = useState(null);
-  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, vehicleType]);
+  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt]);
   useEffect(() => {
     if (stops.some((s) => !s.address.trim() && !s.location)) { setQuote(null); return undefined; }
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
         const q = await api('/public/quote', { method: 'POST', body: {
-          stops: stops.map((s) => ({ address: s.address, location: s.location || undefined })), serviceLevel, vehicleType,
+          stops: stops.map((s) => ({ address: s.address, location: s.location || undefined })), serviceLevel,
+          scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
         } });
         if (!cancelled) setQuote(q);
       } catch { /* the estimate is optional */ }
@@ -97,14 +110,14 @@ function useQuote(stops, serviceLevel, vehicleType) {
 }
 
 // Itemized price, as on the original quote page.
-export function PriceBreakdown({ q, vehicleType }) {
+export function PriceBreakdown({ q }) {
   if (!q) return null;
   return html`
     <dl class="breakdown">
-      <dt>Base fee (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
-      ${q.extraMileageCents > 0 && html`<dt>Extra mileage (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>${formatMoney(q.extraMileageCents)}</dd>`}
-      ${q.vehicleAdjustmentCents > 0 && html`<dt>Vehicle adjustment (${vehicleType || q.vehicleType})</dt><dd>+${formatMoney(q.vehicleAdjustmentCents)}</dd>`}
-      ${q.rushFeeCents > 0 && html`<dt>Rush delivery fee</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
+      <dt>Base delivery (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
+      ${q.extraMileageCents > 0 && html`<dt>Distance fee (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
+      ${q.rushFeeCents > 0 && html`<dt>Rush delivery</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
+      ${(q.surcharges || []).map((sc) => html`<dt>${sc.label}</dt><dd>+${formatMoney(sc.cents)}</dd>`)}
       <dt class="total">Total</dt><dd class="total">${formatMoney(q.totalCents)}</dd>
     </dl>`;
 }
@@ -161,7 +174,7 @@ export function NewOrderPage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
-  const quote = useQuote(stops, v.serviceLevel, v.vehicleType);
+  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -223,7 +236,7 @@ export function NewOrderPage() {
               <span><strong>Estimated price</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
               <span class="price">${quote ? formatMoney(quote.totalCents) : '—'}</span>
             </div>
-            ${quote ? html`<${PriceBreakdown} q=${quote} vehicleType=${v.vehicleType} />
+            ${quote ? html`<${PriceBreakdown} q=${quote} />
               <p class="muted small">${quote.note}</p>`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}

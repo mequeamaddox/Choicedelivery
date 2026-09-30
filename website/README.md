@@ -12,8 +12,8 @@ can change without touching the booking system.
 ## What connects to the backend (`https://api.choicedeliverysc.com`)
 
 - **Quick Quote Calculator** → `POST /public/quote`: the same formula orders are priced with
-  ($25 for the first 10 miles, $1.50 per extra mile, vehicle adjustment, +$50 rush), using approximate
-  driving distance, plus a 200-mile service-area check.
+  ($25 for the first 5 miles, $1.50 per extra mile, +$50 rush, plus weekend/lunch/high-demand/weather
+  surcharges), using approximate driving distance, plus a 200-mile service-area check.
 - **Request This Plan** buttons → a short form → `POST /public/contract-request`
 - **Contact form** → `POST /public/contact`
 

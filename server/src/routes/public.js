@@ -5,7 +5,7 @@ const { sendMail } = require('../mailer');
 const { rateLimit } = require('../rate-limit');
 const {
   SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, VEHICLE_TYPES, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS,
-  isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles,
+  SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext,
 } = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
 const { searchAddresses, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
@@ -18,8 +18,11 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 const limit = (s, n) => str(s).slice(0, n);
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
-router.get('/pricing', (req, res) => {
+router.get('/pricing', asyncH(async (req, res) => {
+  const { badWeather } = await pricingContext(db);
   res.json({
+    surcharges: Object.entries(SURCHARGES).map(([id, sc]) => ({ id, ...sc })),
+    badWeather,
     baseFeeCents: BASE_FEE_CENTS,
     baseMiles: BASE_MILES,
     perMileCents: PER_MILE_CENTS,
@@ -29,7 +32,7 @@ router.get('/pricing', (req, res) => {
     businessPlans: Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })),
     overageCents: OVERAGE_CENTS,
   });
-});
+}));
 
 // Address suggestions for the booking form (SC/NC/GA only).
 router.get('/geocode', rateLimit({ windowMs: 60 * 1000, max: 40 }), asyncH(async (req, res) => {
@@ -50,7 +53,7 @@ async function locate(address, given) {
 
 // Instant quote using the same formula orders are priced with.
 // Body: { stops: [{address, location?}, ...] } or { pickupAddress, dropoffAddress, pickupLocation?, dropoffLocation? },
-// plus serviceLevel ('standard' | 'rush') and vehicleType.
+// plus serviceLevel ('standard' | 'rush'), vehicleType and an optional scheduledAt (pickup time).
 router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
   const b = req.body || {};
   const stops = Array.isArray(b.stops) && b.stops.length >= 2
@@ -61,7 +64,8 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
   }
   const serviceLevel = isServiceLevel(b.serviceLevel) ? normalizeServiceLevel(b.serviceLevel) : 'standard';
   const locations = await Promise.all(stops.map((st) => locate(st.address, st.location)));
-  const quote = calculatePrice({ distanceMiles: routeMiles(locations), serviceLevel, vehicleType: str(b.vehicleType) });
+  const at = b.scheduledAt && !Number.isNaN(Date.parse(b.scheduledAt)) ? new Date(b.scheduledAt) : new Date();
+  const quote = calculatePrice({ distanceMiles: routeMiles(locations), serviceLevel, at, ...(await pricingContext(db)) });
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
   res.json({
     ...quote,

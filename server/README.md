@@ -74,10 +74,12 @@ plus `GET /public/geocode?q=` for address suggestions (OpenStreetMap, SC/NC/GA o
 to their one-request-per-second limit). Messages and plan requests are stored as **leads** (`GET/PATCH /leads`,
 staff only) and emailed to `LEADS_EMAIL` when email is configured.
 
-**Pricing** (`src/pricing.js`, from the original quote page): $25 covers the first 10 miles, then $1.50 per
-mile, times a vehicle multiplier (all 1.0 until set), plus $50 for rush (2 hours or less). Distance is
-straight-line x 1.2 between stops that have map coordinates. Orders are priced on the server when booked or
-edited; dispatch can set a custom price, and clearing it returns to the formula.
+**Pricing** (`src/pricing.js`, from the original app's `shared/pricing.ts`): $25 covers the first 5 miles,
+then $1.50 per mile, plus $50 rush (2 hours or less). Surcharges: weekend +$10, lunch rush 11:30am–1:30pm +$5,
+high demand (3+ open orders) +$15, bad weather +$15 (dispatch switch on the Orders page). Times are Columbia
+local time; scheduled pickups use the pickup time. Distance is straight-line x 1.2 between stops with map
+coordinates. Orders are priced on the server when booked; demand/weather are locked in at booking. Dispatch can
+set a custom price, and clearing it returns to the formula.
 
 ## How the data fits together
 

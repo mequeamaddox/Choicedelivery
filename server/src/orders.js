@@ -2,7 +2,7 @@
 const db = require('./db');
 const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
-const { isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles } = require('./pricing');
+const { isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext } = require('./pricing');
 
 const ACTIVE = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'];
 
@@ -81,22 +81,28 @@ async function createOrder(client, actor, body) {
   }
   const orderId = rows[0].id;
   await insertStops(client, orderId, stops);
-  await repriceOrder(client, orderId);
+  await repriceOrder(client, orderId, { fresh: true });
   await recordEvent(client, orderId, actor.id, 'created');
   return orderId;
 }
 
-// Recomputes distance and the formula price from the order's stops, vehicle and service level.
+// Recomputes distance and the formula price from the order's stops, service level and pickup time.
+// Demand and weather surcharges are captured when the order is booked (fresh) and kept on later
+// edits, so changing a detail doesn't surprise the customer with a new busy-time fee.
 // A custom price set by dispatch is kept; the breakdown is still updated for reference.
-async function repriceOrder(client, orderId) {
+async function repriceOrder(client, orderId, { fresh = false } = {}) {
   const { rows: [o] } = await client.query(
-    'SELECT service_level, vehicle_type, price_is_custom FROM orders WHERE id = $1', [orderId]);
+    'SELECT service_level, scheduled_at, created_at, price_breakdown FROM orders WHERE id = $1', [orderId]);
   const { rows: stops } = await client.query(
     'SELECT location FROM stops WHERE order_id = $1 ORDER BY sequence', [orderId]);
+  const previous = o.price_breakdown?.context;
+  const context = fresh || !previous ? await pricingContext(client, orderId) : previous;
   const breakdown = calculatePrice({
     distanceMiles: routeMiles(stops.map((s) => s.location)),
     serviceLevel: o.service_level,
-    vehicleType: o.vehicle_type,
+    at: o.scheduled_at || o.created_at,
+    openOrders: context.openOrders,
+    badWeather: context.badWeather,
   });
   await client.query(
     `UPDATE orders SET distance_miles = $2, price_breakdown = $3,

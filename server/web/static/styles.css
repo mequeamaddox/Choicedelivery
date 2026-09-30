@@ -271,3 +271,5 @@ tr.inactive td { opacity: .6; }
 .breakdown { display: grid; grid-template-columns: 1fr auto; gap: .25rem 1rem; margin: 0 0 .5rem; font-size: .9rem; }
 .breakdown dd { margin: 0; text-align: right; }
 .breakdown .total { border-top: 1px solid var(--mint-light); padding-top: .35rem; font-weight: 700; }
+
+.btn.warn { background: var(--amber-bg); color: var(--amber); border-color: #fcd34d; }
