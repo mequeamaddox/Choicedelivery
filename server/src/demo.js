@@ -91,7 +91,7 @@ async function loadDemoData(client, actorId) {
   const tasha = await person({ name: 'Tasha Green', role: 'driver', phone: '803-555-0142', online: true,
     location: { lat: 34.0058, lng: -81.0248 }, vehicle: 'Car' });
   const luis = await person({ name: 'Luis Ortega', role: 'driver', phone: '803-555-0143', online: false,
-    location: { lat: 34.0270, lng: -81.0229 }, vehicle: 'Truck' });
+    location: { lat: 34.0270, lng: -81.0229 }, vehicle: 'Pickup Truck' });
 
   // Each order: stops in route order with their progress; events are generated from the timeline.
   const orders = [
@@ -110,7 +110,7 @@ async function loadDemoData(client, actorId) {
       level: 'standard', description: 'Contract originals for signature', weight: '2 lbs', pieces: '1',
       stops: [place('sumter', { status: 'completed', doneMin: 45, signedBy: 'R. Hollis', contactName: 'Hollis & Park' }),
         place('hampton', { contactName: 'Jane Doe', contactPhone: '803-555-0142' })] },
-    { org: medical, by: medUser, status: 'at_dropoff', driver: luis, createdMin: 120, acceptedMin: 110, vehicle: 'Truck',
+    { org: medical, by: medUser, status: 'at_dropoff', driver: luis, createdMin: 120, acceptedMin: 110, vehicle: 'Pickup Truck',
       level: 'standard', description: 'Supply restock for two clinics', weight: '180 lbs', pieces: '9',
       stops: [place('medPark', { status: 'completed', doneMin: 80, signedBy: 'Warehouse' }),
         place('clinicNE', { status: 'completed', doneMin: 30, signedBy: 'M. Lee', photo: true }),
@@ -136,7 +136,7 @@ async function loadDemoData(client, actorId) {
     const stopsDone = o.stops.every((s) => s.status === 'completed');
     const breakdown = calculatePrice({
       distanceMiles: routeMiles(o.stops.map((s) => s.location)), serviceLevel: o.level, at: created, openOrders: 0,
-      weightLbs: parseWeightLbs(o.weight), stopCount: o.stops.length,
+      vehicleType: o.vehicle, weightLbs: parseWeightLbs(o.weight), stopCount: o.stops.length,
     });
     const { rows: [{ id }] } = await client.query(
       // Own numbering (DEMO-1001...) so sample orders don't use up real CD- order numbers.

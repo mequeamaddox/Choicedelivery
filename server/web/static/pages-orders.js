@@ -98,7 +98,7 @@ export function OrdersPage() {
                   <td data-label="Route"><${RouteSummary} stops=${o.stops} /></td>
                   ${isStaff(user) && html`<td data-label="Company">${o.organization?.name || html`<span class="muted">Internal</span>`}</td>`}
                   <td data-label="Driver">${o.driver?.name || html`<span class="muted">—</span>`}</td>
-                  <td data-label="Status"><${StatusBadge} status=${o.status} />${o.status === 'quote' && html` <span class="muted small nowrap">${formatMoney(o.priceCents)}</span>`}${o.paymentStatus === 'unpaid' && o.status !== 'cancelled' && html` <span class="badge amber">Unpaid</span>`}${o.balanceDueCents > 0 && html` <span class="badge amber">Balance due</span>`}</td>
+                  <td data-label="Status"><${StatusBadge} status=${o.status} />${o.status === 'quote' && o.reviewStatus !== 'needed' && html` <span class="muted small nowrap">${formatMoney(o.priceCents)}</span>`}${o.paymentStatus === 'unpaid' && o.status !== 'cancelled' && html` <span class="badge amber">Unpaid</span>`}${o.balanceDueCents > 0 && html` <span class="badge amber">Balance due</span>`}${o.reviewStatus === 'needed' && html` <span class="badge amber">Needs price</span>`}</td>
                   <td data-label="Booked" class="muted small">${o.status === 'quote' ? `Saved ${formatDate(o.createdAt)}` : formatDate(o.bookedAt || o.createdAt)}</td>
                 </tr>`)}
             </tbody>
@@ -112,9 +112,9 @@ export function OrdersPage() {
 const blankStop = (type) => ({ type, address: '', location: null, contactName: '', contactPhone: '', instructions: '' });
 
 // Live quote from the server (same formula used when the order is booked).
-function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns) {
+function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleType) {
   const [quote, setQuote] = useState(null);
-  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt, weightLbs, addOns]);
+  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt, weightLbs, addOns, vehicleType]);
   useEffect(() => {
     if (stops.some((s) => !s.address.trim() && !s.location)) { setQuote(null); return undefined; }
     let cancelled = false;
@@ -123,7 +123,7 @@ function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns) {
         const q = await api('/public/quote', { method: 'POST', body: {
           stops: stops.map((s) => ({ address: s.address, location: s.location || undefined })), serviceLevel,
           scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
-          weightLbs: weightLbs === '' ? undefined : Number(weightLbs), addOns,
+          weightLbs: weightLbs === '' ? undefined : Number(weightLbs), addOns, vehicleType,
         } });
         if (!cancelled) setQuote(q);
       } catch { /* the estimate is optional */ }
@@ -139,6 +139,7 @@ export function PriceBreakdown({ q }) {
   return html`
     <dl class="breakdown">
       <dt>Base delivery (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
+      ${q.vehicleFeeCents > 0 && html`<dt>${q.vehicleType}</dt><dd>+${formatMoney(q.vehicleFeeCents)}</dd>`}
       ${q.extraMileageCents > 0 && html`<dt>Distance fee (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
       ${q.rushFeeCents > 0 && html`<dt>Rush delivery</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
       ${q.weightFeeCents > 0 && html`<dt>Weight (${q.weightTier})</dt><dd>+${formatMoney(q.weightFeeCents)}</dd>`}
@@ -218,8 +219,12 @@ export function NewOrderPage() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
-  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns);
+  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType);
   const fees = pricing.data?.fees;
+  const vehicles = fees ? Object.entries(fees.vehicles).filter(([, x]) => x.enabled) : [];
+  const lbs = v.weightLbs === '' ? null : Number(v.weightLbs);
+  const tooHeavyFor = (x) => lbs != null && lbs > x.maxLbs;
+  const needsReview = quote?.needsReview;
   const toggleAddOn = (k) => setV({ ...v, addOns: v.addOns.includes(k) ? v.addOns.filter((x) => x !== k) : [...v.addOns, k] });
   const payments = useApi('/payments/config');
   const payByCard = !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
@@ -283,11 +288,20 @@ export function NewOrderPage() {
                 <span class="price push">${l.feeCents ? `+${formatMoney(l.feeCents)}` : ''}</span>
               </label>`)}
           </div>
-          <${Field} label="Vehicle needed">
-            <select value=${v.vehicleType} onChange=${(e) => setV({ ...v, vehicleType: e.target.value })}>
-              ${(pricing.data?.vehicleTypes || VEHICLE_TYPES).map((t) => html`<option>${t}</option>`)}
-            </select>
-          <//>
+          <div class="field">
+            <span class="field-label">Vehicle</span>
+            <div class="choice-grid" role="radiogroup" aria-label="Vehicle">
+              ${vehicles.map(([name, x]) => html`
+                <label class=${`choice ${v.vehicleType === name ? 'selected' : ''} ${tooHeavyFor(x) ? 'unfit' : ''}`}>
+                  <input type="radio" name="vehicleType" value=${name} checked=${v.vehicleType === name}
+                    onChange=${() => setV({ ...v, vehicleType: name })} />
+                  <span><strong>${name}</strong>
+                    <span class="muted small">${x.description} · up to ${x.maxLbs.toLocaleString()} lbs · ${formatMoney(x.perMileCents)}/mi after ${pricing.data.baseMiles} mi</span>
+                    ${tooHeavyFor(x) && html`<span class="small warn-text">Too heavy for this vehicle</span>`}</span>
+                  <span class="price push">${x.feeCents ? `+${formatMoney(x.feeCents)}` : 'Base'}</span>
+                </label>`)}
+            </div>
+          </div>
           ${fees && html`
             <div class="field">
               <span class="field-label">Extras</span>
@@ -303,14 +317,17 @@ export function NewOrderPage() {
           <div class="estimate">
             <div class="estimate-head">
               <span><strong>Estimated price</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
-              <span class="price">${quote ? formatMoney(quote.totalCents) : '—'}</span>
+              <span class="price">${needsReview ? 'Custom' : quote ? formatMoney(quote.totalCents) : '—'}</span>
             </div>
-            ${quote ? html`<${PriceBreakdown} q=${quote} />
+            ${needsReview ? html`<div class="alert warn" role="status"><strong>We'll price this one by hand:</strong>
+                ${' '}${quote.reviewReasons.join('. ')}. ${vehicles.some(([, x]) => !tooHeavyFor(x)) && lbs != null && lbs <= Math.max(...vehicles.map(([, x]) => x.maxLbs))
+                  ? 'Pick a bigger vehicle above, or send it for review.' : 'Send it to us and we\'ll email you a price, usually within a business hour. Nothing is charged until you accept it.'}</div>`
+            : quote ? html`<${PriceBreakdown} q=${quote} />
               <p class="muted small">${quote.note}</p>`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
             ${payByCard && html`<p class="small"><strong>Payment:</strong> you'll pay by card on Stripe's secure page after booking. Drivers are notified once it's paid.</p>`}
-            <p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this order under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>
+            ${!needsReview && html`<p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this order under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>`}
           </div>
         </section>
         <section class="card">
@@ -319,7 +336,7 @@ export function NewOrderPage() {
             <${Field} label="Pickup time" hint="Leave empty for as soon as possible.">
               <input type="datetime-local" ...${bind('scheduledAt')} />
             <//>
-            <${Field} label="Total weight (lbs)" hint=${fees ? `Priced by weight: ${fees.weightTiers.map((t, i) => `${i === fees.weightTiers.length - 1 ? `over ${fees.weightTiers[i - 1]?.upToLbs ?? 0}` : `up to ${t.upToLbs}`} lbs ${t.cents ? `+${formatMoney(t.cents)}` : 'included'}`).join(', ')}.` : undefined}>
+            <${Field} label="Total weight (lbs)" hint=${fees ? `Priced by weight: ${fees.weightTiers.map((t) => `up to ${t.upToLbs.toLocaleString()} lbs ${t.cents ? `+${formatMoney(t.cents)}` : 'included'}`).join(', ')}; heavier gets a custom price.` : undefined}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
             <//>
             <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" ...${bind('numberOfPieces')} /><//>
@@ -345,9 +362,9 @@ export function NewOrderPage() {
         ${fees && html`<${ChargesNotice} fees=${fees} />`}
         <div class="form-actions">
           <a class="btn" href="#/orders">Cancel</a>
-          <button type="button" class="btn" disabled=${busy} onClick=${(e) => submit(e, true)}
-            title="Keep this price and book it later from Orders → Quotes">Save quote</button>
-          <button class="btn primary" disabled=${busy}>${busy ? 'Booking…' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
+          ${!needsReview && html`<button type="button" class="btn" disabled=${busy} onClick=${(e) => submit(e, true)}
+            title="Keep this price and book it later from Orders → Quotes">Save quote</button>`}
+          <button class="btn primary" disabled=${busy}>${busy ? 'Sending…' : needsReview ? 'Request a price' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
         </div>
       </form>
     <//>`;
@@ -357,6 +374,8 @@ export function NewOrderPage() {
 
 const EVENT_LABELS = {
   quoted: 'Quote saved',
+  review_requested: 'Sent for a custom price',
+  price_set: 'Price set by dispatch',
   charge_added: 'Additional charge added',
   charge_waived: 'Additional charge removed',
   charges_paid: 'Additional charges paid',
@@ -407,7 +426,8 @@ function DispatchPanel({ order, onChange, setError }) {
           <//>
         </div>
       <//>`}
-      <${Field} label="Price (USD)" hint=${order.status === 'quote' ? 'A custom price is kept when the customer books this quote.' : undefined}>
+      <${Field} label="Price (USD)" hint=${order.reviewStatus === 'needed' ? 'Saving a price sends it to the customer to book.'
+        : order.status === 'quote' ? 'A custom price is kept when the customer books this quote.' : undefined}>
         <div class="inline">
           <input type="number" min="0" step="0.01" value=${price} onInput=${(e) => setPrice(e.target.value)} disabled=${closed} />
           <${ActionButton} disabled=${closed} onError=${setError}
@@ -579,9 +599,20 @@ function QuotePanel({ order, onChange, setError }) {
       throw err;
     }
   };
+  if (order.reviewStatus === 'needed') {
+    const reasons = order.priceBreakdown?.reviewReasons || [];
+    return html`
+      <section class="card">
+        <h2>Price request <span class="badge amber">Needs price</span></h2>
+        <p class="small"><strong>Why:</strong> ${reasons.join('; ') || 'Needs a custom price'}.</p>
+        ${isStaff(user)
+          ? html`<p class="small muted">Set the price under <strong>Dispatch → Price</strong>. The customer is emailed and can then book${payByCard ? ' and pay' : ''}.</p>`
+          : html`<p class="small muted">We're reviewing this shipment and will email you the price, usually within a business hour. Nothing is booked or charged until you accept it.</p>`}
+      </section>`;
+  }
   return html`
     <section class="card">
-      <h2>Saved quote</h2>
+      <h2>${order.reviewStatus === 'done' ? 'Your price is ready' : 'Saved quote'}</h2>
       <dl class="facts">
         <dt>Quoted price</dt><dd><strong>${formatMoney(order.priceCents)}</strong></dd>
         <dt>Saved</dt><dd>${formatDate(order.createdAt)}</dd>
@@ -609,6 +640,7 @@ export function OrderPage({ id }) {
   if (!order) return html`<${Layout}><${Alert} error=${loadError} /><a href="#/orders">Back to orders</a><//>`;
 
   const isQuote = order.status === 'quote';
+  const awaitingPrice = order.reviewStatus === 'needed';
   const canCancel = !isQuote && (staff ? !['completed', 'cancelled'].includes(order.status) : order.status === 'pending');
   const link = order.trackingUrlToken && trackingUrl(order.trackingUrlToken);
   const copyLink = async () => {
@@ -620,7 +652,7 @@ export function OrderPage({ id }) {
     <${Layout}>
       <a class="back" href="#/orders">← Orders</a>
       <${PageHeader}
-        title=${html`${order.orderNumber} <${StatusBadge} status=${order.status} /><${DemoBadge} on=${order.isDemo} />`}
+        title=${html`${order.orderNumber} ${awaitingPrice ? html`<span class="badge amber">Waiting for price</span>` : html`<${StatusBadge} status=${order.status} />`}<${DemoBadge} on=${order.isDemo} />`}
         subtitle=${`${isQuote ? 'Quote saved' : 'Booked'} ${formatDate(isQuote ? order.createdAt : order.bookedAt || order.createdAt)}${order.organization ? ` · ${order.organization.name}` : ''}`}
         actions=${html`
           ${link && html`<button class="btn" onClick=${copyLink}>${copied ? 'Link copied ✓' : 'Copy tracking link'}</button>`}
@@ -628,7 +660,7 @@ export function OrderPage({ id }) {
             confirmText="Cancel this order? The driver (if any) will be notified."
             onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel order<//>`}
           ${isQuote && html`<${ActionButton} class="btn danger" onError=${setError} confirmText="Delete this saved quote?"
-            onClick=${async () => { await api(`/orders/${order.id}`, { method: 'DELETE' }); navigate('/orders'); }}>Delete quote<//>`}`} />
+            onClick=${async () => { await api(`/orders/${order.id}`, { method: 'DELETE' }); navigate('/orders'); }}>${awaitingPrice ? 'Cancel request' : 'Delete quote'}<//>`}`} />
       <${Alert} error=${error} />
       <div class="detail-grid">
         <div class="stack">
@@ -677,9 +709,9 @@ export function OrderPage({ id }) {
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
               <dt>Extras</dt><dd>${order.addOns.length ? order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ') : '—'}</dd>
               <dt>Distance</dt><dd>${order.distanceMiles != null ? `about ${order.distanceMiles} mi` : '—'}</dd>
-              <dt>Price</dt><dd>${formatMoney(order.priceCents)}${order.priceIsCustom ? ' (set by dispatch)' : ''}</dd>
+              <dt>Price</dt><dd>${awaitingPrice ? 'Waiting for our price' : `${formatMoney(order.priceCents)}${order.priceIsCustom ? ' (set by dispatch)' : ''}`}</dd>
             </dl>
-            ${order.priceBreakdown && !order.priceIsCustom && html`<${PriceBreakdown} q=${order.priceBreakdown} />`}
+            ${order.priceBreakdown && !order.priceIsCustom && !awaitingPrice && html`<${PriceBreakdown} q=${order.priceBreakdown} />`}
             ${order.description && html`<p class="small">${order.description}</p>`}
           </section>
           <section class="card">

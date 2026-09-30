@@ -175,7 +175,7 @@ export async function startCheckout(orderId) {
 
 export const SERVICE_LEVEL_LABELS = { standard: 'Standard', rush: 'Rush (2 hours or less)' };
 
-export const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Truck'];
+export const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Pickup Truck'];
 
 export function formatDate(value) {
   if (!value) return '—';

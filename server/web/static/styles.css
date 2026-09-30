@@ -311,3 +311,10 @@ h3 { margin: .25rem 0 0; font-size: 1rem; }
 .add-charge { margin-top: .75rem; }
 .add-charge summary { cursor: pointer; font-weight: 600; color: var(--focus); margin-bottom: .5rem; }
 .btn.block + .btn.block { margin-top: .5rem; }
+.choice.unfit { opacity: .7; }
+.warn-text { display: block; color: var(--amber); font-weight: 600; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 .75rem; }
+@media (max-width: 480px) { .grid-3 { grid-template-columns: 1fr; } }
+.vehicle-fees { border: 1px solid var(--border); border-radius: 10px; padding: .5rem .9rem .25rem; margin: 0; }
+.vehicle-fees legend { padding: 0 .35rem; font-weight: 600; }
+.inline-check { display: inline-flex; gap: .4rem; align-items: center; cursor: pointer; }

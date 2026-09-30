@@ -4,7 +4,7 @@ const db = require('../db');
 const { sendMail } = require('../mailer');
 const { rateLimit } = require('../rate-limit');
 const {
-  SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, VEHICLE_TYPES, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS,
+  SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS,
   SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs,
   CHARGE_KINDS,
 } = require('../pricing');
@@ -21,6 +21,7 @@ const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 router.get('/pricing', asyncH(async (req, res) => {
   const { badWeather } = await pricingContext(db);
+  const fees = await getFees(db);
   res.json({
     surcharges: Object.entries(SURCHARGES).map(([id, sc]) => ({ id, ...sc })),
     badWeather,
@@ -28,11 +29,11 @@ router.get('/pricing', asyncH(async (req, res) => {
     baseMiles: BASE_MILES,
     perMileCents: PER_MILE_CENTS,
     rushFeeCents: RUSH_FEE_CENTS,
-    vehicleTypes: VEHICLE_TYPES,
+    vehicleTypes: Object.entries(fees.vehicles).filter(([, v]) => v.enabled).map(([k]) => k),
     serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, s]) => ({ id, ...s })),
     businessPlans: Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })),
     overageCents: OVERAGE_CENTS,
-    fees: await getFees(db),
+    fees,
     chargeKinds: CHARGE_KINDS,
   });
 }));
@@ -72,6 +73,7 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
   const addOns = Array.isArray(b.addOns) ? b.addOns.filter((k) => typeof k === 'string') : [];
   const quote = calculatePrice({
     distanceMiles: routeMiles(locations), serviceLevel, at, ...(await pricingContext(db)),
+    vehicleType: typeof b.vehicleType === 'string' ? b.vehicleType : null,
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
   });
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
@@ -81,7 +83,9 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
     extraChargesNote: `Wait time over ${fees.waitFreeMinutes} minutes at a stop ($${(fees.waitBlockCents / 100).toFixed(2)} per `
       + `${fees.waitBlockMinutes} min), loading help, stairs, return trips and failed attempts may be charged extra.`,
     outOfArea,
-    note: outOfArea
+    note: quote.needsReview
+      ? `${quote.reviewReasons.join('. ')}. We'll price this one by hand: book it and we'll email you the price before anything is charged.`
+      : outOfArea
       ? `One of these addresses is outside our ${SERVICE_RADIUS_MILES}-mile service area. Call (803) 949-7034 and we'll see what we can do.`
       : quote.distanceConfirmed
         ? 'Estimate based on approximate driving distance. Final price is confirmed when your order is booked.'

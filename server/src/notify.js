@@ -15,6 +15,20 @@ const MESSAGES = {
       rechecked when you book, since time of day, demand and weather can change it.`,
     quote: true,
   }),
+  review_requested: (o) => ({
+    subject: `We're pricing your delivery ${o.order_number}`,
+    line: `Thanks! This shipment needs a custom price (${esc((o.price_breakdown?.reviewReasons || []).join('; ').toLowerCase())}).
+      We'll review it and email you the price, usually within a business hour. Nothing is booked or charged until you accept it.`,
+    quote: true,
+    button: 'View request',
+  }),
+  price_ready: (o) => ({
+    subject: `Your price is ready: ${o.order_number} ${money(o.price_cents)}`,
+    line: `We reviewed your delivery request. The price is <strong>${money(o.price_cents)}</strong>.
+      Open it to book${o.payment_status === 'unpaid' ? ' and pay' : ''}.`,
+    quote: true,
+    button: 'View & book',
+  }),
   booked: (o, extra, fees) => ({
     subject: `Order ${o.order_number} booked`,
     note: `Good to know: the first ${fees.waitFreeMinutes} minutes at each stop are free; after that, wait time is
@@ -75,7 +89,7 @@ async function emailShipper(orderId, kind, extra = {}) {
     <p>${line}</p>
     <p style="color:#4b5563"><strong>${esc(o.order_number)}</strong><br>${esc(o.first_address)} &rarr; ${esc(o.last_address)}</p>
     ${quote
-    ? `<p><a href="${page}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">View &amp; book quote</a></p>`
+    ? `<p><a href="${page}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">${button || 'View &amp; book quote'}</a></p>`
     : button
     ? `<p><a href="${page}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">${button}</a></p>`
     : `<p><a href="${track}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Track delivery</a>

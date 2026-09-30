@@ -29,19 +29,27 @@ const LUNCH_START = 11.5;
 const LUNCH_END = 13.5;
 const HIGH_DEMAND_OPEN_ORDERS = 3;
 
-const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Truck'];
+const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Pickup Truck'];
 
 // Modeled on how Curri and other couriers charge: heavier loads, extra stops and driver labor cost more,
 // and waiting past a free window is billed. Amounts are stored in settings ('fees') and editable.
 const DEFAULT_FEES = {
-  // Tiers by total declared weight; the last tier (upToLbs: null) covers everything heavier.
+  // Tiers by total declared weight. Anything heavier than the last tier is sent for manual review.
   weightTiers: [
     { upToLbs: 50, cents: 0 },
     { upToLbs: 150, cents: 1500 },
     { upToLbs: 500, cents: 3500 },
     { upToLbs: 1000, cents: 7500 },
-    { upToLbs: null, cents: 12500 },
   ],
+  // Price and capacity by vehicle: a flat fee on top of the base, its own per-mile rate past the first
+  // 5 miles, and the most it carries (heavier loads need a bigger vehicle or manual review).
+  // The biggest vehicle is a half-ton pickup; there's no liftgate/box-truck service.
+  vehicles: {
+    Car: { description: 'Envelopes, boxes, small parcels', feeCents: 0, perMileCents: 150, maxLbs: 150, enabled: true },
+    Minivan: { description: 'Several boxes, small furniture', feeCents: 1000, perMileCents: 175, maxLbs: 500, enabled: true },
+    'Cargo Van': { description: 'Larger loads that must stay dry', feeCents: 2000, perMileCents: 200, maxLbs: 1000, enabled: true },
+    'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', feeCents: 2500, perMileCents: 200, maxLbs: 1000, enabled: true },
+  },
   extraStopCents: 1000, // each stop beyond one pickup and one drop-off
   addOns: {
     loading_help: { label: 'Loading/unloading help', description: 'Driver helps load and unload', cents: 2500 },
@@ -63,6 +71,7 @@ const CHARGE_KINDS = {
 };
 
 const cleanCents = (v, fallback) => {
+  if (v === null || v === undefined || v === '') return fallback;
   const n = Math.round(Number(v));
   return Number.isFinite(n) && n >= 0 && n <= 1000000 ? n : fallback;
 };
@@ -71,19 +80,32 @@ const cleanCents = (v, fallback) => {
 function normalizeFees(saved) {
   const f = saved && typeof saved === 'object' ? saved : {};
   const tiers = Array.isArray(f.weightTiers) && f.weightTiers.length ? f.weightTiers : DEFAULT_FEES.weightTiers;
-  const weightTiers = tiers.slice(0, 10).map((t, i, all) => ({
-    upToLbs: i === all.length - 1 ? null : cleanCents(t?.upToLbs, null),
-    cents: cleanCents(t?.cents, 0),
-  })).filter((t, i, all) => i === all.length - 1 || t.upToLbs != null);
-  const capped = weightTiers.slice(0, -1).sort((a, b) => a.upToLbs - b.upToLbs)
+  // Every tier has a limit; older settings with an open-ended last tier just drop it (now manual review).
+  let weightTiers = tiers.slice(0, 10)
+    .map((t) => ({ upToLbs: cleanCents(t?.upToLbs, null), cents: cleanCents(t?.cents, 0) }))
+    .filter((t) => t.upToLbs != null && t.upToLbs > 0)
+    .sort((a, b) => a.upToLbs - b.upToLbs)
     .filter((t, i, all) => i === 0 || t.upToLbs > all[i - 1].upToLbs);
-  weightTiers.splice(0, weightTiers.length - 1, ...capped);
+  if (!weightTiers.length) weightTiers = DEFAULT_FEES.weightTiers;
+  const vehicles = {};
+  for (const [key, def] of Object.entries(DEFAULT_FEES.vehicles)) {
+    const v = f.vehicles?.[key] || {};
+    vehicles[key] = {
+      description: def.description,
+      feeCents: cleanCents(v.feeCents, def.feeCents),
+      perMileCents: cleanCents(v.perMileCents, def.perMileCents),
+      maxLbs: Math.max(1, cleanCents(v.maxLbs, def.maxLbs)),
+      enabled: typeof v.enabled === 'boolean' ? v.enabled : def.enabled,
+    };
+  }
+  if (!Object.values(vehicles).some((v) => v.enabled)) vehicles.Car.enabled = true;
   const addOns = {};
   for (const [key, def] of Object.entries(DEFAULT_FEES.addOns)) {
     addOns[key] = { ...def, cents: cleanCents(f.addOns?.[key]?.cents, def.cents) };
   }
   return {
     weightTiers,
+    vehicles,
     extraStopCents: cleanCents(f.extraStopCents, DEFAULT_FEES.extraStopCents),
     addOns,
     waitFreeMinutes: cleanCents(f.waitFreeMinutes, DEFAULT_FEES.waitFreeMinutes),
@@ -109,8 +131,10 @@ function parseWeightLbs(text) {
 function weightTierLabel(tiers, index) {
   const lo = index === 0 ? 0 : tiers[index - 1].upToLbs + 1;
   const hi = tiers[index].upToLbs;
-  return hi == null ? `Over ${lo - 1} lbs` : index === 0 ? `Up to ${hi} lbs` : `${lo}–${hi} lbs`;
+  return index === 0 ? `Up to ${hi} lbs` : `${lo}–${hi} lbs`;
 }
+
+const maxWeightLbs = (fees) => fees.weightTiers[fees.weightTiers.length - 1].upToLbs;
 
 // Wait-time charge for a stop: free minutes first, then each started block is billed.
 function waitCharge(minutes, fees = DEFAULT_FEES) {
@@ -149,15 +173,19 @@ function localTime(at) {
 // distanceMiles may be null when addresses couldn't be located; no distance fee then, and the
 // quote says the distance still needs confirming.
 // `at` is when the pickup happens (defaults to now); openOrders and badWeather come from the system.
-// weightLbs, stopCount (default 2) and addOns (keys of fees.addOns) add the extras above.
+// vehicleType, weightLbs, stopCount (default 2) and addOns (keys of fees.addOns) add the extras above.
+// needsReview (with reviewReasons) means the formula can't price it: dispatch sets the price by hand.
 function calculatePrice({
   distanceMiles, serviceLevel = 'standard', at = new Date(), openOrders = 0, badWeather = false,
-  weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES,
+  vehicleType = null, weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES,
 }) {
   const level = normalizeServiceLevel(serviceLevel);
+  const vehicle = fees.vehicles?.[vehicleType] || null; // unknown/legacy types: base rates, no capacity check
+  const perMileCents = vehicle ? vehicle.perMileCents : PER_MILE_CENTS;
+  const vehicleFeeCents = vehicle ? vehicle.feeCents : 0;
   const miles = distanceMiles == null ? null : Math.round(Number(distanceMiles) * 10) / 10;
   const extraMiles = miles == null ? 0 : Math.max(0, Math.round((miles - BASE_MILES) * 10) / 10);
-  const extraMileageCents = Math.round(extraMiles * PER_MILE_CENTS);
+  const extraMileageCents = Math.round(extraMiles * perMileCents);
   const rushFeeCents = SERVICE_LEVELS[level]?.feeCents ?? 0;
 
   const { weekday, hour } = localTime(at instanceof Date ? at : new Date(at));
@@ -175,11 +203,20 @@ function calculatePrice({
   const lbs = weightLbs == null || weightLbs === '' ? null : Number(weightLbs);
   let weightFeeCents = 0;
   let weightTier = null;
+  const reviewReasons = [];
   if (lbs != null && Number.isFinite(lbs)) {
-    const i = fees.weightTiers.findIndex((t) => t.upToLbs == null || lbs <= t.upToLbs);
-    weightFeeCents = fees.weightTiers[i].cents;
-    weightTier = weightTierLabel(fees.weightTiers, i);
+    const i = fees.weightTiers.findIndex((t) => lbs <= t.upToLbs);
+    if (i < 0) {
+      reviewReasons.push(`Over ${maxWeightLbs(fees).toLocaleString('en-US')} lbs`);
+    } else {
+      weightFeeCents = fees.weightTiers[i].cents;
+      weightTier = weightTierLabel(fees.weightTiers, i);
+      if (vehicle && lbs > vehicle.maxLbs) {
+        reviewReasons.push(`Too heavy for a ${vehicleType} (up to ${vehicle.maxLbs.toLocaleString('en-US')} lbs)`);
+      }
+    }
   }
+  if (vehicle && !vehicle.enabled) reviewReasons.push(`${vehicleType} isn't available right now`);
   const extraStops = Math.max(0, (Number(stopCount) || 2) - 2);
   const extraStopsCents = extraStops * fees.extraStopCents;
   const addOnLines = [...new Set(addOns)].filter((k) => fees.addOns[k])
@@ -192,7 +229,9 @@ function calculatePrice({
     baseFeeCents: BASE_FEE_CENTS,
     baseMiles: BASE_MILES,
     extraMiles,
-    perMileCents: PER_MILE_CENTS,
+    perMileCents,
+    vehicleType: vehicle ? vehicleType : null,
+    vehicleFeeCents,
     extraMileageCents,
     serviceLevel: level,
     rushFeeCents,
@@ -203,8 +242,11 @@ function calculatePrice({
     extraStops,
     extraStopsCents,
     addOns: addOnLines,
+    needsReview: reviewReasons.length > 0,
+    reviewReasons,
     context: { at: new Date(at).toISOString(), openOrders, badWeather: !!badWeather },
-    totalCents: BASE_FEE_CENTS + extraMileageCents + rushFeeCents + surchargeCents + weightFeeCents + extraStopsCents + addOnCents,
+    totalCents: BASE_FEE_CENTS + vehicleFeeCents + extraMileageCents + rushFeeCents + surchargeCents + weightFeeCents
+      + extraStopsCents + addOnCents,
   };
 }
 
@@ -237,5 +279,5 @@ async function pricingContext(client, excludeOrderId = null) {
 module.exports = {
   TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HIGH_DEMAND_OPEN_ORDERS,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, DEFAULT_FEES, CHARGE_KINDS,
-  normalizeFees, getFees, parseWeightLbs, weightTierLabel, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
+  normalizeFees, getFees, parseWeightLbs, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
 };

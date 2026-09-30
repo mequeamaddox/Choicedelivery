@@ -766,8 +766,22 @@ test('weight tiers, extra stops, add-ons and wait time are priced like the fee s
   assert.equal(q.extraStopsCents, 2000);
   assert.deepEqual(q.addOns.map((a) => a.cents), [2500, 2000]);
   assert.equal(q.totalCents, 2500 + 1500 + 2000 + 4500);
-  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 5000 }).weightTier, 'Over 1000 lbs');
-  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 5000 }).weightFeeCents, DEFAULT_FEES.weightTiers[4].cents);
+  const heavy = calculatePrice({ distanceMiles: 3, at, weightLbs: 5000 });
+  assert.equal(heavy.needsReview, true, 'over the top tier goes to manual review');
+  assert.deepEqual(heavy.reviewReasons, ['Over 1,000 lbs']);
+  assert.equal(heavy.weightFeeCents, 0);
+
+  // Vehicles: flat fee plus their own per-mile rate; capacity limits send it to review.
+  const car = calculatePrice({ distanceMiles: 15, at, vehicleType: 'Car', weightLbs: 100 });
+  assert.equal(car.totalCents, 2500 + 10 * 150 + 1500);
+  const truck = calculatePrice({ distanceMiles: 15, at, vehicleType: 'Pickup Truck', weightLbs: 100 });
+  assert.equal(truck.vehicleFeeCents, DEFAULT_FEES.vehicles['Pickup Truck'].feeCents);
+  assert.equal(truck.totalCents, 2500 + 2500 + 10 * 200 + 1500);
+  assert.ok(truck.totalCents > car.totalCents);
+  const tooHeavy = calculatePrice({ distanceMiles: 3, at, vehicleType: 'Car', weightLbs: 300 });
+  assert.equal(tooHeavy.needsReview, true);
+  assert.match(tooHeavy.reviewReasons[0], /Too heavy for a Car/);
+  assert.equal(calculatePrice({ distanceMiles: 3, at, vehicleType: 'Pickup Truck', weightLbs: 900 }).needsReview, false);
   assert.deepEqual([waitCharge(10).cents, waitCharge(15).cents, waitCharge(16).cents, waitCharge(30).cents, waitCharge(31).cents],
     [0, 0, 1000, 1000, 2000]);
   assert.deepEqual([parseWeightLbs('1,200 lbs'), parseWeightLbs('approx 40'), parseWeightLbs(''), parseWeightLbs('10 kg')], [1200, 40, null, 22]);
@@ -871,5 +885,53 @@ test('extra charges: booked add-ons, owner-editable fees, wait-time charges paid
     mailer.setSender(null);
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});
+
+test('orders the formula cannot price are held for a manual price, then booked', async () => {
+  const mailer = require('../src/mailer');
+  const sent = [];
+  mailer.setSender(async (m) => { sent.push(m); });
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  try {
+    let r = await call('POST', '/public/quote', { body: {
+      stops: [{ address: 'a', location: { lat: 34, lng: -81 } }, { address: 'b', location: { lat: 34.1, lng: -81 } }],
+      vehicleType: 'Car', weightLbs: 400 } });
+    assert.equal(r.data.needsReview, true, 'the public quote says it needs review');
+
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ vehicleType: 'Pickup Truck', weight: '1400 lbs' }) });
+    assert.equal(r.status, 201);
+    const o = r.data;
+    assert.equal(o.status, 'quote', 'held, not booked');
+    assert.equal(o.reviewStatus, 'needed');
+    r = await call('GET', '/orders?status=pending,quote', { token: t.d1 });
+    assert.ok(!r.data.some((x) => x.id === o.id), 'drivers never see it');
+    r = await call('POST', `/orders/${o.id}/book`, { token: t.acme, body: { expectedCents: o.priceCents } });
+    assert.equal(r.status, 409, 'cannot be booked before it is priced');
+    await settle();
+    assert.ok(sent.some((m) => /Price review needed/.test(m.subject)), 'dispatch is emailed');
+    assert.ok(sent.some((m) => /pricing your delivery/.test(m.subject) && /over 1,000 lbs/.test(m.html)), 'customer is told why');
+
+    // Changing to a vehicle that fits (and a weight in range) takes it out of review.
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ vehicleType: 'Car', weight: '300 lbs' }) });
+    assert.equal(r.data.reviewStatus, 'needed');
+    r = await call('PATCH', `/orders/${r.data.id}`, { token: t.acme, body: { vehicleType: 'Minivan' } });
+    assert.equal(r.data.reviewStatus, null);
+    assert.equal(r.data.priceBreakdown.needsReview, false);
+    await call('DELETE', `/orders/${r.data.id}`, { token: t.acme });
+
+    sent.length = 0;
+    r = await call('PATCH', `/orders/${o.id}`, { token: t.dispatcher, body: { priceCents: 21000 } });
+    assert.equal(r.data.reviewStatus, 'done');
+    assert.equal(r.data.priceCents, 21000);
+    await settle();
+    assert.ok(sent.some((m) => /Your price is ready/.test(m.subject) && /\$210\.00/.test(m.subject)));
+    r = await call('POST', `/orders/${o.id}/book`, { token: t.acme, body: { expectedCents: 21000 } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.status, 'pending');
+    assert.equal(r.data.priceCents, 21000, 'the reviewed price is kept');
+    await call('POST', `/orders/${o.id}/cancel`, { token: t.acme });
+  } finally {
+    mailer.setSender(null);
   }
 });

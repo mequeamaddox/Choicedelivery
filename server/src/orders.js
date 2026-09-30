@@ -101,6 +101,14 @@ async function createOrder(client, actor, body) {
   const orderId = rows[0].id;
   await insertStops(client, orderId, stops);
   await repriceOrder(client, orderId, { fresh: true });
+  // Too heavy, over capacity, etc.: held as a quote until dispatch prices it by hand.
+  const { rows: [priced] } = await client.query('SELECT price_breakdown, price_is_custom FROM orders WHERE id = $1', [orderId]);
+  if (priced.price_breakdown?.needsReview && !priced.price_is_custom) {
+    await client.query(
+      "UPDATE orders SET status = 'quote', booked_at = NULL, review_status = 'needed' WHERE id = $1", [orderId]);
+    await recordEvent(client, orderId, actor.id, 'review_requested', { reasons: priced.price_breakdown.reviewReasons });
+    return orderId;
+  }
   await recordEvent(client, orderId, actor.id, isQuote ? 'quoted' : 'created');
   return orderId;
 }
@@ -119,10 +127,11 @@ async function paymentStatusFor(client, creatorRole, organizationId) {
 // is charged an amount they didn't see. Returns { booked, priceCents }.
 async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
   const { rows: [o] } = await client.query(
-    `SELECT o.status, o.organization_id, o.scheduled_at, o.price_cents, u.role AS creator_role
+    `SELECT o.status, o.organization_id, o.scheduled_at, o.price_cents, o.review_status, u.role AS creator_role
      FROM orders o LEFT JOIN users u ON u.id = o.created_by WHERE o.id = $1 FOR UPDATE OF o`, [orderId]);
   if (!o) throw new HttpError(404, 'Order not found');
   if (o.status !== 'quote') throw new HttpError(409, 'This order is already booked');
+  if (o.review_status === 'needed') throw new HttpError(409, "We're still reviewing this request; we'll email you the price");
   if (o.scheduled_at && new Date(o.scheduled_at) < new Date()) {
     await client.query('UPDATE orders SET scheduled_at = NULL WHERE id = $1', [orderId]);
   }
@@ -149,7 +158,7 @@ async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
 // Unscheduled (ASAP) orders are priced for when they were booked; unbooked quotes for now.
 async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
   const { rows: [o] } = await client.query(
-    `SELECT status, service_level, scheduled_at, booked_at, created_at, price_breakdown, weight, add_ons
+    `SELECT status, service_level, scheduled_at, booked_at, created_at, price_breakdown, weight, add_ons, vehicle_type
      FROM orders WHERE id = $1`, [orderId]);
   const { rows: stops } = await client.query(
     'SELECT location FROM stops WHERE order_id = $1 ORDER BY sequence', [orderId]);
@@ -161,6 +170,7 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
     at: o.scheduled_at || at || (o.status === 'quote' ? new Date() : o.booked_at || o.created_at),
     openOrders: context.openOrders,
     badWeather: context.badWeather,
+    vehicleType: o.vehicle_type,
     weightLbs: parseWeightLbs(o.weight),
     stopCount: stops.length,
     addOns: o.add_ons,
@@ -241,6 +251,7 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     } : null,
     serviceLevel: o.service_level,
     isQuote: o.status === 'quote',
+    reviewStatus: o.review_status,
     distanceMiles: o.distance_miles == null ? null : Number(o.distance_miles),
     priceBreakdown: o.price_breakdown,
     priceIsCustom: o.price_is_custom,

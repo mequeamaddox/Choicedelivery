@@ -220,17 +220,39 @@ function FeesEditor() {
   return html`
     <form class="card stack" onSubmit=${save}>
       <h2>Fees & extra charges</h2>
-      <p class="muted small">Added on top of the base price ($25 for 5 miles, then $1.50/mile). Customers see these when they book.</p>
+      <p class="muted small">Added on top of the base price ($25 for the first 5 miles). Customers see these when they book.</p>
       <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
       <h3>Weight</h3>
       ${tiers.map((t, i) => html`
         <div class="grid-2">
-          <${Field} label=${i === tiers.length - 1 ? `Over ${tiers[i - 1]?.upToLbs ?? 0} lbs` : `Up to (lbs)`}>
-            ${i === tiers.length - 1 ? html`<input value="and heavier" disabled />`
-              : html`<input type="number" min="1" step="1" value=${t.upToLbs} onInput=${(e) => setTier(i, { upToLbs: Number(e.target.value) })} />`}
+          <${Field} label="Up to (lbs)">
+            <input type="number" min="1" step="1" value=${t.upToLbs} onInput=${(e) => setTier(i, { upToLbs: Number(e.target.value) })} />
           <//>
-          <${Field} label="Fee ($)"><input type="number" min="0" step="0.01" value=${dollars(t.cents)} onInput=${(e) => setTier(i, { cents: cents(e.target.value) })} /><//>
+          <${Field} label="Fee ($)">
+            <div class="inline">
+              <input type="number" min="0" step="0.01" value=${dollars(t.cents)} onInput=${(e) => setTier(i, { cents: cents(e.target.value) })} />
+              <button type="button" class="icon-btn" disabled=${tiers.length <= 1} aria-label="Remove tier"
+                onClick=${() => set({ weightTiers: tiers.filter((_, j) => j !== i) })}>✕</button>
+            </div>
+          <//>
         </div>`)}
+      <button type="button" class="btn small" onClick=${() => set({ weightTiers: [...tiers, { upToLbs: (tiers[tiers.length - 1]?.upToLbs || 0) + 500, cents: (tiers[tiers.length - 1]?.cents || 0) + 2500 }] })}>+ Add weight tier</button>
+      <p class="muted small">Heavier than ${(tiers[tiers.length - 1]?.upToLbs || 0).toLocaleString()} lbs: sent to you for a custom price.</p>
+      <h3>Vehicles</h3>
+      <p class="muted small">Flat fee on top of the base, the per-mile rate after the first 5 miles, and the most each carries (heavier goes to a bigger vehicle or a custom price).</p>
+      ${Object.entries(fees.vehicles).map(([name, x]) => html`
+        <fieldset class="vehicle-fees">
+          <legend><label class="inline-check"><input type="checkbox" checked=${x.enabled}
+            onChange=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, enabled: e.target.checked } } })} /> ${name}</label></legend>
+          <div class="grid-3">
+            <${Field} label="Fee ($)"><input type="number" min="0" step="0.01" value=${dollars(x.feeCents)} disabled=${!x.enabled}
+              onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, feeCents: cents(e.target.value) } } })} /><//>
+            <${Field} label="Per mile ($)"><input type="number" min="0" step="0.01" value=${dollars(x.perMileCents)} disabled=${!x.enabled}
+              onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, perMileCents: cents(e.target.value) } } })} /><//>
+            <${Field} label="Max lbs"><input type="number" min="1" step="1" value=${x.maxLbs} disabled=${!x.enabled}
+              onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, maxLbs: Number(e.target.value) } } })} /><//>
+          </div>
+        </fieldset>`)}
       <h3>Stops & add-ons</h3>
       <div class="grid-2">
         <${Field} label="Each extra stop ($)" hint="Beyond one pickup and one drop-off.">

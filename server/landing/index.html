@@ -264,7 +264,7 @@
                         </div>
                         <div class="flex items-center justify-between">
                             <span class="text-gray-600">Vehicle Options</span>
-                            <span class="font-semibold">Car, Van, Truck</span>
+                            <span class="font-semibold">Car, Van, Pickup Truck</span>
                         </div>
                     </div>
                 </div>
@@ -523,6 +523,15 @@
                                 <input type="text" id="quote-to" placeholder="Delivery address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                             </div>
                             <div>
+                                <label for="quote-vehicle" class="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
+                                <select id="quote-vehicle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                    <option value="Car">Car (up to 150 lbs)</option>
+                                    <option value="Minivan">Minivan (up to 500 lbs)</option>
+                                    <option value="Cargo Van">Cargo Van (up to 1,000 lbs)</option>
+                                    <option value="Pickup Truck">Pickup Truck (up to 1,000 lbs)</option>
+                                </select>
+                            </div>
+                            <div>
                                 <label for="quote-weight" class="block text-sm font-medium text-gray-700 mb-1">Total weight (lbs)</label>
                                 <input type="number" min="1" step="1" id="quote-weight" placeholder="e.g. 25" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                             </div>
@@ -778,6 +787,19 @@
             el.classList.add(ok ? 'text-green-700' : 'text-red-600');
         }
 
+        // Vehicle list and capacities come from the app's fee settings (the options above are a fallback).
+        fetch(API + '/public/pricing').then((r) => r.json()).then((p) => {
+            const sel = document.getElementById('quote-vehicle');
+            const opts = Object.entries(p.fees?.vehicles || {}).filter(([, v]) => v.enabled);
+            if (!opts.length) return;
+            sel.replaceChildren(...opts.map(([name, v]) => {
+                const o = document.createElement('option');
+                o.value = name;
+                o.textContent = `${name} (up to ${v.maxLbs.toLocaleString()} lbs)`;
+                return o;
+            }));
+        }).catch(() => {});
+
         // Quote calculator
         async function calculateQuote() {
             const from = document.getElementById('quote-from').value.trim();
@@ -792,15 +814,18 @@
                     pickupAddress: from,
                     dropoffAddress: to,
                     serviceLevel: document.getElementById('quote-level').value,
-                    weightLbs: Number(document.getElementById('quote-weight').value) || undefined
+                    weightLbs: Number(document.getElementById('quote-weight').value) || undefined,
+                    vehicleType: document.getElementById('quote-vehicle').value
                 });
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
-                document.getElementById('quote-price').textContent = `Estimated: ${money(q.totalCents)}`;
-                const lines = [[`Base delivery (first ${q.baseMiles} miles)`, money(q.baseFeeCents)]];
-                if (q.extraMileageCents > 0) lines.push([`Distance fee (${q.extraMiles} mi × ${money(q.perMileCents)})`, '+' + money(q.extraMileageCents)]);
+                document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price' : `Estimated: ${money(q.totalCents)}`;
+                const lines = q.needsReview ? [] : [[`Base delivery (first ${q.baseMiles} miles)`, money(q.baseFeeCents)]];
+                if (!q.needsReview && q.vehicleFeeCents > 0) lines.push([q.vehicleType, '+' + money(q.vehicleFeeCents)]);
+                if (!q.needsReview && q.extraMileageCents > 0) lines.push([`Distance fee (${q.extraMiles} mi × ${money(q.perMileCents)})`, '+' + money(q.extraMileageCents)]);
                 if (q.rushFeeCents > 0) lines.push(['Rush delivery', '+' + money(q.rushFeeCents)]);
                 if (q.weightFeeCents > 0) lines.push([`Weight (${q.weightTier})`, '+' + money(q.weightFeeCents)]);
                 (q.surcharges || []).forEach((sc) => lines.push([sc.label, '+' + money(sc.cents)]));
+                if (q.needsReview) lines.length = 0;
                 const list = document.getElementById('quote-breakdown');
                 list.replaceChildren(...lines.map(([label, value]) => {
                     const li = document.createElement('li');

@@ -9,10 +9,25 @@ const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
 const { emailShipper } = require('../notify');
+const { sendMail } = require('../mailer');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
 
 const router = express.Router();
 router.use(requireAuth);
+
+// Tells dispatch (LEADS_EMAIL) that an order is waiting for a manual price.
+function notifyStaffOfReview(order) {
+  const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+  const reasons = order.priceBreakdown?.reviewReasons || [];
+  const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  sendMail({
+    to: process.env.LEADS_EMAIL || 'info@choicedeliverysc.com',
+    subject: `Price review needed: ${order.orderNumber}${order.organization ? ` (${order.organization.name})` : ''}`,
+    html: `<p><strong>${esc(order.orderNumber)}</strong> needs a price: ${esc(reasons.join('; '))}.</p>
+      <p>${esc(order.vehicleType)} · ${esc(order.weight)} · ${esc(order.stops[0]?.address)} &rarr; ${esc(order.stops[order.stops.length - 1]?.address)}</p>
+      <p><a href="${base}/#/orders/${order.id}">Open the order and set the price</a></p>`,
+  }).catch((e) => console.error('Review email failed:', e.message));
+}
 
 const driverOnly = (req, res, next) => {
   if (req.user.role !== 'driver') return next(new HttpError(403, 'Only drivers can do this'));
@@ -58,6 +73,11 @@ router.get('/', asyncH(async (req, res) => {
 router.post('/', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
   const id = await db.withTx((client) => createOrder(client, req.user, req.body || {}));
   const order = await getOrderFor(req.user, id);
+  if (order.reviewStatus === 'needed') {
+    emailShipper(order.id, 'review_requested');
+    notifyStaffOfReview(order);
+    return res.status(201).json(order);
+  }
   if (order.status === 'quote') {
     emailShipper(order.id, 'quote_saved');
     return res.status(201).json(order);
@@ -174,8 +194,20 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
     }
     await repriceOrder(client, current.id);
     await recordEvent(client, current.id, req.user.id, 'updated', { fields: Object.keys(b) });
+    // A quote edited so the formula can (or can no longer) price it moves in or out of review.
+    await client.query(
+      `UPDATE orders SET review_status = CASE WHEN price_is_custom THEN review_status
+         WHEN (price_breakdown->>'needsReview')::boolean THEN 'needed' ELSE NULL END
+       WHERE id = $1 AND status = 'quote'`, [current.id]);
+    // Dispatch pricing an order that was waiting for review releases it to the customer.
+    if (current.reviewStatus === 'needed' && b.priceCents != null && isStaff(req.user)) {
+      await client.query("UPDATE orders SET review_status = 'done' WHERE id = $1", [current.id]);
+      await recordEvent(client, current.id, req.user.id, 'price_set', { cents: Number(b.priceCents) });
+    }
   });
-  res.json(await getOrderFor(req.user, current.id));
+  const updated = await getOrderFor(req.user, current.id);
+  if (current.reviewStatus === 'needed' && updated.reviewStatus === 'done') emailShipper(updated.id, 'price_ready');
+  res.json(updated);
 }));
 
 router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
