@@ -16,6 +16,7 @@ and it's set up to deploy on [Railway](https://railway.com) with Postgres on Rai
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` for Railway Postgres, or your Neon connection string |
    | `JWT_SECRET` | a long random string (`openssl rand -hex 32`) |
    | `DISPATCH_API_KEY` | *(optional)* random string that lets your website or order form create orders |
+   | `PUBLIC_URL` | `https://app.choicedeliverysc.com` (password-reset links open the web app) |
    | `RESEND_API_KEY`, `MAIL_FROM` | *(optional)* for password-reset emails via Resend; without them reset links are only written to the logs |
 5. **Give it a domain**: *Settings → Networking → Custom Domain* → `api.choicedeliverysc.com`, then add the
    CNAME record Railway shows at your DNS provider. (Domain plan: `www.` = public landing page,

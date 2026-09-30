@@ -90,7 +90,7 @@ router.post('/forgot-password', asyncH(async (req, res) => {
     [hashToken(token), rows[0].id]
   );
   const base = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-  const link = `${base}/reset-password?token=${token}`;
+  const link = `${base}/#/reset/${token}`;
   await sendMail({
     to: rows[0].email,
     subject: 'Reset your Choice Delivery password',

@@ -1,6 +1,6 @@
 import { html, render, useState, useEffect, useRoute, match, navigate, getUser, isStaff, onSessionChange, restoreSession } from './lib.js';
 import { Spinner } from './components.js';
-import { LoginPage, SignupPage, ForgotPage, TrackPage } from './pages-public.js';
+import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
 import { PeoplePage, CompaniesPage, TeamPage, AccountPage } from './pages-admin.js';
 
@@ -17,8 +17,11 @@ function App() {
     return off;
   }, []);
 
+  // Pages that work whether or not someone is logged in.
   const track = match('/track/:token', path);
   if (track) return html`<${TrackPage} token=${track.token} />`;
+  const reset = match('/reset/:token', path);
+  if (reset) return html`<${ResetPage} token=${reset.token} />`;
   if (!ready) return html`<div class="page"><${Spinner} /></div>`;
 
   if (!user) {

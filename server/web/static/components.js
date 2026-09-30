@@ -1,7 +1,7 @@
 import { html, useState, getUser, logout, isStaff, STATUS, formatDate, mapsLink, ROLE_LABELS, currentPath } from './lib.js';
 
 export function Logo() {
-  return html`<a class="logo" href="#/orders"><span class="logo-mark">CD</span><span>Choice Delivery</span></a>`;
+  return html`<a class="logo" href="#/orders"><img src="/static/logo.png" alt="Choice Delivery SC" width="480" height="174" /></a>`;
 }
 
 export function Layout({ children }) {

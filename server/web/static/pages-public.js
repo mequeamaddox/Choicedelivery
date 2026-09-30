@@ -77,6 +77,29 @@ export function ForgotPage() {
     <//>`;
 }
 
+// Opened from the password-reset email.
+export function ResetPage({ token }) {
+  const [v, bind] = useForm({ password: '', confirm: '' });
+  const [done, setDone] = useState(null);
+  const { onSubmit, error, busy } = useSubmit(async () => {
+    if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+    const r = await api('/auth/reset-password', { method: 'POST', body: { token, password: v.password } });
+    setDone(r.message);
+  });
+  return html`
+    <${AuthShell} title="Choose a new password">
+      ${done ? html`
+        <${Alert} tone="success">${done}<//>
+        <p class="auth-links">Drivers: open the Choice Delivery app. Shippers and dispatch: <a href="#/login">log in here</a>.</p>` : html`
+        <form onSubmit=${onSubmit} class="stack">
+          <${Alert} error=${error} />
+          <${Field} label="New password" hint="At least 8 characters."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>
+          <${Field} label="Confirm new password"><input type="password" required minlength="8" autocomplete="new-password" ...${bind('confirm')} /><//>
+          <button class="btn primary block" disabled=${busy}>${busy ? 'Saving…' : 'Save password'}</button>
+        </form>`}
+    <//>`;
+}
+
 // Public tracking page for customers/recipients: no login.
 export function TrackPage({ token }) {
   const { data, error, loading } = useApi(`/track/${encodeURIComponent(token)}`, { pollMs: 20000 });

@@ -247,13 +247,15 @@ test('password reset', async () => {
   } finally {
     console.log = orig;
   }
-  const token = logs.join('\n').match(/token=([0-9a-f]+)/)[1];
+  const token = logs.join('\n').match(/#\/reset\/([0-9a-f]+)/)[1];
   let r = await call('POST', '/auth/reset-password', { body: { token, password: 'brandnew1' } });
   assert.equal(r.status, 200);
   r = await call('POST', '/auth/reset-password', { body: { token, password: 'brandnew2' } });
   assert.equal(r.status, 400, 'tokens are single use');
   r = await call('POST', '/auth/login', { body: { email: 'd1@test.com', password: 'brandnew1' } });
   assert.equal(r.status, 200);
+  const res = await fetch(`${base}/reset-password?token=abc123`, { redirect: 'manual' });
+  assert.equal(res.headers.get('location'), '/#/reset/abc123', 'old links redirect into the web app');
 });
 
 test('change password', async () => {
