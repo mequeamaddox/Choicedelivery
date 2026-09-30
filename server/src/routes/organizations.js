@@ -9,7 +9,7 @@ router.use(requireAuth);
 
 const serialize = (o) => ({
   id: o.id, name: o.name, phone: o.phone, billingEmail: o.billing_email, address: o.address,
-  createdAt: o.created_at,
+  createdAt: o.created_at, isDemo: o.is_demo,
 });
 
 function canAccess(user, orgId) {

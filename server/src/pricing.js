@@ -113,7 +113,7 @@ function routeMiles(locations) {
 async function pricingContext(client, excludeOrderId = null) {
   const { rows: [{ n }] } = await client.query(
     `SELECT count(*)::int AS n FROM orders
-     WHERE status IN ('pending', 'accepted', 'at_pickup', 'in_transit', 'at_dropoff')
+     WHERE status IN ('pending', 'accepted', 'at_pickup', 'in_transit', 'at_dropoff') AND NOT is_demo
        AND ($1::uuid IS NULL OR id <> $1)`, [excludeOrderId]);
   const { rows } = await client.query("SELECT value FROM settings WHERE key = 'bad_weather'");
   return { openOrders: n, badWeather: rows[0]?.value === true };

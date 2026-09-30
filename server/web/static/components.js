@@ -57,6 +57,10 @@ export function AuthShell({ title, subtitle, children }) {
     </div>`;
 }
 
+export function DemoBadge({ on }) {
+  return on ? html` <span class="badge demo" title="Sample data. Remove it from Orders → Demo data.">Demo</span>` : null;
+}
+
 export function StatusBadge({ status }) {
   const s = STATUS[status] || { label: status, tone: 'gray' };
   return html`<span class=${`badge ${s.tone}`}>${s.label}</span>`;

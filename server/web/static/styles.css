@@ -273,3 +273,4 @@ tr.inactive td { opacity: .6; }
 .breakdown .total { border-top: 1px solid var(--mint-light); padding-top: .35rem; font-weight: 700; }
 
 .btn.warn { background: var(--amber-bg); color: var(--amber); border-color: #fcd34d; }
+.badge.demo { background: #fae8ff; color: #86198f; text-transform: uppercase; letter-spacing: .04em; font-size: .68rem; vertical-align: middle; }

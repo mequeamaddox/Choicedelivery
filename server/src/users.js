@@ -19,6 +19,7 @@ function publicUser(u, { includeLocation = false } = {}) {
     vehicleType: u.vehicle_type || '',
     profilePictureUrl: u.profile_picture_url,
     isActive: u.is_active,
+    isDemo: u.is_demo,
   };
   if (u.role === 'driver') out.isOnline = u.is_online;
   if (includeLocation) {

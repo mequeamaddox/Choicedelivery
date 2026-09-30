@@ -79,6 +79,7 @@ app.use('/track', require('./routes/track'));
 app.use('/public', require('./routes/public'));
 app.use('/leads', require('./routes/leads'));
 app.use('/settings', require('./routes/settings'));
+app.use('/demo', require('./routes/demo'));
 app.get('/reset-password', resetPage);
 
 app.use((req, res) => res.status(404).json({ message: 'Not found' }));

@@ -459,3 +459,44 @@ test('setup status flips once the owner account exists', async () => {
   const r = await call('GET', '/auth/setup-status');
   assert.equal(r.data.needsSetup, false, 'accounts already exist in this test run');
 });
+
+test('demo data: admin-only, invisible to real drivers, removable without touching real data', async () => {
+  const countReal = async () => (await db.query('SELECT count(*)::int n FROM orders WHERE NOT is_demo')).rows[0].n;
+  const realBefore = await countReal();
+  const openBefore = (await require('../src/pricing').pricingContext(db)).openOrders;
+
+  let r = await call('POST', '/demo', { token: t.dispatcher });
+  assert.equal(r.status, 403, 'only admins can load demo data');
+  r = await call('POST', '/demo', { token: t.admin });
+  assert.equal(r.status, 201);
+  assert.ok(r.data.orders >= 8 && r.data.companies === 3 && r.data.leads === 2, JSON.stringify(r.data));
+
+  r = await call('GET', '/orders?limit=500', { token: t.admin });
+  const demo = r.data.filter((o) => o.isDemo);
+  assert.ok(demo.length >= 8, 'admins see demo orders');
+  assert.ok(demo.some((o) => o.status === 'completed' && o.stops.every((s) => s.hasSignature)), 'completed demo has proof');
+  const pendingDemo = demo.find((o) => o.status === 'pending');
+  assert.ok(demo.every((o) => o.orderNumber.startsWith('DEMO-')), 'demo orders do not use real order numbers');
+
+  r = await call('GET', '/orders?status=pending', { token: t.d1 });
+  assert.ok(!r.data.some((o) => o.isDemo), 'real drivers never see demo jobs');
+  r = await call('POST', `/orders/${pendingDemo.id}/accept`, { token: t.d1 });
+  assert.equal(r.status, 409, 'real drivers cannot accept demo jobs');
+  r = await call('POST', `/orders/${pendingDemo.id}/assign`, { token: t.dispatcher, body: { driverId: ids.d1 } });
+  assert.equal(r.status, 400, 'dispatch cannot put a real driver on a demo job');
+
+  assert.equal((await require('../src/pricing').pricingContext(db)).openOrders, openBefore, 'demo orders do not trigger surge pricing');
+  r = await call('GET', '/users?role=driver', { token: t.admin });
+  assert.equal(r.data.filter((u) => u.isDemo).length, 3);
+  r = await call('POST', '/auth/login', { body: { email: r.data.find((u) => u.isDemo).email, password: 'password1' } });
+  assert.equal(r.status, 401, 'demo accounts cannot log in');
+
+  r = await call('POST', '/demo', { token: t.admin });
+  assert.equal(r.data.companies, 3, 'loading again replaces instead of duplicating');
+
+  r = await call('DELETE', '/demo', { token: t.admin });
+  assert.equal(r.status, 200);
+  r = await call('GET', '/demo', { token: t.admin });
+  assert.equal(r.data.loaded, false);
+  assert.equal(await countReal(), realBefore, 'real orders untouched');
+});

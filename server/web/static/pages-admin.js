@@ -1,5 +1,5 @@
 import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS } from './lib.js';
-import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton } from './components.js';
+import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton, DemoBadge } from './components.js';
 
 function AddAccountForm({ roles, companies, fixedCompanyId, onCreated, submitPath }) {
   const [v, setV] = useState({ name: '', email: '', phoneNumber: '', password: '', role: roles[0], organizationId: '' });
@@ -86,7 +86,7 @@ export function PeoplePage() {
             <tbody>
               ${data.map((u) => html`
                 <tr class=${u.isActive ? '' : 'inactive'}>
-                  <td data-label="Name"><strong>${u.name || '—'}</strong>${!u.isActive && html` <span class="badge gray">Disabled</span>`}</td>
+                  <td data-label="Name"><strong>${u.name || '—'}</strong><${DemoBadge} on=${u.isDemo} />${!u.isActive && html` <span class="badge gray">Disabled</span>`}</td>
                   <td data-label="Contact"><div>${u.email}</div>${u.phoneNumber && html`<a class="small" href=${`tel:${u.phoneNumber}`}>${u.phoneNumber}</a>`}</td>
                   ${tab === 'driver' && html`
                     <td data-label="Vehicle">${u.vehicleType || html`<span class="muted">—</span>`}</td>
@@ -134,7 +134,7 @@ export function CompaniesPage() {
             <thead><tr><th>Company</th><th>Phone</th><th>Billing email</th><th>Since</th></tr></thead>
             <tbody>${data.map((c) => html`
               <tr>
-                <td data-label="Company"><strong>${c.name}</strong>${c.address && html`<div class="muted small">${c.address}</div>`}</td>
+                <td data-label="Company"><strong>${c.name}</strong><${DemoBadge} on=${c.isDemo} />${c.address && html`<div class="muted small">${c.address}</div>`}</td>
                 <td data-label="Phone">${c.phone || '—'}</td>
                 <td data-label="Billing email">${c.billingEmail || '—'}</td>
                 <td data-label="Since" class="muted small">${new Date(c.createdAt).toLocaleDateString()}</td>
@@ -251,7 +251,7 @@ export function LeadsPage() {
             <article class="card">
               <div class="card-head">
                 <div>
-                  <h2>${l.type === 'contract' ? `${l.planName} request` : 'Website message'}</h2>
+                  <h2>${l.type === 'contract' ? `${l.planName} request` : 'Website message'}<${DemoBadge} on=${l.isDemo} /></h2>
                   <div class="muted small">${formatDate(l.createdAt)}${l.company ? ` · ${l.company}` : ''}</div>
                 </div>
                 <span class=${`badge ${l.status === 'new' ? 'amber' : l.status === 'won' ? 'green' : l.status === 'contacted' ? 'blue' : 'gray'}`}>${LEAD_STATUS[l.status]}</span>

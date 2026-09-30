@@ -3,7 +3,7 @@ import {
   trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS,
 } from './lib.js';
 import {
-  Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput,
+  Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
 } from './components.js';
 
 const FILTERS = [
@@ -13,6 +13,27 @@ const FILTERS = [
   { key: 'cancelled', label: 'Cancelled', statuses: ['cancelled'] },
   { key: 'all', label: 'All', statuses: [] },
 ];
+
+// Admin-only: fill the system with sample companies, drivers, orders and leads, or remove them.
+function DemoDataButton({ onChange }) {
+  const status = useApi('/demo');
+  const loaded = status.data?.loaded;
+  const toggle = async () => {
+    if (loaded) await api('/demo', { method: 'DELETE' });
+    else await api('/demo', { method: 'POST' });
+    await status.reload();
+    onChange();
+  };
+  if (!status.data) return null;
+  return html`
+    <${ActionButton} class="btn"
+      confirmText=${loaded
+        ? 'Remove all demo data? Only records marked "Demo" are deleted; your real data is not touched.'
+        : 'Load demo data? This adds sample companies, drivers, orders and leads, all marked "Demo". Real drivers never see demo orders, and you can remove it all with one click.'}
+      onClick=${toggle}>
+      ${loaded ? 'Remove demo data' : 'Load demo data'}
+    <//>`;
+}
 
 // Dispatch switch for the $15 bad-weather surcharge on new orders.
 function WeatherSwitch() {
@@ -32,7 +53,7 @@ export function OrdersPage() {
   const [search, setSearch] = useState('');
   const f = FILTERS.find((x) => x.key === filter);
   const path = `/orders?limit=200${f.statuses.length ? `&status=${f.statuses.join(',')}` : ''}`;
-  const { data, error, loading } = useApi(path, { pollMs: 30000 });
+  const { data, error, loading, reload } = useApi(path, { pollMs: 30000 });
   const q = search.trim().toLowerCase();
   const rows = (data || []).filter((o) => !q || [o.orderNumber, o.trackingNumber, o.organization?.name, o.driver?.name,
     ...o.stops.map((s) => `${s.address} ${s.contactName}`)].join(' ').toLowerCase().includes(q));
@@ -41,7 +62,7 @@ export function OrdersPage() {
     <${Layout}>
       ${isStaff(user) ? html`
         <${PageHeader} title="Orders" subtitle="Every order across all companies."
-          actions=${html`<${WeatherSwitch} /><a class="btn primary" href="#/orders/new">+ New order</a>`} />` : html`
+          actions=${html`${user.role === 'admin' && html`<${DemoDataButton} onChange=${reload} />`}<${WeatherSwitch} /><a class="btn primary" href="#/orders/new">+ New order</a>`} />` : html`
         <section class="welcome">
           <div>
             <h1>Welcome back${user.name ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
@@ -70,7 +91,7 @@ export function OrdersPage() {
             <tbody>
               ${rows.map((o) => html`
                 <tr class="clickable" onClick=${() => navigate(`/orders/${o.id}`)}>
-                  <td data-label="Order"><a class="nowrap" href=${`#/orders/${o.id}`} onClick=${(e) => e.stopPropagation()}><strong>${o.orderNumber}</strong></a>
+                  <td data-label="Order"><a class="nowrap" href=${`#/orders/${o.id}`} onClick=${(e) => e.stopPropagation()}><strong>${o.orderNumber}</strong></a><${DemoBadge} on=${o.isDemo} />
                     <div class="muted small">${o.serviceLevel === 'rush' ? 'Rush · ' : ''}${o.vehicleType}</div></td>
                   <td data-label="Route"><${RouteSummary} stops=${o.stops} /></td>
                   ${isStaff(user) && html`<td data-label="Company">${o.organization?.name || html`<span class="muted">Internal</span>`}</td>`}
@@ -364,7 +385,7 @@ export function OrderPage({ id }) {
     <${Layout}>
       <a class="back" href="#/orders">← Orders</a>
       <${PageHeader}
-        title=${html`${order.orderNumber} <${StatusBadge} status=${order.status} />`}
+        title=${html`${order.orderNumber} <${StatusBadge} status=${order.status} /><${DemoBadge} on=${order.isDemo} />`}
         subtitle=${`Booked ${formatDate(order.createdAt)}${order.organization ? ` · ${order.organization.name}` : ''}`}
         actions=${html`
           ${link && html`<button class="btn" onClick=${copyLink}>${copied ? 'Link copied ✓' : 'Copy tracking link'}</button>`}

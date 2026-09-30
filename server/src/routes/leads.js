@@ -12,7 +12,7 @@ const STATUSES = ['new', 'contacted', 'won', 'closed'];
 const serialize = (l) => ({
   id: l.id, type: l.type, name: l.name, company: l.company, email: l.email, phone: l.phone, message: l.message,
   plan: l.plan, planName: l.plan ? BUSINESS_PLANS[l.plan]?.name || l.plan : null, status: l.status,
-  createdAt: l.created_at, updatedAt: l.updated_at,
+  createdAt: l.created_at, updatedAt: l.updated_at, isDemo: l.is_demo,
 });
 
 router.get('/', asyncH(async (req, res) => {

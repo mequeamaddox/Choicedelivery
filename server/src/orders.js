@@ -119,7 +119,8 @@ function visibilityFilter(user, params) {
     return `o.organization_id = $${params.length}`;
   }
   params.push(user.id);
-  return `(o.driver_id = $${params.length} OR (o.status = 'pending' AND o.driver_id IS NULL))`;
+  // Drivers never see sample (demo) orders.
+  return `NOT o.is_demo AND (o.driver_id = $${params.length} OR (o.status = 'pending' AND o.driver_id IS NULL))`;
 }
 
 const ORDER_SELECT = `
@@ -156,6 +157,7 @@ function serializeOrder(o, stops, { events, proof = false, user } = {}) {
   const out = {
     id: o.id,
     orderNumber: o.order_number,
+    isDemo: o.is_demo,
     status: o.status,
     organization: o.organization_id ? { id: o.organization_id, name: o.organization_name } : null,
     driver: o.driver_id ? {

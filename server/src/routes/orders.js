@@ -159,14 +159,19 @@ router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH
 router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   const driverId = req.body?.driverId || null;
   await db.withTx(async (client) => {
+    let driverIsDemo = null;
     if (driverId) {
       const { rows } = await client.query(
-        "SELECT id FROM users WHERE id = $1 AND role = 'driver' AND is_active", [driverId]).catch(() => ({ rows: [] }));
+        "SELECT id, is_demo FROM users WHERE id = $1 AND role = 'driver' AND is_active", [driverId]).catch(() => ({ rows: [] }));
       if (!rows[0]) throw new HttpError(400, 'Driver not found');
+      driverIsDemo = rows[0].is_demo;
     }
-    const { rows } = await client.query('SELECT status FROM orders WHERE id = $1 FOR UPDATE', [req.params.id])
+    const { rows } = await client.query('SELECT status, is_demo FROM orders WHERE id = $1 FOR UPDATE', [req.params.id])
       .catch(() => ({ rows: [] }));
     if (!rows[0]) throw new HttpError(404, 'Order not found');
+    if (driverIsDemo !== null && driverIsDemo !== rows[0].is_demo) {
+      throw new HttpError(400, rows[0].is_demo ? 'Demo orders can only go to demo drivers' : 'Demo drivers cannot take real orders');
+    }
     if (!['pending', ...ACTIVE].includes(rows[0].status)) throw new HttpError(409, `Order is ${rows[0].status}`);
     if (!driverId && rows[0].status !== 'accepted' && rows[0].status !== 'pending') {
       throw new HttpError(409, 'This order is already underway; assign another driver instead');
@@ -193,7 +198,7 @@ router.post('/:id/accept', driverOnly, asyncH(async (req, res) => {
   await db.withTx(async (client) => {
     const { rows } = await client.query(
       `UPDATE orders SET driver_id = $2, status = 'accepted', accepted_at = now(), updated_at = now()
-       WHERE id = $1 AND status = 'pending' AND driver_id IS NULL RETURNING id`,
+       WHERE id = $1 AND status = 'pending' AND driver_id IS NULL AND NOT is_demo RETURNING id`,
       [req.params.id, req.user.id]
     ).catch(() => ({ rows: [] }));
     if (!rows[0]) throw new HttpError(409, 'This job is no longer available');
