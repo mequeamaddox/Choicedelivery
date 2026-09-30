@@ -159,6 +159,8 @@ export function ChargesNotice({ fees }) {
         <li><strong>Wait time:</strong> the first ${fees.waitFreeMinutes} minutes at each stop are free. After that it's ${formatMoney(fees.waitBlockCents)}
           per ${fees.waitBlockMinutes} minutes, so please have the shipment and the receiver ready.</li>
         <li><strong>Weight:</strong> the price uses the weight you enter. If the shipment is heavier, the difference can be charged.</li>
+        <li><strong>${fees.maxPieceLbs} lbs per piece, max:</strong> we can't move any single piece heavier than that. If the driver finds
+          one at pickup, they'll decline it and a failed-attempt charge may apply.</li>
         <li><strong>Loading help and stairs:</strong> if the driver has to load, unload or carry items inside and it wasn't
           booked, it can be added (${formatMoney(fees.addOns.loading_help?.cents)} / ${formatMoney(fees.addOns.inside_delivery?.cents)}).</li>
         <li><strong>Return trips and failed attempts:</strong> if no one is available, the location is closed, or items must go back to the pickup.</li>
@@ -214,7 +216,7 @@ export function NewOrderPage() {
   const [stops, setStops] = useState([blankStop('pickup'), blankStop('dropoff')]);
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
-    scheduledAt: '', organizationId: '', price: '', addOns: [],
+    scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '',
   });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -225,6 +227,13 @@ export function NewOrderPage() {
   const lbs = v.weightLbs === '' ? null : Number(v.weightLbs);
   const tooHeavyFor = (x) => lbs != null && lbs > x.maxLbs;
   const needsReview = quote?.needsReview;
+  // Same rule as the server: no single piece over the limit, and the total must fit the piece count.
+  const pieceLimit = fees?.maxPieceLbs;
+  const piecesN = Number.parseInt(v.numberOfPieces, 10);
+  const pieceProblem = !pieceLimit ? null
+    : v.maxPieceLbs !== '' && Number(v.maxPieceLbs) > pieceLimit ? `We can't take any single piece over ${pieceLimit} lbs.`
+    : lbs != null && piecesN > 0 && lbs > piecesN * pieceLimit
+      ? `${lbs} lbs in ${piecesN} piece${piecesN === 1 ? '' : 's'} means at least one is over ${pieceLimit} lbs, which we can't take.` : null;
   const toggleAddOn = (k) => setV({ ...v, addOns: v.addOns.includes(k) ? v.addOns.filter((x) => x !== k) : [...v.addOns, k] });
   const payments = useApi('/payments/config');
   const payByCard = !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
@@ -244,6 +253,7 @@ export function NewOrderPage() {
       const body = {
         serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
         addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
+        maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
         trackingNumber: v.trackingNumber || undefined,
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
@@ -317,9 +327,10 @@ export function NewOrderPage() {
           <div class="estimate">
             <div class="estimate-head">
               <span><strong>Estimated price</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
-              <span class="price">${needsReview ? 'Custom' : quote ? formatMoney(quote.totalCents) : '—'}</span>
+              <span class="price">${pieceProblem ? '—' : needsReview ? 'Custom' : quote ? formatMoney(quote.totalCents) : '—'}</span>
             </div>
-            ${needsReview ? html`<div class="alert warn" role="status"><strong>We'll price this one by hand:</strong>
+            ${pieceProblem ? html`<div class="alert error" role="alert"><strong>Can't book this shipment:</strong> ${`${pieceProblem} Split it into lighter pieces, or call (803) 949-7034.`}</div>`
+            : needsReview ? html`<div class="alert warn" role="status"><strong>We'll price this one by hand:</strong>
                 ${' '}${quote.reviewReasons.join('. ')}. ${vehicles.some(([, x]) => !tooHeavyFor(x)) && lbs != null && lbs <= Math.max(...vehicles.map(([, x]) => x.maxLbs))
                   ? 'Pick a bigger vehicle above, or send it for review.' : 'Send it to us and we\'ll email you a price, usually within a business hour. Nothing is charged until you accept it.'}</div>`
             : quote ? html`<${PriceBreakdown} q=${quote} />
@@ -340,8 +351,11 @@ export function NewOrderPage() {
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
             <//>
             <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" ...${bind('numberOfPieces')} /><//>
+            <${Field} label="Heaviest single piece (lbs)" hint=${pieceLimit ? `Each piece must be ${pieceLimit} lbs or less.` : undefined}>
+              <input type="number" min="1" step="1" required inputmode="numeric" placeholder=${pieceLimit ? `up to ${pieceLimit}` : ''} ...${bind('maxPieceLbs')} />
+            <//>
           </div>
-          <${Field} label="What are we moving?"><textarea rows="3" placeholder="Pallets of tile, boxed parts, fragile items…" ...${bind('description')}></textarea><//>
+          <${Field} label="What are we moving?"><textarea rows="3" placeholder="Boxes of files, parts, small furniture, fragile items…" ...${bind('description')}></textarea><//>
           <${Field} label="Your reference / tracking number" hint="Optional. Drivers can scan it as a barcode at pickup.">
             <input ...${bind('trackingNumber')} />
           <//>
@@ -362,9 +376,9 @@ export function NewOrderPage() {
         ${fees && html`<${ChargesNotice} fees=${fees} />`}
         <div class="form-actions">
           <a class="btn" href="#/orders">Cancel</a>
-          ${!needsReview && html`<button type="button" class="btn" disabled=${busy} onClick=${(e) => submit(e, true)}
+          ${!needsReview && html`<button type="button" class="btn" disabled=${busy || !!pieceProblem} onClick=${(e) => submit(e, true)}
             title="Keep this price and book it later from Orders → Quotes">Save quote</button>`}
-          <button class="btn primary" disabled=${busy}>${busy ? 'Sending…' : needsReview ? 'Request a price' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
+          <button class="btn primary" disabled=${busy || !!pieceProblem}>${busy ? 'Sending…' : needsReview ? 'Request a price' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
         </div>
       </form>
     <//>`;
@@ -704,7 +718,7 @@ export function OrderPage({ id }) {
               <dt>Service</dt><dd>${SERVICE_LEVEL_LABELS[order.serviceLevel] || '—'}</dd>
               <dt>Vehicle</dt><dd>${order.vehicleType || '—'}</dd>
               <dt>Weight</dt><dd>${order.weight || '—'}</dd>
-              <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}</dd>
+              <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}${order.maxPieceLbs != null ? ` · heaviest ${order.maxPieceLbs} lbs` : ''}</dd>
               <dt>Pickup time</dt><dd>${order.scheduledAt ? formatDate(order.scheduledAt) : 'ASAP'}</dd>
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
               <dt>Extras</dt><dd>${order.addOns.length ? order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ') : '—'}</dd>

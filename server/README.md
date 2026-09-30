@@ -88,6 +88,9 @@ charges, stored in the `fees` setting):
 - Vehicles (the biggest is a half-ton pickup; no box trucks or liftgates): Car +$0, $1.50/mi, up to 150 lbs;
   Minivan +$10, $1.75/mi, 500 lbs; Cargo Van +$20, $2.00/mi, 1,000 lbs; Pickup Truck +$25, $2.00/mi, 1,000 lbs.
   The per-mile rate applies after the first 5 miles. Vehicle types can be switched off.
+- **No single piece over 75 lbs** (editable): shippers must enter the heaviest piece; orders with a heavier piece,
+  or a total weight that can't be split into the stated number of pieces under the limit, are refused on booking,
+  on edits and when a quote is booked (dispatch included).
 - Weight tiers on the declared weight: up to 50 lbs included, 51–150 +$15, 151–500 +$35, 501–1000 +$75.
 - **Manual review**: heavier than the top tier, or heavier than the chosen vehicle carries, isn't priced by the
   formula. The order is held as a quote marked "Needs price" (drivers never see it), dispatch is emailed at

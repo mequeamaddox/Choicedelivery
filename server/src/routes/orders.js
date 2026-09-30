@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
-  ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
@@ -154,10 +154,11 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   const b = req.body || {};
   if (b.priceCents !== undefined && !isStaff(req.user)) throw new HttpError(403, 'Only dispatch can set a price');
   if (req.user.role === 'shipper' && current.paymentStatus === 'paid'
-    && ['stops', 'serviceLevel', 'scheduledAt', 'weight', 'addOns'].some((k) => b[k] !== undefined)) {
+    && ['stops', 'serviceLevel', 'scheduledAt', 'weight', 'addOns', 'maxPieceLbs', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
     throw new HttpError(409, 'This order is already paid; contact dispatch to change the route, service, time, weight or add-ons');
   }
   const addOns = b.addOns === undefined ? undefined : normalizeAddOns(b.addOns);
+  const maxPieceLbs = b.maxPieceLbs === undefined ? undefined : parsePieceLbs(b.maxPieceLbs);
   if (b.serviceLevel !== undefined && !isServiceLevel(b.serviceLevel)) {
     throw new HttpError(400, 'serviceLevel must be "standard" or "rush"');
   }
@@ -174,17 +175,19 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
            scheduled_at = CASE WHEN $10::boolean THEN $11::timestamptz ELSE scheduled_at END,
            service_level = COALESCE($12, service_level),
            add_ons = CASE WHEN $13::boolean THEN $14::text[] ELSE add_ons END,
+           max_piece_lbs = CASE WHEN $15::boolean THEN $16::numeric ELSE max_piece_lbs END,
            updated_at = now()
          WHERE id = $1`,
         [current.id, b.vehicleType ?? null, b.weight ?? null, b.numberOfPieces ?? null, b.description ?? null,
           b.trackingNumber !== undefined, str(b.trackingNumber), b.priceCents !== undefined, b.priceCents ?? null,
-          b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null, addOns !== undefined, addOns || []]
+          b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null, addOns !== undefined, addOns || [], maxPieceLbs !== undefined, maxPieceLbs ?? null]
       );
     } catch (e) {
       if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
       if (['22P02', '22007', '22008'].includes(e.code)) throw new HttpError(400, 'Invalid priceCents or scheduledAt');
       throw e;
     }
+    if (['weight', 'numberOfPieces', 'maxPieceLbs'].some((k) => b[k] !== undefined)) await assertPieceWeights(client, current.id);
     // Stops can be replaced only before any of them has been started.
     if (b.stops !== undefined) {
       if (current.stops.some((s) => s.status !== 'pending')) throw new HttpError(409, 'Stops can no longer be changed');

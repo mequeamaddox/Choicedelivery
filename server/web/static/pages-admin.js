@@ -223,6 +223,9 @@ function FeesEditor() {
       <p class="muted small">Added on top of the base price ($25 for the first 5 miles). Customers see these when they book.</p>
       <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
       <h3>Weight</h3>
+      <${Field} label="Heaviest single piece allowed (lbs)" hint="Orders with any piece heavier than this can't be booked.">
+        <input type="number" min="1" step="1" value=${fees.maxPieceLbs} onInput=${(e) => set({ maxPieceLbs: Number(e.target.value) })} />
+      <//>
       ${tiers.map((t, i) => html`
         <div class="grid-2">
           <${Field} label="Up to (lbs)">

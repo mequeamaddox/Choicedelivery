@@ -50,6 +50,7 @@ const DEFAULT_FEES = {
     'Cargo Van': { description: 'Larger loads that must stay dry', feeCents: 2000, perMileCents: 200, maxLbs: 1000, enabled: true },
     'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', feeCents: 2500, perMileCents: 200, maxLbs: 1000, enabled: true },
   },
+  maxPieceLbs: 75, // no single piece heavier than this is accepted (one person has to lift it)
   extraStopCents: 1000, // each stop beyond one pickup and one drop-off
   addOns: {
     loading_help: { label: 'Loading/unloading help', description: 'Driver helps load and unload', cents: 2500 },
@@ -106,6 +107,7 @@ function normalizeFees(saved) {
   return {
     weightTiers,
     vehicles,
+    maxPieceLbs: Math.max(1, cleanCents(f.maxPieceLbs, DEFAULT_FEES.maxPieceLbs)),
     extraStopCents: cleanCents(f.extraStopCents, DEFAULT_FEES.extraStopCents),
     addOns,
     waitFreeMinutes: cleanCents(f.waitFreeMinutes, DEFAULT_FEES.waitFreeMinutes),
@@ -132,6 +134,19 @@ function weightTierLabel(tiers, index) {
   const lo = index === 0 ? 0 : tiers[index - 1].upToLbs + 1;
   const hi = tiers[index].upToLbs;
   return index === 0 ? `Up to ${hi} lbs` : `${lo}–${hi} lbs`;
+}
+
+// Returns why an order can't be accepted because of piece weight, or null. Also catches a total weight
+// that couldn't be split into the given number of pieces without one going over the limit.
+function pieceWeightProblem({ maxPieceLbs, weightLbs, pieces }, fees = DEFAULT_FEES) {
+  const limit = fees.maxPieceLbs;
+  const msg = `We can't take any single piece over ${limit} lbs.`;
+  if (maxPieceLbs != null && Number(maxPieceLbs) > limit) return msg;
+  const n = Number.parseInt(pieces, 10);
+  if (weightLbs != null && n > 0 && Number(weightLbs) > n * limit) {
+    return `${msg} ${Number(weightLbs).toLocaleString('en-US')} lbs in ${n} piece${n === 1 ? '' : 's'} means at least one is heavier.`;
+  }
+  return null;
 }
 
 const maxWeightLbs = (fees) => fees.weightTiers[fees.weightTiers.length - 1].upToLbs;
@@ -279,5 +294,5 @@ async function pricingContext(client, excludeOrderId = null) {
 module.exports = {
   TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HIGH_DEMAND_OPEN_ORDERS,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, DEFAULT_FEES, CHARGE_KINDS,
-  normalizeFees, getFees, parseWeightLbs, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
+  normalizeFees, getFees, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
 };

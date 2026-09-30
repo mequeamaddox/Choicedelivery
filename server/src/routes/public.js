@@ -6,7 +6,7 @@ const { rateLimit } = require('../rate-limit');
 const {
   SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS,
   SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs,
-  CHARGE_KINDS,
+  CHARGE_KINDS, pieceWeightProblem,
 } = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
 const { searchAddresses, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
@@ -77,9 +77,12 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
   });
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
+  const pieceProblem = pieceWeightProblem({ maxPieceLbs: b.maxPieceLbs, weightLbs: quote.weightLbs, pieces: b.numberOfPieces }, fees);
   res.json({
     ...quote,
     priceCents: quote.totalCents,
+    maxPieceLbs: fees.maxPieceLbs,
+    pieceProblem,
     extraChargesNote: `Wait time over ${fees.waitFreeMinutes} minutes at a stop ($${(fees.waitBlockCents / 100).toFixed(2)} per `
       + `${fees.waitBlockMinutes} min), loading help, stairs, return trips and failed attempts may be charged extra.`,
     outOfArea,

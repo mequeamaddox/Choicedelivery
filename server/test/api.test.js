@@ -31,6 +31,7 @@ const orderBody = (extra = {}) => ({
   vehicleType: 'Van',
   weight: '20 lbs',
   numberOfPieces: '2',
+  maxPieceLbs: 20,
   stops: [
     { type: 'pickup', address: '1 Main St', contactName: 'Warehouse', location: { lat: 34, lng: -81 } },
     { type: 'dropoff', address: '2 Oak Ave', contactName: 'Jane', contactPhone: '555' },
@@ -899,7 +900,7 @@ test('orders the formula cannot price are held for a manual price, then booked',
       vehicleType: 'Car', weightLbs: 400 } });
     assert.equal(r.data.needsReview, true, 'the public quote says it needs review');
 
-    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ vehicleType: 'Pickup Truck', weight: '1400 lbs' }) });
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ vehicleType: 'Pickup Truck', weight: '1400 lbs', numberOfPieces: '30', maxPieceLbs: 50 }) });
     assert.equal(r.status, 201);
     const o = r.data;
     assert.equal(o.status, 'quote', 'held, not booked');
@@ -913,7 +914,7 @@ test('orders the formula cannot price are held for a manual price, then booked',
     assert.ok(sent.some((m) => /pricing your delivery/.test(m.subject) && /over 1,000 lbs/.test(m.html)), 'customer is told why');
 
     // Changing to a vehicle that fits (and a weight in range) takes it out of review.
-    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ vehicleType: 'Car', weight: '300 lbs' }) });
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ vehicleType: 'Car', weight: '300 lbs', numberOfPieces: '6', maxPieceLbs: 50 }) });
     assert.equal(r.data.reviewStatus, 'needed');
     r = await call('PATCH', `/orders/${r.data.id}`, { token: t.acme, body: { vehicleType: 'Minivan' } });
     assert.equal(r.data.reviewStatus, null);
@@ -934,4 +935,43 @@ test('orders the formula cannot price are held for a manual price, then booked',
   } finally {
     mailer.setSender(null);
   }
+});
+
+test('no single piece over 75 lbs can be booked', async () => {
+  const { pieceWeightProblem } = require('../src/pricing');
+  assert.equal(pieceWeightProblem({ maxPieceLbs: 75, weightLbs: 150, pieces: 2 }), null);
+  assert.match(pieceWeightProblem({ maxPieceLbs: 80 }), /over 75 lbs/);
+  assert.match(pieceWeightProblem({ maxPieceLbs: 40, weightLbs: 200, pieces: 2 }), /at least one is heavier/);
+
+  let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: undefined }) });
+  assert.equal(r.status, 400, 'shippers must give the heaviest piece');
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 90 }) });
+  assert.equal(r.status, 400);
+  assert.match(r.data.message, /single piece over 75 lbs/);
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 90, saveAsQuote: true }) });
+  assert.equal(r.status, 400, 'not even as a quote');
+  r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ maxPieceLbs: 120 }) });
+  assert.equal(r.status, 400, 'dispatch is held to the same limit');
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ weight: '400 lbs', numberOfPieces: '3', maxPieceLbs: 60 }) });
+  assert.equal(r.status, 400, 'total weight that cannot fit the piece count is caught');
+
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 75 }) });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.maxPieceLbs, 75);
+  const id = r.data.id;
+  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { maxPieceLbs: 100 } });
+  assert.equal(r.status, 400, 'edits are checked too');
+  assert.equal((await call('GET', `/orders/${id}`, { token: t.acme })).data.maxPieceLbs, 75, 'rejected edit changed nothing');
+
+  // The limit is an owner setting.
+  const fees = (await call('GET', '/settings/fees', { token: t.admin })).data.fees;
+  await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, maxPieceLbs: 100 } });
+  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { maxPieceLbs: 100 } });
+  assert.equal(r.status, 200);
+  await call('PUT', '/settings/fees', { token: t.admin, body: fees });
+  r = await call('POST', '/public/quote', { body: {
+    stops: [{ address: 'a', location: { lat: 34, lng: -81 } }, { address: 'b', location: { lat: 34.1, lng: -81 } }], maxPieceLbs: 80 } });
+  assert.match(r.data.pieceProblem, /over 75 lbs/);
+  assert.equal(r.data.maxPieceLbs, 75);
+  await call('POST', `/orders/${id}/cancel`, { token: t.acme });
 });

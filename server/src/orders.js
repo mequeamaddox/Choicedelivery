@@ -5,7 +5,24 @@ const { isStaff } = require('./auth');
 const stripe = require('./stripe');
 const {
   isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
+  pieceWeightProblem,
 } = require('./pricing');
+
+function parsePieceLbs(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) throw new HttpError(400, 'maxPieceLbs must be a positive number of pounds');
+  return n;
+}
+
+// Rejects orders with a piece over the limit (checked on create, edit and when a quote is booked).
+async function assertPieceWeights(client, orderId) {
+  const { rows: [o] } = await client.query(
+    'SELECT max_piece_lbs, weight, number_of_pieces FROM orders WHERE id = $1', [orderId]);
+  const problem = pieceWeightProblem(
+    { maxPieceLbs: o.max_piece_lbs, weightLbs: parseWeightLbs(o.weight), pieces: o.number_of_pieces }, await getFees(client));
+  if (problem) throw new HttpError(400, `${problem} Call (803) 949-7034 if you have questions.`);
+}
 
 // Add-ons are the keys of the fee settings (loading_help, inside_delivery).
 function normalizeAddOns(value) {
@@ -65,6 +82,10 @@ async function createOrder(client, actor, body) {
   const stops = normalizeStops(body.stops);
   const isQuote = body.saveAsQuote === true;
   const addOns = normalizeAddOns(body.addOns);
+  const maxPieceLbs = parsePieceLbs(body.maxPieceLbs);
+  if (maxPieceLbs == null && actor.role === 'shipper') {
+    throw new HttpError(400, 'Enter the weight of the heaviest single piece');
+  }
   let organizationId = body.organizationId || null;
   if (actor.role === 'shipper') organizationId = actor.organization_id;
 
@@ -85,12 +106,12 @@ async function createOrder(client, actor, body) {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
                            tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status,
-                           status, booked_at, add_ons)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14)
+                           status, booked_at, add_ons, max_piece_lbs)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15)
        RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
-        body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns]
+        body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns, maxPieceLbs]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -99,6 +120,7 @@ async function createOrder(client, actor, body) {
     throw e;
   }
   const orderId = rows[0].id;
+  await assertPieceWeights(client, orderId);
   await insertStops(client, orderId, stops);
   await repriceOrder(client, orderId, { fresh: true });
   // Too heavy, over capacity, etc.: held as a quote until dispatch prices it by hand.
@@ -132,6 +154,7 @@ async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
   if (!o) throw new HttpError(404, 'Order not found');
   if (o.status !== 'quote') throw new HttpError(409, 'This order is already booked');
   if (o.review_status === 'needed') throw new HttpError(409, "We're still reviewing this request; we'll email you the price");
+  await assertPieceWeights(client, orderId);
   if (o.scheduled_at && new Date(o.scheduled_at) < new Date()) {
     await client.query('UPDATE orders SET scheduled_at = NULL WHERE id = $1', [orderId]);
   }
@@ -261,6 +284,7 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     paymentMethod: o.payment_method,
     refundedCents: o.refunded_cents,
     addOns: o.add_ons || [],
+    maxPieceLbs: o.max_piece_lbs == null ? null : Number(o.max_piece_lbs),
     extraChargesCents: o.extra_charges_cents ?? 0,
     balanceDueCents: o.balance_due_cents ?? 0,
     vehicleType: o.vehicle_type,
@@ -387,6 +411,6 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
 }
 
 module.exports = {
-  ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
 };
