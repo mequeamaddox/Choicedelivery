@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet, TouchableOpacity } from 'react-native';
-import { getDatabase, ref, query, orderByChild, equalTo, get } from 'firebase/database';
-import { auth } from '../src/firebaseConfig'; // Ensure you have the auth module imported to get the current user
+import { getMyPickups } from '../services/pickupService';
 
 const DeliveryHistory = ({ navigation }) => {
   const [deliveries, setDeliveries] = useState([]);
@@ -10,26 +9,7 @@ const DeliveryHistory = ({ navigation }) => {
   useEffect(() => {
     const loadDeliveries = async () => {
       try {
-        const driverId = auth.currentUser.uid; // Get the current user's UID
-        const db = getDatabase();
-        const pickupsRef = ref(db, 'pickups'); // Reference to pickups
-        const driverDeliveriesQuery = query(pickupsRef, orderByChild('driverId'), equalTo(driverId));
-        const snapshot = await get(driverDeliveriesQuery);
-
-        console.log('Driver Deliveries Query Snapshot:', snapshot.val());
-
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          const completedDeliveries = Object.keys(data)
-            .map(key => ({ id: key, ...data[key] }))
-            .filter(delivery => delivery.status === 'Completed'); // Only include completed deliveries
-
-          console.log('Completed Deliveries:', completedDeliveries);
-
-          setDeliveries(completedDeliveries);
-        } else {
-          console.error('No deliveries found');
-        }
+        setDeliveries(await getMyPickups('Completed'));
       } catch (error) {
         console.error('Failed to fetch deliveries:', error);
       } finally {

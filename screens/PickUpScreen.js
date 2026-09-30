@@ -1,9 +1,7 @@
 // src/screens/PickUpScreen.js
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { listenToPendingPickups, updatePickupStatus } from '../services/pickupService';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDatabase, ref, get } from 'firebase/database';
+import { listenToPendingPickups, acceptPickup } from '../services/pickupService';
 
 const PickUpScreen = ({ navigation }) => {
   const [pickups, setPickups] = useState([]);
@@ -14,81 +12,22 @@ const PickUpScreen = ({ navigation }) => {
       console.log('Received pickups:', pickupList);
       setPickups(pickupList);
       setLoading(false);
-      checkForNewPickups(pickupList);
     }, (error) => {
       console.error("Error listening to pending pickups: ", error);
+      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  const checkForNewPickups = async (newPickups) => {
-    const lastChecked = await AsyncStorage.getItem('lastChecked');
-    const newPickupsCount = newPickups.filter(
-      (pickup) => !lastChecked || new Date(pickup.pickup_date) > new Date(lastChecked)
-    ).length;
-
-    if (newPickupsCount > 0) {
-      await AsyncStorage.setItem('lastChecked', new Date().toISOString());
-      sendPushNotification(newPickups[0], newPickupsCount);
-    }
-  };
-
-  const sendPushNotification = async (pickup, count) => {
-    const notificationsEnabled = await AsyncStorage.getItem('notificationsEnabled');
-    if (notificationsEnabled === 'false') {
-      return;
-    }
-
-    const doNotDisturbEnabled = await AsyncStorage.getItem('doNotDisturbEnabled');
-    if (doNotDisturbEnabled === 'true') {
-      const doNotDisturbStart = new Date(await AsyncStorage.getItem('doNotDisturbStart'));
-      const doNotDisturbEnd = new Date(await AsyncStorage.getItem('doNotDisturbEnd'));
-      const now = new Date();
-      if (now >= doNotDisturbStart && now <= doNotDisturbEnd) {
-        return;
-      }
-    }
-  
-    const token = await AsyncStorage.getItem('expoPushToken');
-    if (token) {
-      const message = {
-        to: token,
-        sound: 'default',
-        title: 'New Pickup Request',
-        body: `You have ${count} new pickup request(s) from ${pickup.contact_name} at ${pickup.pickup_address} to ${pickup.destination_address}`,
-        data: { requestId: pickup.request_id },
-      };
-      console.log('Sending notification with message:', message);
-      await fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(message),
-      });
-    } else {
-      console.log('No push token found');
-    }
-  };
-
   const handleAcceptPickup = async (requestId) => {
     try {
-      const db = getDatabase();
-      const pickupRef = ref(db, `pickups/${requestId}`);
-      const snapshot = await get(pickupRef);
-      if (snapshot.exists()) {
-        const pickupData = snapshot.val();
-        await updatePickupStatus(requestId, 'Accepted');
-        navigation.navigate('PickUpDetail', { requestId });
-        setPickups(prevPickups => prevPickups.map(pickup =>
-          pickup.request_id === requestId ? { ...pickup, status: 'Accepted' } : pickup
-        ));
-      } else {
-        console.error("Pickup not found");
-      }
+      await acceptPickup(requestId);
+      navigation.navigate('PickUpDetail', { requestId });
+      setPickups(prevPickups => prevPickups.filter(pickup => pickup.request_id !== requestId));
     } catch (error) {
-      console.error("Error updating pickup status: ", error);
+      console.error("Error accepting pickup: ", error);
+      Alert.alert('Error', error.message);
     }
   };
 

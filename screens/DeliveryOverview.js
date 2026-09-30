@@ -1,7 +1,7 @@
 // src/screens/DeliveryOverview.js
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Linking, Alert, ActivityIndicator } from 'react-native';
-import { getDatabase, ref, get, update } from 'firebase/database';
+import { getPickupById, updatePickupStatus } from '../services/pickupService';
 import MapView, { Marker } from 'react-native-maps';
 import styled from 'styled-components/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,20 +17,8 @@ const DeliveryOverview = ({ route, navigation }) => {
     const fetchDelivery = async () => {
       try {
         console.log('Fetching delivery with ID:', requestId);
-        const db = getDatabase();
-        const pickupRef = ref(db, `pickups/${requestId}`);
-        const snapshot = await get(pickupRef);
-
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          console.log('Fetched Pickup Data:', data); // Debugging statement
-          setDelivery({ id: snapshot.key, ...data });
-          setLoading(false);
-        } else {
-          console.log('Delivery not found');
-          Alert.alert('Error', 'Delivery not found');
-          navigation.goBack();
-        }
+        setDelivery(await getPickupById(requestId));
+        setLoading(false);
       } catch (error) {
         console.error('Error fetching delivery:', error);
         Alert.alert('Error', 'Failed to load delivery details');
@@ -74,9 +62,7 @@ const DeliveryOverview = ({ route, navigation }) => {
 
   const handleConfirmDelivery = async () => {
     try {
-      const db = getDatabase();
-      const pickupRef = ref(db, `pickups/${delivery.id}`);
-      await update(pickupRef, { ...delivery, status: 'Delivered' });
+      await updatePickupStatus(delivery.id, 'Delivered');
       navigation.replace('DeliveryScreen', { deliveryId: delivery.id });
     } catch (error) {
       console.error('Error confirming delivery:', error);

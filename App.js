@@ -6,7 +6,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { ThemeProvider } from 'styled-components/native';
 import { Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { auth } from './src/firebaseConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { onAuthStateChanged } from './src/api';
 import { theme } from './src/theme';
 import LottieAnimation from './src/LottieAnimation'; 
 
@@ -29,12 +30,24 @@ import AboutAppScreen from './screens/AboutAppScreen';
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
 
+// Honors the driver's Notification Settings (on/off and do-not-disturb window).
+const notificationsMuted = async () => {
+  const [[, enabled], [, dndEnabled], [, dndStart], [, dndEnd]] = await AsyncStorage.multiGet([
+    'notificationsEnabled', 'doNotDisturbEnabled', 'doNotDisturbStart', 'doNotDisturbEnd',
+  ]);
+  if (enabled === 'false') return true;
+  if (dndEnabled === 'true' && dndStart && dndEnd) {
+    const now = new Date();
+    return now >= new Date(dndStart) && now <= new Date(dndEnd);
+  }
+  return false;
+};
+
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async () => {
+    const muted = await notificationsMuted();
+    return { shouldShowAlert: !muted, shouldPlaySound: !muted, shouldSetBadge: true };
+  },
 });
 
 function PickUpStack() {
@@ -83,7 +96,7 @@ export default function App() {
   const [isTransitioning, setIsTransitioning] = useState(true); // State to manage animation visibility
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+    const unsubscribe = onAuthStateChanged((user) => {
       if (user) {
         setUser(user);
       } else {

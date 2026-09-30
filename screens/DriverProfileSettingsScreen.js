@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Alert, TouchableOpacity, Text, View, Image } from 'react-native';
 import styled from 'styled-components/native';
-import { auth, firestore } from '../src/firebaseConfig';
-import { doc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { getDriverProfile, updateDriverProfile } from '../services/apiService';
 import * as ImagePicker from 'expo-image-picker';
 
 const DriverProfileScreen = ({ navigation }) => {
@@ -14,45 +13,30 @@ const DriverProfileScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const driverId = auth.currentUser.uid;
-    const driverRef = doc(firestore, 'drivers', driverId);
-
-    const unsubscribe = onSnapshot(driverRef, (doc) => {
-      if (doc.exists()) {
-        const driverData = doc.data();
-        console.log('Driver data:', driverData);
+    getDriverProfile()
+      .then((driverData) => {
         setDriver(driverData);
         setEmail(driverData.email || '');
         setPhoneNumber(driverData.phoneNumber || '');
         setVehicleType(driverData.vehicleType || '');
         setProfilePictureUrl(driverData.profilePictureUrl || '');
-        setLoading(false);
-      } else {
-        console.log('No such document!');
-        setDoc(driverRef, { email: '', phoneNumber: '', vehicleType: '', profilePictureUrl: '' });
-        setDriver({ email: '', phoneNumber: '', vehicleType: '', profilePictureUrl: '' });
-        setLoading(false);
-      }
-    }, (error) => {
-      console.error('Error fetching driver data: ', error);
-      Alert.alert('Error', 'Failed to fetch profile data.');
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+      })
+      .catch((error) => {
+        console.error('Error fetching driver data: ', error);
+        Alert.alert('Error', 'Failed to fetch profile data.');
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const handleUpdateProfile = async () => {
     try {
-      const driverId = auth.currentUser.uid;
-      const driverRef = doc(firestore, 'drivers', driverId);
-
-      await updateDoc(driverRef, {
+      const updated = await updateDriverProfile({
         email: email,
         phoneNumber: phoneNumber,
         vehicleType: vehicleType,
         profilePictureUrl: profilePictureUrl || '',
       });
+      setDriver(updated);
 
       Alert.alert('Profile Updated', 'Your profile has been updated successfully.');
     } catch (error) {
@@ -66,12 +50,13 @@ const DriverProfileScreen = ({ navigation }) => {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 1,
+      quality: 0.3,
+      base64: true,
     });
 
     if (!result.canceled) {
-      const selectedImageUri = result.assets[0].uri;
-      console.log('Selected image URI:', selectedImageUri);
+      // Stored on the server as a data URL so it shows on any device.
+      const selectedImageUri = `data:image/jpeg;base64,${result.assets[0].base64}`;
       setProfilePictureUrl(selectedImageUri);
     }
   };

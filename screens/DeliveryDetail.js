@@ -1,7 +1,7 @@
 // src/screens/DeliveryDetail.js
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { getDatabase, ref, get } from 'firebase/database';
+import { getPickupById } from '../services/pickupService';
 
 const DeliveryDetail = ({ route }) => {
   const { deliveryId } = route.params;
@@ -11,15 +11,7 @@ const DeliveryDetail = ({ route }) => {
   useEffect(() => {
     const loadDelivery = async () => {
       try {
-        const db = getDatabase();
-        const deliveryRef = ref(db, `pickups/${deliveryId}`);
-        const snapshot = await get(deliveryRef);
-
-        if (snapshot.exists()) {
-          setDelivery({ id: snapshot.key, ...snapshot.val() });
-        } else {
-          console.error('Delivery not found');
-        }
+        setDelivery(await getPickupById(deliveryId));
       } catch (error) {
         console.error('Failed to fetch delivery:', error);
       } finally {
@@ -51,7 +43,7 @@ const DeliveryDetail = ({ route }) => {
         <Text style={styles.detail}>Weight: {delivery.weight}</Text>
         <Text style={styles.detail}>Number of Pieces: {delivery.number_of_pieces}</Text>
         <Text style={styles.detail}>Pickup Address: {delivery.pickup_address}</Text>
-        <Text style={styles.detail}>Delivered At: {delivery.deliveryTimestamp ? new Date(delivery.deliveryTimestamp).toString() : 'Not delivered yet'}</Text>
+        <Text style={styles.detail}>Delivered At: {delivery.delivered_at ? new Date(delivery.delivered_at).toString() : 'Not delivered yet'}</Text>
       </View>
     </View>
   );

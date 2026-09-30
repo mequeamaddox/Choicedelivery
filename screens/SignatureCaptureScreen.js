@@ -1,8 +1,7 @@
 // screens/PickUpDetail.js
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, Button, StyleSheet, Alert } from 'react-native';
-import { doc, getDoc, updateDoc, addDoc, collection } from 'firebase/firestore';
-import { firestore, auth } from '../src/firebaseConfig';
+import { getPickupById, acceptPickup, updatePickupStatus, completeDelivery } from '../services/pickupService';
 import MapView, { Marker } from 'react-native-maps';
 import Signature from 'react-native-signature-canvas';
 import * as Linking from 'expo-linking';
@@ -16,13 +15,10 @@ const PickUpDetail = ({ route, navigation }) => {
 
   useEffect(() => {
     const fetchPickup = async () => {
-      const docRef = doc(firestore, 'pickups', pickupId);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        setPickup({ id: docSnap.id, ...docSnap.data() });
+      try {
+        setPickup(await getPickupById(pickupId));
         setLoading(false);
-      } else {
+      } catch (error) {
         Alert.alert('Error', 'Pickup not found');
         navigation.goBack();
       }
@@ -32,26 +28,21 @@ const PickUpDetail = ({ route, navigation }) => {
   }, [pickupId, navigation]);
 
   const handlePickup = async () => {
-    const docRef = doc(firestore, 'pickups', pickupId);
-    await updateDoc(docRef, { status: 'Picked Up', assignedDriverId: auth.currentUser.uid });
+    await acceptPickup(pickupId);
+    await updatePickupStatus(pickupId, 'Picked Up');
     Alert.alert('Success', 'Pickup marked as picked up');
     setPickup(prevState => ({ ...prevState, status: 'Picked Up' }));
   };
 
   const handleInTransit = async () => {
-    const docRef = doc(firestore, 'pickups', pickupId);
-    await updateDoc(docRef, { status: 'In Transit' });
+    await updatePickupStatus(pickupId, 'In Transit');
     Alert.alert('Success', 'Pickup marked as in transit');
     setPickup(prevState => ({ ...prevState, status: 'In Transit' }));
   };
 
   const handleComplete = async (signatureUri) => {
-    const docRef = doc(firestore, 'pickups', pickupId);
-    const completedDelivery = { ...pickup, status: 'Completed', signature: signatureUri };
-
-    await addDoc(collection(firestore, 'deliveries'), completedDelivery);
-    await updateDoc(docRef, { status: 'Completed', signature: signatureUri });
-    Alert.alert('Success', 'Pickup marked as completed and added to deliveries');
+    await completeDelivery(pickupId, { signature: signatureUri });
+    Alert.alert('Success', 'Pickup marked as completed');
     navigation.goBack();
   };
 

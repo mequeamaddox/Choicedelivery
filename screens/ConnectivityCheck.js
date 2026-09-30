@@ -1,18 +1,15 @@
 // src/screens/ConnectivityCheck.js
 import React, { useState, useEffect } from 'react';
 import { View, Text, Button, Alert } from 'react-native';
+import { checkServer as pingServer } from '../services/apiService';
 
 const ConnectivityCheck = () => {
   const [serverStatus, setServerStatus] = useState('');
 
   const checkServer = async () => {
     try {
-      const response = await fetch('https://choicedeliverysc.com/wp-json/firebase/v1/verify');
-      if (response.ok) {
-        setServerStatus('Server is reachable');
-      } else {
-        setServerStatus('Server is not reachable');
-      }
+      await pingServer();
+      setServerStatus('Server is reachable');
     } catch (error) {
       setServerStatus('Network Error: ' + error.message);
     }

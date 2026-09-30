@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { Alert, TouchableOpacity, Text, View, Image } from 'react-native';
 import styled from 'styled-components/native';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+import { login } from '../services/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const auth = getAuth();
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -12,12 +10,8 @@ const LoginScreen = ({ navigation }) => {
 
   const handleLogin = async () => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await login(email, password);
       console.log('User logged in');
-
-      const user = auth.currentUser;
-      const idToken = await user.getIdToken();
-      console.log('Firebase ID Token:', idToken);
 
       // Here you can call your API if needed or navigate to the home screen directly
       const welcomeShown = await AsyncStorage.getItem('welcomeShown');

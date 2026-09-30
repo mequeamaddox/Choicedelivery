@@ -7,6 +7,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
+import { savePushToken } from '../services/apiService';
 
 export default function HomeScreen({ navigation }) {
   const [location, setLocation] = useState(null);
@@ -57,6 +58,8 @@ export default function HomeScreen({ navigation }) {
       console.log('Retrieved push token:', token);
       setExpoPushToken(token);
       await AsyncStorage.setItem('expoPushToken', token);
+      // Lets the server notify this driver when new pickups are created.
+      savePushToken(token).catch((error) => console.error('Failed to save push token:', error));
     } else {
       Alert.alert('Must use physical device for Push Notifications');
     }

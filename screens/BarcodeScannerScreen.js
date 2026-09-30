@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Button, StyleSheet } from 'react-native';
 import { Camera } from 'expo-camera';
 import { BarCodeScanner } from 'expo-barcode-scanner';
+import { markPickedUpByBarcode } from '../services/pickupService';
 
 const BarcodeScannerScreen = ({ route, navigation }) => {
     const { shipmentId } = route.params;
@@ -21,14 +22,8 @@ const BarcodeScannerScreen = ({ route, navigation }) => {
         setScanned(true);
         alert(`Barcode with type ${type} and data ${data} has been scanned!`);
         // Handle the scanned data, e.g., mark order as picked up
-        fetch('https://choicedeliverysc.localS/wp-json/courier/v1/shipment/pickup', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ barcode: data, shipmentId: shipmentId }),
-        }).then(response => response.json())
-          .then(json => {
+        markPickedUpByBarcode(data)
+          .then(() => {
               alert('Order marked as picked up!');
               navigation.goBack();
           })

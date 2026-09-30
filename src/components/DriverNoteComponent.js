@@ -1,7 +1,7 @@
 // src/components/DriverNoteComponent.js
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button } from 'react-native';
-import { addNoteToDelivery } from '../services/deliveryService';
+import { addNoteToDelivery } from '../../services/deliveryService';
 
 export default function DriverNoteComponent({ route, navigation }) {
     const { deliveryId } = route.params;

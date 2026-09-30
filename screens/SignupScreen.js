@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet } from 'react-native';
-import { auth, firestore } from '../src/firebaseConfig'; // Ensure correct path
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { registerUser } from '../services/apiService';
 
 const SignupScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -14,12 +13,8 @@ const SignupScreen = ({ navigation }) => {
       return;
     }
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      await firestore.collection('users').doc(user.uid).set({
-        email,
-        role: 'Admin', // Default to Admin, as drivers should not sign up here
-      });
+      // Creates the first (admin) account; afterwards only a signed-in admin can add drivers.
+      await registerUser(email, password);
       console.log('User signed up');
       navigation.navigate('Login'); // Navigate to the login screen after signup
     } catch (error) {

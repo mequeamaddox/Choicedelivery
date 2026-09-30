@@ -1,36 +1,50 @@
 // services/pickupService.js
-import { getDatabase, ref, onValue, get, update, set } from 'firebase/database';
+import { request } from '../src/api';
 
+const POLL_INTERVAL_MS = 15000;
+
+// Polls for pending pickups; returns an unsubscribe function.
 export const listenToPendingPickups = (callback, errorCallback) => {
-  const db = getDatabase();
-  const pickupsRef = ref(db, 'pickups');
-  const unsubscribe = onValue(pickupsRef, (snapshot) => {
-    const data = snapshot.val();
-    const pendingPickups = Object.keys(data || {}).map(key => ({ requestId: key, ...data[key] })).filter(pickup => pickup.status.toLowerCase() === 'pending');
-    callback(pendingPickups);
-  }, errorCallback);
-  return unsubscribe;
-};
-
-export const updatePickupStatus = async (requestId, status) => {
-  const db = getDatabase();
-  const pickupRef = ref(db, `pickups/${requestId}`);
-  await update(pickupRef, { status });
-};
-
-export const getPickupById = async (requestId) => {
-  try {
-    const db = getDatabase();
-    const pickupRef = ref(db, `pickups/${requestId}`);
-    const snapshot = await get(pickupRef);
-    if (snapshot.exists()) {
-      return snapshot.val();
-    } else {
-      throw new Error('Pickup not found');
+  let stopped = false;
+  let timer;
+  const poll = async () => {
+    try {
+      const pickups = await request('/pickups?status=pending');
+      if (!stopped) callback(pickups);
+    } catch (error) {
+      if (!stopped && errorCallback) errorCallback(error);
     }
-  } catch (error) {
-    throw new Error('Error getting pickup by ID: ' + error.message);
-  }
+    if (!stopped) timer = setTimeout(poll, POLL_INTERVAL_MS);
+  };
+  poll();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
 };
 
+export const getPickupById = (requestId) => request(`/pickups/${encodeURIComponent(requestId)}`);
 
+export const acceptPickup = (requestId) =>
+  request(`/pickups/${encodeURIComponent(requestId)}/accept`, { method: 'POST' });
+
+export const updatePickupStatus = (requestId, status) =>
+  request(`/pickups/${encodeURIComponent(requestId)}/status`, { method: 'POST', body: { status } });
+
+export const confirmPickup = (requestId, { signature, image }) =>
+  request(`/pickups/${encodeURIComponent(requestId)}/confirm-pickup`, {
+    method: 'POST',
+    body: { signature, image },
+  });
+
+export const completeDelivery = (requestId, { signature, image, printedName }) =>
+  request(`/pickups/${encodeURIComponent(requestId)}/complete`, {
+    method: 'POST',
+    body: { signature, image, printedName },
+  });
+
+export const getMyPickups = (status) =>
+  request(`/pickups/mine${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+
+export const markPickedUpByBarcode = (barcode) =>
+  request('/pickups/scan', { method: 'POST', body: { barcode } });

@@ -1,7 +1,7 @@
 // src/screens/DeliveryScreen.js
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Image, TextInput, ActivityIndicator } from 'react-native';
-import { getDatabase, ref, get, update } from 'firebase/database';
+import { getPickupById, completeDelivery } from '../services/pickupService';
 import * as ImagePicker from 'expo-image-picker';
 import Signature from 'react-native-signature-canvas';
 import styled from 'styled-components/native';
@@ -19,20 +19,8 @@ const DeliveryScreen = ({ route, navigation }) => {
   useEffect(() => {
     const fetchDelivery = async () => {
       try {
-        const db = getDatabase();
-        const deliveryRef = ref(db, `pickups/${deliveryId}`);
-        const snapshot = await get(deliveryRef);
-
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          console.log('Fetched Pickup Data:', data); // Debugging statement
-          setDelivery({ id: snapshot.key, ...data });
-          setLoading(false);
-        } else {
-          console.log('Delivery not found');
-          Alert.alert('Error', 'Delivery not found');
-          navigation.goBack();
-        }
+        setDelivery(await getPickupById(deliveryId));
+        setLoading(false);
       } catch (error) {
         console.error('Error fetching delivery:', error);
         Alert.alert('Error', 'Failed to load delivery details');
@@ -48,11 +36,13 @@ const DeliveryScreen = ({ route, navigation }) => {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 1,
+      quality: 0.5,
+      base64: true,
     });
 
     if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      // Sent to the API inline, so keep it as a data URL.
+      setImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
     }
   };
 
@@ -77,15 +67,7 @@ const DeliveryScreen = ({ route, navigation }) => {
     }
 
     try {
-      const db = getDatabase();
-      const pickupRef = ref(db, `pickups/${deliveryId}`);
-      await update(pickupRef, {
-        status: 'Completed',
-        deliveryTimestamp: new Date().toISOString(),
-        signature: signature || '',
-        image: image || '',
-        printedName,
-      });
+      await completeDelivery(deliveryId, { signature, image, printedName });
 
       Alert.alert('Success', 'Delivery marked as completed');
       navigation.reset({

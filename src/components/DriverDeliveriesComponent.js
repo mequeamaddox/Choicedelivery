@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FlatList, ActivityIndicator } from 'react-native';
 import { listenToAssignedDeliveries } from '../../services/deliveryService';
-import { auth } from '../firebaseConfig';
 import styled from 'styled-components/native';
 
 export default function DriverDeliveriesComponent({ navigation }) {
@@ -9,9 +8,11 @@ export default function DriverDeliveriesComponent({ navigation }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const driverId = auth.currentUser.uid;
-        const unsubscribe = listenToAssignedDeliveries(driverId, deliveries => {
+        const unsubscribe = listenToAssignedDeliveries(deliveries => {
             setDeliveries(deliveries);
+            setLoading(false);
+        }, error => {
+            console.error('Error loading assigned deliveries: ', error);
             setLoading(false);
         });
 
@@ -31,8 +32,8 @@ export default function DriverDeliveriesComponent({ navigation }) {
                 renderItem={({ item }) => (
                     <DeliveryItem onPress={() => navigation.navigate('DriverNote', { deliveryId: item.id })}>
                         <DeliveryContent>
-                            <CustomerName>{item.customerName}</CustomerName>
-                            <DeliveryDetails>{item.pickupAddress} -> {item.deliveryAddress}</DeliveryDetails>
+                            <CustomerName>{item.contact_name}</CustomerName>
+                            <DeliveryDetails>{item.pickup_address} -> {item.destination_address}</DeliveryDetails>
                         </DeliveryContent>
                         <Chevron>></Chevron>
                     </DeliveryItem>

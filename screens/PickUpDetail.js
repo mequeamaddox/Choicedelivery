@@ -1,7 +1,7 @@
 // src/screens/PickUpDetail.js
 import React, { useEffect, useState } from 'react';
 import { View, Text, Alert, StyleSheet } from 'react-native';
-import { getDatabase, ref, get, update } from 'firebase/database';
+import { getPickupById, updatePickupStatus } from '../services/pickupService';
 import MapView, { Marker } from 'react-native-maps';
 import * as Linking from 'expo-linking';
 import styled from 'styled-components/native';
@@ -14,16 +14,10 @@ const PickUpDetail = ({ route, navigation }) => {
 
   useEffect(() => {
     const fetchPickup = async () => {
-      const db = getDatabase();
-      const pickupRef = ref(db, `pickups/${requestId}`);
-      const snapshot = await get(pickupRef);
-
-      if (snapshot.exists()) {
-        const data = snapshot.val();
-        console.log('Fetched Pickup Data:', data); // Debugging statement
-        setPickup({ id: snapshot.key, ...data });
+      try {
+        setPickup(await getPickupById(requestId));
         setLoading(false);
-      } else {
+      } catch (error) {
         Alert.alert('Error', 'Pickup not found');
         navigation.goBack();
       }
@@ -39,9 +33,7 @@ const PickUpDetail = ({ route, navigation }) => {
 
   const handleConfirmPickup = async () => {
     try {
-      const db = getDatabase();
-      const pickupRef = ref(db, `pickups/${requestId}`);
-      await update(pickupRef, { status: 'picked up' }); // Update pickup status to 'picked up'
+      await updatePickupStatus(requestId, 'picked up');
       navigation.replace('ConfirmPickup', { requestId });
       console.log('Pickup accepted and navigating to ConfirmPickup'); // Debugging statement
     } catch (error) {

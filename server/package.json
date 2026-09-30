@@ -1,0 +1,24 @@
+{
+  "name": "choicedelivery-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Choice Delivery backend API (replaces Firebase + WordPress). Deploys to Railway.",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "migrate": "node src/migrate.js",
+    "create-user": "node scripts/create-user.js",
+    "import-firebase": "node scripts/import-firebase.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.1"
+  }
+}

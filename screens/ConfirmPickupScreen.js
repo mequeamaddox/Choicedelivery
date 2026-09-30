@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
-import { getDatabase, ref, get, update, serverTimestamp } from 'firebase/database';
+import { getPickupById, confirmPickup } from '../services/pickupService';
 import * as ImagePicker from 'expo-image-picker';
 import Signature from 'react-native-signature-canvas';
 import styled from 'styled-components/native';
@@ -17,18 +17,7 @@ const ConfirmPickupScreen = ({ route, navigation }) => {
   useEffect(() => {
     const fetchPickup = async () => {
       try {
-        const db = getDatabase();
-        const pickupRef = ref(db, `pickups/${requestId}`);
-        const snapshot = await get(pickupRef);
-
-        if (snapshot.exists()) {
-          const data = snapshot.val();
-          console.log('Fetched Pickup Data:', data); // Debugging statement
-          setPickup({ id: snapshot.key, ...data });
-        } else {
-          Alert.alert('Error', 'Pickup not found');
-          navigation.goBack();
-        }
+        setPickup(await getPickupById(requestId));
       } catch (error) {
         console.error('Error fetching pickup:', error);
         Alert.alert('Error', 'Failed to load pickup details');
@@ -46,11 +35,13 @@ const ConfirmPickupScreen = ({ route, navigation }) => {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 1,
+      quality: 0.5,
+      base64: true,
     });
 
     if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      // Sent to the API inline, so keep it as a data URL.
+      setImage(`data:image/jpeg;base64,${result.assets[0].base64}`);
     }
   };
 
@@ -66,27 +57,10 @@ const ConfirmPickupScreen = ({ route, navigation }) => {
   const handleConfirmPickup = async () => {
     try {
       if (signature || image) {
-        const db = getDatabase();
-        const pickupRef = ref(db, `pickups/${requestId}`);
-        const snapshot = await get(pickupRef);
+        // Marks the job In Transit and stores the signature/photo
+        await confirmPickup(requestId, { signature, image });
 
-        if (snapshot.exists()) {
-          const pickupData = snapshot.val();
-          const updatedData = {
-            ...pickupData,
-            status: 'In Transit',
-            signature: signature || '',
-            image: image || '',
-            confirmedAt: serverTimestamp(),
-          };
-
-          // Update the status and add signature/photo in the pickups collection
-          await update(pickupRef, updatedData);
-
-          navigation.replace('DeliveryOverview', { requestId }); // Navigate to DeliveryScreen after confirming pickup
-        } else {
-          Alert.alert('Error', 'Pickup not found');
-        }
+        navigation.replace('DeliveryOverview', { requestId }); // Navigate to DeliveryScreen after confirming pickup
       } else {
         Alert.alert('Error', 'Please provide a signature or a photo');
       }
