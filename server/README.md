@@ -51,6 +51,19 @@ Database changes in `migrations/` are applied automatically when the service sta
 
 When everything is verified, you can shut down the Firebase project and the WordPress plugin endpoints.
 
+## Web app (shippers + dispatch)
+
+The same service also serves the website in `web/` at `/`. It's plain JavaScript (Preact + htm, vendored in
+`web/static/vendor/`), so there's no build step. Point **both** subdomains at this one Railway service:
+
+| Address | Who uses it |
+|---|---|
+| `app.choicedeliverysc.com` | Shippers (sign up, book, track, team) and dispatch/admins (all orders, assign drivers, prices, people, companies) |
+| `api.choicedeliverysc.com` | The driver phone app |
+| `app.choicedeliverysc.com/#/track/<token>` | Public tracking page you can send to recipients (the order page has a *Copy tracking link* button) |
+
+Drivers who try to log in on the website are pointed to the phone app.
+
 ## How the data fits together
 
 One Postgres database is the single source of truth for every app (driver app, future shipper

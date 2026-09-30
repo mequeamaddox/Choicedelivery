@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
@@ -17,6 +18,28 @@ app.get('/health', async (req, res) => {
     res.status(503).json({ ok: false, message: 'Database unavailable' });
   }
 });
+
+// ---- Web app (shippers + dispatch) ----
+// Served from "/" on every host; app.choicedeliverysc.com is the intended address. It uses hash
+// routes (/#/orders), so it never collides with the API paths below.
+const WEB_DIR = path.join(__dirname, '..', 'web');
+const webHeaders = (res) => {
+  res.set({
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
+      + "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'same-origin',
+  });
+};
+app.get('/', (req, res) => {
+  webHeaders(res);
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(WEB_DIR, 'index.html'));
+});
+app.use('/static', express.static(path.join(WEB_DIR, 'static'), {
+  fallthrough: false,
+  setHeaders: (res) => { webHeaders(res); res.set('Cache-Control', 'no-cache'); },
+}));
 
 app.use('/auth', require('./routes/auth'));
 app.use('/users', require('./routes/users'));

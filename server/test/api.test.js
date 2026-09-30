@@ -255,3 +255,27 @@ test('password reset', async () => {
   r = await call('POST', '/auth/login', { body: { email: 'd1@test.com', password: 'brandnew1' } });
   assert.equal(r.status, 200);
 });
+
+test('change password', async () => {
+  let r = await call('POST', '/auth/change-password', { token: t.acme, body: { currentPassword: 'wrong', newPassword: 'whatever1' } });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/auth/change-password', { token: t.acme, body: { currentPassword: 'password1', newPassword: 'password2' } });
+  assert.equal(r.status, 200);
+  r = await call('POST', '/auth/login', { body: { email: 'sam@acme.com', password: 'password2' } });
+  assert.equal(r.status, 200);
+});
+
+test('web app is served with security headers', async () => {
+  let res = await fetch(`${base}/`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /html/);
+  assert.match(res.headers.get('content-security-policy'), /default-src 'self'/);
+  assert.match(await res.text(), /static\/main\.js/);
+  res = await fetch(`${base}/static/main.js`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /javascript/);
+  res = await fetch(`${base}/static/../src/db.js`);
+  assert.notEqual(res.status, 200);
+  res = await fetch(`${base}/static/nope.js`);
+  assert.equal(res.status, 404);
+});

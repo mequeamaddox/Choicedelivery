@@ -63,6 +63,19 @@ router.post('/register', asyncH(async (req, res, next) => {
   });
 }));
 
+router.post('/change-password', requireAuth, asyncH(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!req.user.id) throw new HttpError(400, 'Integration keys have no password');
+  if (!newPassword || String(newPassword).length < 8) throw new HttpError(400, 'New password must be at least 8 characters');
+  const { rows } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
+  if (!rows[0] || !(await bcrypt.compare(String(currentPassword || ''), rows[0].password_hash))) {
+    throw new HttpError(400, 'Current password is incorrect');
+  }
+  await db.query('UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2',
+    [await bcrypt.hash(String(newPassword), 10), req.user.id]);
+  res.json({ message: 'Password changed.' });
+}));
+
 router.post('/forgot-password', asyncH(async (req, res) => {
   const email = str(req.body?.email);
   // Always respond the same way so this can't be used to discover accounts.
