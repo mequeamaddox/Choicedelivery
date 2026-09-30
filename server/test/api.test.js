@@ -454,3 +454,8 @@ test('Neon connection strings are cleaned without corrupting the database name',
     'postgres://u:p@h:5432/db?application_name=cd');
   assert.throws(() => cleanConnectionString('not a url'), /not a valid/);
 });
+
+test('setup status flips once the owner account exists', async () => {
+  const r = await call('GET', '/auth/setup-status');
+  assert.equal(r.data.needsSetup, false, 'accounts already exist in this test run');
+});

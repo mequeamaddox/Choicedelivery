@@ -1,4 +1,4 @@
-import { html, useState, api, login, signup, navigate, useApi, formatDate, timeAgo, mapsLink } from './lib.js';
+import { html, useState, useEffect, api, login, signup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink } from './lib.js';
 import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo } from './components.js';
 
 function useForm(initial) {
@@ -19,7 +19,37 @@ function useSubmit(fn) {
   return { onSubmit, error, busy };
 }
 
+// Shown instead of the login form until the very first (owner/admin) account exists.
+function OwnerSetup() {
+  const [v, bind] = useForm({ name: '', email: '', password: '', confirm: '' });
+  const { onSubmit, error, busy } = useSubmit(async () => {
+    if (v.password !== v.confirm) throw new Error("The passwords don't match.");
+    await createOwner({ name: v.name, email: v.email, password: v.password });
+    navigate('/orders');
+  });
+  return html`
+    <${AuthShell} title="Create the owner account" subtitle="One-time setup. This account gets full admin control.">
+      <form onSubmit=${onSubmit} class="stack">
+        <${Alert} error=${error} />
+        <${Field} label="Your name"><input required autocomplete="name" ...${bind('name')} /><//>
+        <${Field} label="Email"><input type="email" required autocomplete="email" ...${bind('email')} /><//>
+        <${Field} label="Password" hint="At least 8 characters. Use one you don't use anywhere else."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>
+        <${Field} label="Confirm password"><input type="password" required minlength="8" autocomplete="new-password" ...${bind('confirm')} /><//>
+        <button class="btn primary block" disabled=${busy}>${busy ? 'Creating…' : 'Create owner account'}</button>
+      </form>
+    <//>`;
+}
+
 export function LoginPage() {
+  const [needsSetup, setNeedsSetup] = useState(false);
+  useEffect(() => {
+    api('/auth/setup-status').then((r) => setNeedsSetup(r.needsSetup)).catch(() => {});
+  }, []);
+  if (needsSetup) return html`<${OwnerSetup} />`;
+  return html`<${LoginForm} />`;
+}
+
+function LoginForm() {
   const [v, bind] = useForm({ email: '', password: '' });
   const { onSubmit, error, busy } = useSubmit(async () => {
     await login(v.email, v.password);

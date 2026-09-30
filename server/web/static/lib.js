@@ -69,6 +69,13 @@ export async function login(email, password) {
   return user;
 }
 
+// One-time creation of the owner (admin) account; only works while no accounts exist.
+export async function createOwner(fields) {
+  const { token: t, user } = await api('/auth/register', { method: 'POST', body: fields });
+  setSession(t, user);
+  return user;
+}
+
 export async function signup(fields) {
   const { token: t, user } = await api('/auth/signup', { method: 'POST', body: fields });
   setSession(t, user);

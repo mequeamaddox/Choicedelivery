@@ -44,6 +44,12 @@ router.post('/signup', asyncH(async (req, res) => {
 
 // Creates any kind of account. The very first account may be created without auth and
 // becomes an admin; after that, admins create any role and dispatchers create drivers/shippers.
+// Tells the web app whether the one-time owner setup screen should be shown.
+router.get('/setup-status', asyncH(async (req, res) => {
+  const { rows } = await db.query('SELECT EXISTS (SELECT 1 FROM users) AS has_users');
+  res.json({ needsSetup: !rows[0].has_users });
+}));
+
 router.post('/register', asyncH(async (req, res, next) => {
   const { rows } = await db.query('SELECT count(*)::int AS n FROM users');
   if (rows[0].n === 0) {
