@@ -42,7 +42,9 @@
     "styled-components": "^6.1.11"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.0"
+    "@babel/core": "^7.24.0",
+    "@neon/config": "^1.8.3",
+    "@neon/env": "^1.4.8"
   },
   "private": true
 }

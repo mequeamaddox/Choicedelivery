@@ -1,4 +1,5 @@
--- Idempotent schema; applied automatically on server start.
+-- Original driver-app schema (users + pickups). Written with IF NOT EXISTS so databases
+-- that were created before migrations existed are picked up without changes.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -42,6 +43,3 @@ CREATE TABLE IF NOT EXISTS pickups (
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS pickups_status_idx ON pickups (lower(status));
-CREATE INDEX IF NOT EXISTS pickups_driver_idx ON pickups (driver_id);

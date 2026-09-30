@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "migrate": "node src/migrate.js",
+    "migrate": "node scripts/migrate.js",
     "create-user": "node scripts/create-user.js",
     "import-firebase": "node scripts/import-firebase.js",
     "test": "node --test"

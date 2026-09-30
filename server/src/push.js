@@ -1,16 +1,6 @@
 const db = require('./db');
 
-// Notifies every driver with a registered Expo push token about a new pickup.
-async function notifyDriversOfPickup(pickup) {
-  const { rows } = await db.query("SELECT push_token FROM users WHERE push_token LIKE 'ExponentPushToken%'");
-  if (!rows.length) return;
-  const messages = rows.map((r) => ({
-    to: r.push_token,
-    sound: 'default',
-    title: 'New Pickup Request',
-    body: `${pickup.contact_name || 'New pickup'} at ${pickup.pickup_address} to ${pickup.destination_address}`,
-    data: { requestId: pickup.id },
-  }));
+async function sendExpo(messages) {
   // Expo accepts up to 100 messages per request.
   for (let i = 0; i < messages.length; i += 100) {
     const res = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -22,4 +12,29 @@ async function notifyDriversOfPickup(pickup) {
   }
 }
 
-module.exports = { notifyDriversOfPickup };
+const isExpoToken = (t) => typeof t === 'string' && t.startsWith('ExponentPushToken');
+
+// Tells active drivers about a new open job (online drivers only, if any are online).
+async function notifyDriversOfOrder(order) {
+  if (order.status !== 'pending') return;
+  const { rows } = await db.query(
+    "SELECT push_token, is_online FROM users WHERE role = 'driver' AND is_active AND push_token IS NOT NULL");
+  const online = rows.filter((r) => r.is_online);
+  const targets = (online.length ? online : rows).map((r) => r.push_token).filter(isExpoToken);
+  const pickup = order.stops.find((s) => s.type === 'pickup');
+  const dropoff = [...order.stops].reverse().find((s) => s.type === 'dropoff');
+  await sendExpo(targets.map((to) => ({
+    to,
+    sound: 'default',
+    title: 'New Pickup Request',
+    body: `${pickup?.address} → ${dropoff?.address}`,
+    data: { requestId: order.id },
+  })));
+}
+
+async function notifyUser(userId, title, body, data = {}) {
+  const { rows } = await db.query('SELECT push_token FROM users WHERE id = $1', [userId]);
+  if (isExpoToken(rows[0]?.push_token)) await sendExpo([{ to: rows[0].push_token, sound: 'default', title, body, data }]);
+}
+
+module.exports = { notifyDriversOfOrder, notifyUser };

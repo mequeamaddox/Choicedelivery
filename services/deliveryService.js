@@ -4,14 +4,14 @@ import { getMyPickups } from './pickupService';
 
 const POLL_INTERVAL_MS = 15000;
 
-// Polls the signed-in driver's active (not yet completed) jobs; returns an unsubscribe function.
+// Polls the signed-in driver's jobs that are underway; returns an unsubscribe function.
 export const listenToAssignedDeliveries = (callback, errorCallback) => {
   let stopped = false;
   let timer;
   const poll = async () => {
     try {
-      const mine = await getMyPickups();
-      if (!stopped) callback(mine.filter((p) => p.status.toLowerCase() !== 'completed'));
+      const mine = await getMyPickups('accepted,at_pickup,in_transit,at_dropoff');
+      if (!stopped) callback(mine);
     } catch (error) {
       if (!stopped && errorCallback) errorCallback(error);
     }
@@ -25,4 +25,4 @@ export const listenToAssignedDeliveries = (callback, errorCallback) => {
 };
 
 export const addNoteToDelivery = (deliveryId, note) =>
-  request(`/pickups/${encodeURIComponent(deliveryId)}/notes`, { method: 'POST', body: { note } });
+  request(`/orders/${encodeURIComponent(deliveryId)}/notes`, { method: 'POST', body: { note } });

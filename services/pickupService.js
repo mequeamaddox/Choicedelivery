@@ -1,16 +1,56 @@
 // services/pickupService.js
+// The API models jobs as orders with ordered pickup/drop-off stops. The driver screens were
+// built around a single pickup -> drop-off record, so toPickup() adapts an order to that shape.
 import { request } from '../src/api';
 
 const POLL_INTERVAL_MS = 15000;
 
-// Polls for pending pickups; returns an unsubscribe function.
+const STATUS_LABELS = {
+  pending: 'Pending',
+  accepted: 'Accepted',
+  at_pickup: 'At Pickup',
+  in_transit: 'In Transit',
+  at_dropoff: 'At Drop-off',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+export const toPickup = (order) => {
+  const pickup = order.stops.find((s) => s.type === 'pickup') || {};
+  const dropoff = [...order.stops].reverse().find((s) => s.type === 'dropoff') || {};
+  return {
+    ...order,
+    request_id: order.id,
+    status: STATUS_LABELS[order.status] || order.status,
+    order_number: order.orderNumber,
+    contact_name: pickup.contactName || dropoff.contactName,
+    contact_phone: pickup.contactPhone || dropoff.contactPhone,
+    recipient_name: dropoff.contactName,
+    recipient_phone: dropoff.contactPhone,
+    pickup_address: pickup.address,
+    destination_address: dropoff.address,
+    pickup_location: pickup.location,
+    delivery_location: dropoff.location,
+    pickup_instructions: pickup.instructions,
+    delivery_instructions: dropoff.instructions,
+    weight: order.weight,
+    number_of_pieces: order.numberOfPieces,
+    vehicle_type: order.vehicleType,
+    pickup_date: order.scheduledAt || order.createdAt,
+    delivered_at: order.completedAt,
+  };
+};
+
+const orderPath = (id) => `/orders/${encodeURIComponent(id)}`;
+
+// Polls for open jobs; returns an unsubscribe function.
 export const listenToPendingPickups = (callback, errorCallback) => {
   let stopped = false;
   let timer;
   const poll = async () => {
     try {
-      const pickups = await request('/pickups?status=pending');
-      if (!stopped) callback(pickups);
+      const orders = await request('/orders?status=pending');
+      if (!stopped) callback(orders.map(toPickup));
     } catch (error) {
       if (!stopped && errorCallback) errorCallback(error);
     }
@@ -23,28 +63,43 @@ export const listenToPendingPickups = (callback, errorCallback) => {
   };
 };
 
-export const getPickupById = (requestId) => request(`/pickups/${encodeURIComponent(requestId)}`);
+export const getPickupById = async (id) => toPickup(await request(orderPath(id)));
 
-export const acceptPickup = (requestId) =>
-  request(`/pickups/${encodeURIComponent(requestId)}/accept`, { method: 'POST' });
+export const acceptPickup = async (id) => toPickup(await request(`${orderPath(id)}/accept`, { method: 'POST' }));
 
-export const updatePickupStatus = (requestId, status) =>
-  request(`/pickups/${encodeURIComponent(requestId)}/status`, { method: 'POST', body: { status } });
+// The next stop of the given type that hasn't been completed yet.
+const nextStopOfType = async (id, type) => {
+  const order = await request(orderPath(id));
+  const stop = order.stops.find((s) => s.status !== 'completed');
+  if (!stop || stop.type !== type) {
+    throw new Error(type === 'pickup' ? 'This job has already been picked up' : 'Finish the pickup first');
+  }
+  return stop;
+};
 
-export const confirmPickup = (requestId, { signature, image }) =>
-  request(`/pickups/${encodeURIComponent(requestId)}/confirm-pickup`, {
+const arriveAt = async (id, type) => {
+  const stop = await nextStopOfType(id, type);
+  return toPickup(await request(`${orderPath(id)}/stops/${stop.id}/arrive`, { method: 'POST' }));
+};
+
+const completeAt = async (id, type, { signature, image, printedName }) => {
+  const stop = await nextStopOfType(id, type);
+  return toPickup(await request(`${orderPath(id)}/stops/${stop.id}/complete`, {
     method: 'POST',
-    body: { signature, image },
-  });
+    body: { signature: signature || undefined, photo: image || undefined, printedName },
+  }));
+};
 
-export const completeDelivery = (requestId, { signature, image, printedName }) =>
-  request(`/pickups/${encodeURIComponent(requestId)}/complete`, {
-    method: 'POST',
-    body: { signature, image, printedName },
-  });
+export const arriveAtPickup = (id) => arriveAt(id, 'pickup');
+export const arriveAtDropoff = (id) => arriveAt(id, 'dropoff');
+export const confirmPickup = (id, proof) => completeAt(id, 'pickup', proof);
+export const completeDelivery = (id, proof) => completeAt(id, 'dropoff', proof);
 
-export const getMyPickups = (status) =>
-  request(`/pickups/mine${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+// The signed-in driver's jobs, optionally filtered by API status (e.g. 'completed').
+export const getMyPickups = async (status) => {
+  const orders = await request(`/orders?mine=true${status ? `&status=${encodeURIComponent(status)}` : ''}`);
+  return orders.map(toPickup);
+};
 
-export const markPickedUpByBarcode = (barcode) =>
-  request('/pickups/scan', { method: 'POST', body: { barcode } });
+export const markPickedUpByBarcode = async (barcode) =>
+  toPickup(await request('/orders/scan', { method: 'POST', body: { barcode } }));

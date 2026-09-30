@@ -9,7 +9,7 @@ const DeliveryHistory = ({ navigation }) => {
   useEffect(() => {
     const loadDeliveries = async () => {
       try {
-        setDeliveries(await getMyPickups('Completed'));
+        setDeliveries(await getMyPickups('completed'));
       } catch (error) {
         console.error('Failed to fetch deliveries:', error);
       } finally {

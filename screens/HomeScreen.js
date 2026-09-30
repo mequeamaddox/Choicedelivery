@@ -7,7 +7,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
-import { savePushToken } from '../services/apiService';
+import { savePushToken, updateLocation, setAvailability } from '../services/apiService';
 
 export default function HomeScreen({ navigation }) {
   const [location, setLocation] = useState(null);
@@ -15,6 +15,9 @@ export default function HomeScreen({ navigation }) {
   const [expoPushToken, setExpoPushToken] = useState('');
 
   useEffect(() => {
+    let watcher;
+    let cancelled = false;
+
     const requestPermissionsAndLocation = async () => {
       await registerForPushNotificationsAsync();
 
@@ -32,9 +35,25 @@ export default function HomeScreen({ navigation }) {
         longitudeDelta: 0.01,
       });
       setLoading(false);
+
+      // Mark the driver available and keep dispatch/shippers updated with their position.
+      const report = (coords) =>
+        updateLocation(coords.latitude, coords.longitude).catch((error) => console.error('Location update failed:', error));
+      report(location.coords);
+      setAvailability(true).catch((error) => console.error('Availability update failed:', error));
+      const sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 30000, distanceInterval: 100 },
+        (update) => report(update.coords)
+      );
+      if (cancelled) sub.remove();
+      else watcher = sub;
     };
 
     requestPermissionsAndLocation();
+    return () => {
+      cancelled = true;
+      if (watcher) watcher.remove();
+    };
   }, []);
 
   const registerForPushNotificationsAsync = async () => {

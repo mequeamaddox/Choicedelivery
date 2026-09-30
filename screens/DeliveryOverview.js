@@ -1,7 +1,7 @@
 // src/screens/DeliveryOverview.js
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Linking, Alert, ActivityIndicator } from 'react-native';
-import { getPickupById, updatePickupStatus } from '../services/pickupService';
+import { getPickupById, arriveAtDropoff } from '../services/pickupService';
 import MapView, { Marker } from 'react-native-maps';
 import styled from 'styled-components/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -62,7 +62,7 @@ const DeliveryOverview = ({ route, navigation }) => {
 
   const handleConfirmDelivery = async () => {
     try {
-      await updatePickupStatus(delivery.id, 'Delivered');
+      await arriveAtDropoff(delivery.id);
       navigation.replace('DeliveryScreen', { deliveryId: delivery.id });
     } catch (error) {
       console.error('Error confirming delivery:', error);
@@ -90,7 +90,7 @@ const DeliveryOverview = ({ route, navigation }) => {
     <Container>
       <DetailsContainer>
         <Title>Delivery Overview</Title>
-        <Detail>Recipient Name: {delivery.contact_name || 'N/A'}</Detail>
+        <Detail>Recipient Name: {delivery.recipient_name || 'N/A'}</Detail>
         <Detail>Delivery Address: {delivery.destination_address || 'N/A'}</Detail>
         <Detail>Weight: {delivery.weight || 'N/A'}</Detail>
         <Detail>Number of Pieces: {delivery.number_of_pieces || 'N/A'}</Detail>
@@ -128,11 +128,11 @@ const DeliveryOverview = ({ route, navigation }) => {
           <Ionicons name="navigate-outline" size={24} color="#fff" />
           <ButtonText>Navigate</ButtonText>
         </StyledButton>
-        <StyledButton onPress={() => handleCallRecipient(delivery.contact_phone)}>
+        <StyledButton onPress={() => handleCallRecipient(delivery.recipient_phone)}>
           <Ionicons name="call-outline" size={24} color="#fff" />
           <ButtonText>Contact</ButtonText>
         </StyledButton>
-        <StyledButton onPress={() => handleMessageRecipient(delivery.contact_phone)}>
+        <StyledButton onPress={() => handleMessageRecipient(delivery.recipient_phone)}>
           <Ionicons name="chatbubble-outline" size={24} color="#fff" />
           <ButtonText>Text</ButtonText>
         </StyledButton>

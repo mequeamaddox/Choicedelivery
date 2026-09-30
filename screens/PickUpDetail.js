@@ -1,7 +1,7 @@
 // src/screens/PickUpDetail.js
 import React, { useEffect, useState } from 'react';
 import { View, Text, Alert, StyleSheet } from 'react-native';
-import { getPickupById, updatePickupStatus } from '../services/pickupService';
+import { getPickupById, arriveAtPickup } from '../services/pickupService';
 import MapView, { Marker } from 'react-native-maps';
 import * as Linking from 'expo-linking';
 import styled from 'styled-components/native';
@@ -33,7 +33,7 @@ const PickUpDetail = ({ route, navigation }) => {
 
   const handleConfirmPickup = async () => {
     try {
-      await updatePickupStatus(requestId, 'picked up');
+      await arriveAtPickup(requestId);
       navigation.replace('ConfirmPickup', { requestId });
       console.log('Pickup accepted and navigating to ConfirmPickup'); // Debugging statement
     } catch (error) {

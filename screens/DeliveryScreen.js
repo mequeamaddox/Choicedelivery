@@ -102,7 +102,7 @@ const DeliveryScreen = ({ route, navigation }) => {
     <View style={styles.container}>
       <DetailsContainer>
         <Title>Delivery Details:</Title>
-        <Detail>Contact Name: {delivery.contact_name || 'N/A'}</Detail>
+        <Detail>Recipient Name: {delivery.recipient_name || 'N/A'}</Detail>
         <Detail>Delivery Address: {delivery.destination_address || 'N/A'}</Detail>
         <Detail>Weight: {delivery.weight || 'N/A'}</Detail>
         <Detail>Number of Pieces: {delivery.number_of_pieces || 'N/A'}</Detail>

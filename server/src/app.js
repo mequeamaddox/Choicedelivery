@@ -1,9 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
-const { router: authRouter } = require('./routes-auth');
-const driversRouter = require('./routes-drivers');
-const pickupsRouter = require('./routes-pickups');
 const resetPage = require('./reset-page');
 
 const app = express();
@@ -21,16 +18,18 @@ app.get('/health', async (req, res) => {
   }
 });
 
-app.use('/auth', authRouter);
-app.use('/drivers', driversRouter);
-app.use('/pickups', pickupsRouter);
+app.use('/auth', require('./routes/auth'));
+app.use('/users', require('./routes/users'));
+app.use('/organizations', require('./routes/organizations'));
+app.use('/orders', require('./routes/orders'));
+app.use('/track', require('./routes/track'));
 app.get('/reset-password', resetPage);
 
 app.use((req, res) => res.status(404).json({ message: 'Not found' }));
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err.type === 'entity.too.large') return res.status(413).json({ message: 'Upload too large' });
-  if (err.code === '22P02') return res.status(400).json({ message: 'Invalid id' });
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ message: 'Invalid JSON' });
   if (!err.status) console.error(err);
   res.status(err.status || 500).json({ message: err.status ? err.message : 'Internal server error' });
 });
