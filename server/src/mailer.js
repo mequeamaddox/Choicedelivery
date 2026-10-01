@@ -12,6 +12,27 @@ async function record(to, subject, status, error) {
   } catch { /* the log is best-effort */ }
 }
 
+// Plain-text copy of an HTML email. Mail with only an HTML part looks more like spam to Gmail and
+// Outlook, so every email carries both. Links keep their address: "Open the order (https://...)".
+function htmlToText(html) {
+  const entities = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", nbsp: ' ', middot: '·', rarr: '→', mdash: '—', ndash: '–' };
+  return String(html || '')
+    .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (m, href, label) => {
+      const text = label.replace(/<[^>]+>/g, '').trim();
+      return !text || text === href ? href : `${text} (${href})`;
+    })
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    .replace(/<\/(p|div|h[1-6]|tr|table|ul|ol)>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(#?\w+);/g, (m, e) => entities[e] ?? m)
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function deliver({ to, subject, html }) {
   if (override) return override({ to, subject, html });
   if (!process.env.RESEND_API_KEY) {
@@ -31,6 +52,7 @@ async function deliver({ to, subject, html }) {
       to,
       subject,
       html,
+      text: htmlToText(html),
     }),
   });
   if (!res.ok) {
@@ -54,4 +76,4 @@ async function sendMail(message) {
   }
 }
 
-module.exports = { sendMail, setSender };
+module.exports = { sendMail, setSender, htmlToText };
