@@ -59,6 +59,11 @@ export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch
     history: () => request('/orders?mine=true&status=completed&limit=100'),
     // { owedCents, last7DaysCents, paidLast60DaysCents, orders }
     earnings: () => request('/payouts/me'),
+    // Direct deposit (Stripe): { available, connected, payoutsEnabled, detailsSubmitted }
+    payoutSetup: () => request('/payouts/me/stripe'),
+    // Each returns { url } of a Stripe page to open in the browser.
+    startPayoutSetup: () => request('/payouts/me/stripe/onboard', { method: 'POST' }),
+    payoutDashboard: () => request('/payouts/me/stripe/dashboard', { method: 'POST' }),
     job: (id) => request(`/orders/${encodeURIComponent(id)}`),
     accept: (id) => request(`/orders/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
     // location: { lat, lng, accuracy?, mocked? } from the phone; the driver must be at the stop.

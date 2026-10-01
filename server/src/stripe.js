@@ -30,6 +30,7 @@ async function stripeRequest(method, path, params, { idempotencyKey } = {}) {
   if (!res.ok) {
     const err = new Error(data.error?.message || `Stripe error ${res.status}`);
     err.status = 502;
+    err.code = data.error?.code;
     throw err;
   }
   return data;
@@ -120,7 +121,36 @@ function verifyWebhook(rawBody, header, secret = process.env.STRIPE_WEBHOOK_SECR
   return JSON.parse(rawBody.toString('utf8'));
 }
 
+// ---- Stripe Connect: paying drivers ----
+// Each driver gets an Express account. Stripe hosts the sign-up (identity, bank account, tax info)
+// and pays out to the driver's bank; we send money to it from the platform balance with a transfer.
+const createDriverAccount = ({ userId, email }) => stripeRequest('POST', '/accounts', {
+  type: 'express',
+  country: 'US',
+  email: email || undefined,
+  business_type: 'individual',
+  capabilities: { transfers: { requested: true } },
+  business_profile: { mcc: '4215', product_description: 'Independent delivery driver for Choice Delivery SC' },
+  metadata: { user_id: userId },
+}, { idempotencyKey: `driver-account-${userId}` });
+
+const getAccount = (accountId) => stripeRequest('GET', `/accounts/${encodeURIComponent(accountId)}`);
+
+const createAccountLink = ({ accountId, refreshUrl, returnUrl }) => stripeRequest('POST', '/account_links', {
+  account: accountId, refresh_url: refreshUrl, return_url: returnUrl, type: 'account_onboarding',
+});
+
+// Link to the driver's own Stripe Express dashboard (payout history, bank account, tax forms).
+const createLoginLink = (accountId) => stripeRequest('POST', `/accounts/${encodeURIComponent(accountId)}/login_links`, {});
+
+// Sends a payout. The payout id makes retries safe: Stripe won't send the same payout twice.
+const transferToDriver = ({ payoutId, accountId, cents, description }) => stripeRequest('POST', '/transfers', {
+  amount: cents, currency: 'usd', destination: accountId, description,
+  transfer_group: `payout-${payoutId}`, metadata: { payout_id: payoutId },
+}, { idempotencyKey: `payout-${payoutId}` });
+
 module.exports = {
   enabled, mode, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
   ensureWebhook, webhookReady,
+  createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver,
 };

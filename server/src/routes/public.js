@@ -86,6 +86,25 @@ router.get('/geocode', rateLimit({ windowMs: 60 * 1000, max: 40 }), asyncH(async
 }));
 
 
+// Where Stripe sends drivers after direct-deposit sign-up (or when its sign-up link has expired).
+// A plain page: drivers using the phone app just switch back to it.
+router.get('/stripe-return', (req, res) => {
+  const expired = req.query.expired !== undefined;
+  const title = expired ? 'That link expired' : "You're all set";
+  const text = expired
+    ? 'Go back to the Choice Delivery Driver app (or your earnings page) and tap <strong>Set up direct deposit</strong> again.'
+    : 'Your direct-deposit details are saved with Stripe. Go back to the Choice Delivery Driver app; your earnings page shows your status. '
+      + 'Stripe may take a few minutes to confirm your details.';
+  res.set('Cache-Control', 'no-store').type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · Choice Delivery</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;background:#f0fdfa;color:#111827;margin:0;padding:24px;display:flex;
+min-height:100vh;align-items:center;justify-content:center;box-sizing:border-box}main{background:#fff;border-radius:16px;
+padding:28px;max-width:420px;box-shadow:0 10px 30px rgba(15,118,110,.12);text-align:center}h1{color:#0f766e;margin:0 0 12px}
+p{line-height:1.6;color:#374151}a{display:inline-block;margin-top:8px;background:#0f766e;color:#fff;padding:12px 18px;
+border-radius:10px;text-decoration:none;font-weight:600}</style></head><body><main><h1>${title}</h1><p>${text}</p>
+<a href="/#/driver/history">Open my earnings</a></main></body></html>`);
+});
+
 // Instant quote using the same formula orders are priced with.
 // Body: { stops: [{address, location?}, ...] } or { pickupAddress, dropoffAddress, pickupLocation?, dropoffLocation? },
 // plus serviceLevel ('standard' | 'rush'), vehicleType and an optional scheduledAt (pickup time).

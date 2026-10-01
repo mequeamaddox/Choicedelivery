@@ -1295,3 +1295,99 @@ test('driver pay: drivers see their pay, never the price; dispatch adjusts it an
   await call('PUT', '/settings/fees', { token: t.admin, body: fees });
   await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
 });
+
+test('drivers set up direct deposit with Stripe and are paid by transfer', async () => {
+  const stripe = require('../src/stripe');
+  // A completed delivery for d1 to pay out.
+  const completeFor = async (token) => {
+    let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ stops: [
+      { type: 'pickup', address: '1 Main St', location: { lat: 34, lng: -81 } },
+      { type: 'dropoff', address: '2 Oak Ave', location: { lat: 34.01, lng: -81 } }] }) });
+    const id = r.data.id;
+    r = await call('POST', `/orders/${id}/accept`, { token });
+    for (const st of r.data.stops) {
+      await call('POST', `/orders/${id}/stops/${st.id}/arrive`, { token, body: { location: st.location } });
+      r = await call('POST', `/orders/${id}/stops/${st.id}/complete`, { token, body: { signature: 's', photo: 'p', location: st.location } });
+    }
+    assert.equal(r.data.status, 'completed');
+    return (await call('GET', `/orders/${id}`, { token: t.admin })).data;
+  };
+  const o1 = await completeFor(t.d1);
+  const o2 = await completeFor(t.d1);
+
+  let r = await call('GET', '/payouts/me/stripe', { token: t.d1 });
+  assert.deepEqual(r.data, { available: false, connected: false, payoutsEnabled: false, detailsSubmitted: false });
+
+  process.env.STRIPE_SECRET_KEY = 'sk_test_connect';
+  process.env.PUBLIC_URL = 'https://app.choicedeliverysc.com';
+  const calls = [];
+  let account = { id: 'acct_d1', payouts_enabled: false, details_submitted: false };
+  let transferFails = true;
+  stripe.setFetch(async (url, opts) => {
+    const path = url.replace('https://api.stripe.com/v1', '');
+    calls.push({ method: opts.method, path, body: opts.body ? Object.fromEntries(new URLSearchParams(opts.body)) : null,
+      idem: opts.headers['Idempotency-Key'] });
+    if (path === '/accounts' && opts.method === 'POST') return { ok: true, json: async () => account };
+    if (path === '/accounts/acct_d1') return { ok: true, json: async () => account };
+    if (path === '/account_links') return { ok: true, json: async () => ({ url: 'https://connect.stripe.com/setup/e/abc' }) };
+    if (path === '/accounts/acct_d1/login_links') return { ok: true, json: async () => ({ url: 'https://connect.stripe.com/express/xyz' }) };
+    if (path === '/transfers') {
+      if (transferFails) return { ok: false, status: 400, json: async () => ({ error: { code: 'balance_insufficient', message: 'Insufficient funds' } }) };
+      return { ok: true, json: async () => ({ id: 'tr_123' }) };
+    }
+    return { ok: false, status: 404, json: async () => ({ error: { message: `unexpected ${path}` } }) };
+  });
+  try {
+    r = await call('POST', '/payouts/me/stripe/onboard', { token: t.d1 });
+    assert.equal(r.data.url, 'https://connect.stripe.com/setup/e/abc');
+    const created = calls.find((c) => c.path === '/accounts');
+    assert.equal(created.body.type, 'express');
+    assert.equal(created.body['capabilities[transfers][requested]'], 'true');
+    assert.equal(calls.find((c) => c.path === '/account_links').body.return_url, 'https://app.choicedeliverysc.com/public/stripe-return');
+    r = await call('POST', '/payouts/me/stripe/onboard', { token: t.d1 });
+    assert.equal(calls.filter((c) => c.path === '/accounts').length, 1, 'the account is created once');
+    assert.equal((await call('POST', '/payouts/me/stripe/onboard', { token: t.acme })).status, 403);
+    const page = await fetch(`${base}/public/stripe-return`);
+    assert.match(await page.text(), /all set/);
+
+    // Not finished with Stripe yet: can't be paid through Stripe.
+    r = await call('POST', '/payouts/pay-stripe', { token: t.admin, body: { orderIds: [o1.id] } });
+    assert.equal(r.status, 409);
+    assert.match(r.data.message, /hasn't finished direct-deposit setup/);
+
+    account = { ...account, payouts_enabled: true, details_submitted: true };
+    r = await call('GET', '/payouts/me/stripe', { token: t.d1 });
+    assert.deepEqual(r.data, { available: true, connected: true, payoutsEnabled: true, detailsSubmitted: true });
+    r = await call('GET', '/payouts', { token: t.admin });
+    assert.equal(r.data.find((d) => d.orders.some((o) => o.id === o1.id)).stripe.payoutsEnabled, true);
+
+    assert.equal((await call('POST', '/payouts/pay-stripe', { token: t.d1, body: { orderIds: [o1.id] } })).status, 403);
+    r = await call('POST', '/payouts/pay-stripe', { token: t.admin, body: { orderIds: [o1.id, o2.id] } });
+    assert.equal(r.status, 409);
+    assert.match(r.data.message, /balance doesn't have enough/);
+    r = await call('GET', `/orders/${o1.id}`, { token: t.admin });
+    assert.equal(r.data.driverPaidAt, null, 'a failed transfer leaves the orders unpaid');
+
+    transferFails = false;
+    r = await call('POST', '/payouts/pay-stripe', { token: t.admin, body: { orderIds: [o1.id, o2.id] } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.deepEqual(r.data, { paidOrders: 2, totalCents: o1.driverPayCents + o2.driverPayCents, method: 'stripe', transferId: 'tr_123' });
+    const transfer = calls.filter((c) => c.path === '/transfers').at(-1);
+    assert.equal(transfer.body.destination, 'acct_d1');
+    assert.equal(Number(transfer.body.amount), o1.driverPayCents + o2.driverPayCents);
+    assert.match(transfer.idem, /^payout-/, 'transfers are idempotent');
+    r = await call('POST', '/payouts/pay-stripe', { token: t.admin, body: { orderIds: [o1.id] } });
+    assert.equal(r.status, 409, "can't pay twice");
+    r = await call('GET', '/payouts/me', { token: t.d1 });
+    assert.equal(r.data.orders.find((o) => o.id === o1.id).payoutMethod, 'stripe');
+    r = await call('GET', '/payouts?status=paid', { token: t.admin });
+    assert.ok(r.data.some((d) => d.orders.some((o) => o.id === o2.id && o.payoutMethod === 'stripe')));
+
+    r = await call('POST', '/payouts/me/stripe/dashboard', { token: t.d1 });
+    assert.equal(r.data.url, 'https://connect.stripe.com/express/xyz');
+  } finally {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.PUBLIC_URL;
+    stripe.setFetch((...args) => fetch(...args));
+  }
+});

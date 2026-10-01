@@ -129,6 +129,32 @@ function DriverJobsList() {
     <//>`;
 }
 
+// Direct deposit through Stripe: set up once (Stripe's secure pages collect bank and tax details),
+// then dispatch's payouts go straight to the driver's bank.
+function DirectDeposit() {
+  const st = useApi('/payouts/me/stripe');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const go = (path) => async () => {
+    setBusy(true); setError(null);
+    try { window.location.href = (await api(path, { method: 'POST' })).url; } catch (err) { setError(err); setBusy(false); }
+  };
+  const s = st.data;
+  if (!s?.available) return null;
+  return html`
+    <section class="card stack">
+      <h2>Direct deposit ${s.payoutsEnabled ? html`<span class="badge green">Ready</span>` : s.connected ? html`<span class="badge amber">Not finished</span>` : ''}</h2>
+      <${Alert} error=${error} />
+      ${s.payoutsEnabled ? html`
+        <p class="small muted">Your pay is sent to your bank through Stripe. See payouts, change your bank account or get tax forms in Stripe.</p>
+        <button class="btn" disabled=${busy} onClick=${go('/payouts/me/stripe/dashboard')}>Open my Stripe payouts</button>`
+      : html`
+        <p class="small muted">${s.connected ? 'Finish your Stripe setup to get paid by direct deposit.'
+          : 'Get paid straight to your bank account. Stripe, our payments partner, securely collects your bank and tax details; it takes about 5 minutes.'}</p>
+        <button class="btn primary" disabled=${busy} onClick=${go('/payouts/me/stripe/onboard')}>${busy ? 'Opening Stripe…' : s.connected ? 'Finish direct-deposit setup' : 'Set up direct deposit'}</button>`}
+    </section>`;
+}
+
 export function DriverHistoryPage() {
   const done = useApi('/orders?mine=true&status=completed&limit=100');
   const earnings = useApi('/payouts/me');
@@ -141,6 +167,7 @@ export function DriverHistoryPage() {
         <div class="stat"><span class="muted small">Last 7 days</span><strong>${formatMoney(e.last7DaysCents)}</strong></div>
         <div class="stat"><span class="muted small">Paid, last 60 days</span><strong>${formatMoney(e.paidLast60DaysCents)}</strong></div>
       </div>`}
+      <${DirectDeposit} />
       <${Alert} error=${done.error} />
       ${done.loading ? html`<${Spinner} />` : !done.data?.length ? html`<${Empty} title="No completed jobs yet" />` : html`
         <div class="job-list">${done.data.map((o) => html`<${JobCard} key=${o.id} o=${o}

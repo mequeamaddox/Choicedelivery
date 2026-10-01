@@ -617,19 +617,29 @@ export function PayoutsPage() {
   const [tab, setTab] = useState('unpaid');
   const list = useApi(`/payouts?status=${tab}`);
   const [msg, setMsg] = useState({});
-  const markPaid = async (d, orders) => {
-    const total = orders.reduce((n, o) => n + o.driverPayCents, 0);
-    if (!window.confirm(`Mark ${formatMoney(total)} as paid to ${d.driver.name || d.driver.email}? Do this after you've sent the money.`)) return;
+  const [busy, setBusy] = useState(null);
+  const who = (d) => d.driver.name || d.driver.email;
+  const pay = async (d, viaStripe) => {
+    const total = d.orders.reduce((n, o) => n + o.driverPayCents, 0);
+    const question = viaStripe
+      ? `Send ${formatMoney(total)} to ${who(d)} through Stripe? It goes to their bank on their Stripe payout schedule.`
+      : `Mark ${formatMoney(total)} as paid to ${who(d)}? Do this after you've sent the money another way (Cash App, Zelle, check).`;
+    if (!window.confirm(question)) return;
+    setBusy(d.driver.id); setMsg({});
     try {
-      const r = await api('/payouts/mark-paid', { method: 'POST', body: { orderIds: orders.map((o) => o.id) } });
-      setMsg({ ok: `Marked ${formatMoney(r.totalCents)} paid to ${d.driver.name || d.driver.email} (${r.paidOrders} order${r.paidOrders === 1 ? '' : 's'}).` });
+      const r = await api(viaStripe ? '/payouts/pay-stripe' : '/payouts/mark-paid', { method: 'POST', body: { orderIds: d.orders.map((o) => o.id) } });
+      setMsg({ ok: `${viaStripe ? 'Sent' : 'Marked'} ${formatMoney(r.totalCents)} ${viaStripe ? 'through Stripe ' : 'paid '}to ${who(d)} (${r.paidOrders} order${r.paidOrders === 1 ? '' : 's'}).` });
       list.reload();
-    } catch (err) { setMsg({ error: err }); }
+    } catch (err) { setMsg({ error: err }); } finally { setBusy(null); }
   };
+  const stripeBadge = (st) => (!st?.available ? null
+    : st.payoutsEnabled ? html`<span class="badge green">Direct deposit ready</span>`
+    : st.connected ? html`<span class="badge amber">Direct deposit setup not finished</span>`
+    : html`<span class="badge gray">No direct deposit yet</span>`);
   const short = (a) => (a || '').split(',')[0];
   return html`
     <${Layout}>
-      <${PageHeader} title="Driver pay" subtitle="What drivers have earned on completed deliveries. Send the money, then mark it paid." />
+      <${PageHeader} title="Driver pay" subtitle="What drivers have earned on completed deliveries. Pay through Stripe (direct deposit), or send it another way and mark it paid." />
       <div class="tabs" role="tablist">
         <button class=${`tab ${tab === 'unpaid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'unpaid'} onClick=${() => { setTab('unpaid'); setMsg({}); }}>Owed</button>
         <button class=${`tab ${tab === 'paid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'paid'} onClick=${() => { setTab('paid'); setMsg({}); }}>Paid (last 60 days)</button>
@@ -641,12 +651,15 @@ export function PayoutsPage() {
           <section class="card">
             <div class="row-between">
               <div>
-                <h2><a href=${`#/people/${d.driver.id}`}>${d.driver.name || d.driver.email}</a></h2>
+                <h2><a href=${`#/people/${d.driver.id}`}>${who(d)}</a> ${tab === 'unpaid' && stripeBadge(d.stripe)}</h2>
                 <div class="muted small">${[d.driver.phoneNumber, d.driver.email].filter(Boolean).join(' · ')}</div>
               </div>
               <div class="payout-total">
                 <strong>${formatMoney(d.totalCents)}</strong>
-                ${tab === 'unpaid' && html`<button class="btn primary" onClick=${() => markPaid(d, d.orders)}>Mark paid</button>`}
+                ${tab === 'unpaid' && d.stripe?.payoutsEnabled && html`
+                  <button class="btn primary" disabled=${busy === d.driver.id} onClick=${() => pay(d, true)}>${busy === d.driver.id ? 'Sending…' : 'Pay with Stripe'}</button>`}
+                ${tab === 'unpaid' && html`
+                  <button class=${d.stripe?.payoutsEnabled ? 'btn' : 'btn primary'} disabled=${busy === d.driver.id} onClick=${() => pay(d, false)}>Mark paid</button>`}
               </div>
             </div>
             <table class="table compact">
@@ -657,7 +670,7 @@ export function PayoutsPage() {
                   <td data-label="Delivered" class="small">${formatDate(o.completedAt)}</td>
                   <td data-label="Route" class="small">${short(o.pickup)} → ${short(o.dropoff)}</td>
                   <td data-label="Pay" class="num">${formatMoney(o.driverPayCents)}</td>
-                  ${tab === 'paid' && html`<td data-label="Paid" class="small">${formatDate(o.driverPaidAt)}</td>`}
+                  ${tab === 'paid' && html`<td data-label="Paid" class="small">${formatDate(o.driverPaidAt)}${o.payoutMethod === 'stripe' ? ' · Stripe' : o.payoutMethod === 'manual' ? ' · by hand' : ''}</td>`}
                 </tr>`)}
               </tbody>
             </table>
