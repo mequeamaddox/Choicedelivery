@@ -11,10 +11,10 @@ export class ApiError extends Error {
 
 // baseUrl: server address. getToken: async () => saved login token. onUnauthorized: called on 401.
 export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch }) {
-  async function request(path, { method = 'GET', body, timeoutMs = 20000 } = {}) {
+  async function request(path, { method = 'GET', body, timeoutMs = 20000, token: tokenOverride } = {}) {
     const headers = { Accept: 'application/json' };
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const token = await getToken();
+    const token = tokenOverride ?? await getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -50,7 +50,8 @@ export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch
     forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: { email } }),
     me: () => request('/users/me'),
     updateMe: (fields) => request('/users/me', { method: 'PUT', body: fields }),
-    setOnline: (online) => request('/users/me/availability', { method: 'PUT', body: { online } }),
+    // token: send with a login that's already been cleared (going offline while signing out).
+    setOnline: (online, { token, timeoutMs } = {}) => request('/users/me/availability', { method: 'PUT', body: { online }, token, timeoutMs }),
     sendLocation: (lat, lng) => request('/users/me/location', { method: 'PUT', body: { lat, lng } }),
     setPushToken: (token) => request('/users/me/push-token', { method: 'PUT', body: { token } }),
     myActiveJobs: () => request(`/orders?mine=true&status=${ACTIVE_STATUSES.join(',')}`),

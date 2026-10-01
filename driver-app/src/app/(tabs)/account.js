@@ -1,4 +1,4 @@
-import { Alert, Image, Linking, ScrollView, Text, View } from 'react-native';
+import { Alert, Image, Linking, Platform, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 import { useAuth } from '../../lib/auth';
@@ -16,10 +16,13 @@ export default function Account() {
   const c = user?.checklist || { missing: [], expired: [] };
   const [label, tone] = STATUS[user?.driverStatus] || ['Driver', 'gray'];
   const v = user?.vehicle || {};
-  const confirmSignOut = () => Alert.alert('Sign out?', "You'll go offline and stop getting job alerts.", [
+  // Alert buttons don't show in a browser, so the web preview uses the browser's confirm box.
+  const confirmSignOut = () => (Platform.OS === 'web'
+    ? window.confirm("Sign out? You'll go offline and stop getting job alerts.") && signOut()
+    : Alert.alert('Sign out?', "You'll go offline and stop getting job alerts.", [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
-  ]);
+  ]));
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
       <Card>

@@ -11,11 +11,14 @@ const NOT_A_DRIVER = 'This app is for drivers. Shippers and dispatch sign in at 
 export function AuthProvider({ children }) {
   const [state, setState] = useState({ loading: true, user: null });
 
+  // Signs out right away; going offline on the server happens in the background so a weak
+  // signal can't leave the button looking stuck.
   const signOut = useCallback(async ({ goOffline = true } = {}) => {
-    await stopTracking().catch(() => {});
-    if (goOffline) await api.setOnline(false).catch(() => {});
-    await saveToken(null);
+    const token = goOffline ? await getToken().catch(() => null) : null;
+    await saveToken(null).catch(() => {});
     setState({ loading: false, user: null });
+    stopTracking().catch(() => {});
+    if (token) api.setOnline(false, { token, timeoutMs: 10000 }).catch(() => {});
   }, []);
 
   useEffect(() => {

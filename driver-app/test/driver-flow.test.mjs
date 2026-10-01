@@ -135,7 +135,12 @@ test('a driver goes online, accepts a job, works both stops and sees it in histo
   const pricing = await d.api.pricing();
   assert.equal(pricing.fees.waitFreeMinutes, 15);
   assert.deepEqual(pricing.vehicleTypes, ['Car', 'Minivan', 'Pickup Truck']);
-  await d.api.setOnline(false);
+  await d.api.setOnline(true);
+  // Signing out clears the saved login first, then goes offline with the old token.
+  const saved = (await d.api.login('rae@t.dev', 'driverpass1')).token;
+  d.setToken(null);
+  await d.api.setOnline(false, { token: saved });
+  d.setToken(saved);
   assert.equal((await d.api.me()).isOnline, false);
 });
 
