@@ -1149,3 +1149,23 @@ test('owner can check email setup and send a test email', async () => {
     mailer.setSender(null);
   }
 });
+
+test('website tracking box: order number + delivery ZIP finds the tracking link', async () => {
+  const r0 = await call('POST', '/orders', { token: t.acme, body: orderBody({ stops: [
+    { type: 'pickup', address: '1 Main St, Columbia, SC 29201', location: { lat: 34, lng: -81 } },
+    { type: 'dropoff', address: '500 Oak Ave, Lexington, SC 29072', location: { lat: 33.98, lng: -81.23 } },
+  ] }) });
+  const order = r0.data;
+  let r = await call('POST', '/public/track-lookup', { body: { orderNumber: order.orderNumber.toLowerCase(), zip: '29072' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.token, order.trackingUrlToken);
+  r = await call('POST', '/public/track-lookup', { body: { orderNumber: order.orderNumber.replace('CD-', ''), zip: ' 29072 ' } });
+  assert.equal(r.data.token, order.trackingUrlToken, 'the number alone works too');
+  r = await call('POST', '/public/track-lookup', { body: { orderNumber: order.orderNumber, zip: '29201' } });
+  assert.equal(r.status, 404, 'the pickup ZIP is not enough');
+  r = await call('POST', '/public/track-lookup', { body: { orderNumber: order.orderNumber, zip: '2907' } });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/public/track-lookup', { body: { orderNumber: 'CD-999999', zip: '29072' } });
+  assert.equal(r.status, 404);
+  await call('POST', `/orders/${order.id}/cancel`, { token: t.admin });
+});

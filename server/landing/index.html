@@ -88,6 +88,7 @@
                 <div class="hidden md:flex space-x-6">
                     <a href="#services" class="text-gray-700 hover:text-choice-teal">Services</a>
                     <a href="#business" class="text-gray-700 hover:text-choice-teal">Business Plans</a>
+                    <a href="#track" class="text-gray-700 hover:text-choice-teal">Track</a>
                     <a href="#contact" class="text-gray-700 hover:text-choice-teal">Contact</a>
                     <a href="https://app.choicedeliverysc.com/#/drive" class="text-gray-700 hover:text-choice-teal">Drive with us</a>
                     <a href="https://app.choicedeliverysc.com" target="_blank" rel="noopener" class="bg-choice-teal text-white px-4 py-2 rounded-lg hover:bg-opacity-90">Launch App</a>
@@ -105,6 +106,7 @@
             <div id="mobile-menu" class="hidden md:hidden pb-4">
                 <a href="#services" class="block py-2 text-gray-700 hover:text-choice-teal">Services</a>
                 <a href="#business" class="block py-2 text-gray-700 hover:text-choice-teal">Business Plans</a>
+                <a href="#track" class="block py-2 text-gray-700 hover:text-choice-teal">Track a delivery</a>
                 <a href="#contact" class="block py-2 text-gray-700 hover:text-choice-teal">Contact</a>
                 <a href="https://app.choicedeliverysc.com/#/drive" class="block py-2 text-gray-700 hover:text-choice-teal">Drive with us</a>
                 <a href="https://app.choicedeliverysc.com" target="_blank" class="block py-2 bg-choice-teal text-white px-4 rounded-lg text-center mt-2">Launch App</a>
@@ -134,6 +136,22 @@
                 <a href="#business" class="border-2 border-white text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal hover-scale">
                     Business Contracts
                 </a>
+            </div>
+
+            <!-- Track a delivery -->
+            <div id="track" class="bg-white text-gray-800 rounded-xl shadow-lg max-w-2xl mx-auto p-5 text-left scroll-mt-24">
+                <h2 class="text-lg font-bold text-choice-teal mb-1">Track a delivery</h2>
+                <p class="text-sm text-gray-600 mb-3">Paste the tracking link from your email, or enter the order number and the delivery ZIP code.</p>
+                <form id="track-form" class="flex flex-col sm:flex-row gap-2" novalidate>
+                    <label for="track-order" class="sr-only">Order number or tracking link</label>
+                    <input id="track-order" name="order" type="text" autocomplete="off" placeholder="Order # (CD-100123) or tracking link"
+                        class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                    <label for="track-zip" class="sr-only">Delivery ZIP code</label>
+                    <input id="track-zip" name="zip" type="text" inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="Delivery ZIP"
+                        class="sm:w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                    <button type="submit" class="bg-choice-teal text-white px-6 py-2 rounded-lg font-semibold hover:opacity-90">Track</button>
+                </form>
+                <p id="track-status" class="text-sm text-red-700 mt-2 hidden" aria-live="polite"></p>
             </div>
             
             <!-- Key Stats -->
@@ -789,6 +807,28 @@
             el.classList.remove('hidden', 'text-red-600', 'text-green-700');
             el.classList.add(ok ? 'text-green-700' : 'text-red-600');
         }
+
+        // Track a delivery: a pasted tracking link/code opens the tracking page directly; an order number
+        // is looked up together with the delivery ZIP code.
+        const APP_URL = location.hostname.endsWith('choicedeliverysc.com') ? 'https://app.choicedeliverysc.com' : '';
+        document.getElementById('track-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const status = document.getElementById('track-status');
+            const value = document.getElementById('track-order').value.trim();
+            const zip = document.getElementById('track-zip').value.trim();
+            const show = (msg) => { status.textContent = msg; status.classList.toggle('hidden', !msg); };
+            const token = (value.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
+            if (token) { location.href = `${APP_URL}/#/track/${token.toLowerCase()}`; return; }
+            if (!value) return show('Enter your order number or paste your tracking link.');
+            if (!/^\d{5}$/.test(zip)) return show('Enter the 5-digit ZIP code of the delivery address.');
+            show('');
+            try {
+                const r = await postJson('/public/track-lookup', { orderNumber: value, zip });
+                location.href = `${APP_URL}/#/track/${r.token}`;
+            } catch (err) {
+                show(err.message || "We couldn't find that order. Call (803) 949-7034 and we'll help.");
+            }
+        });
 
         // Vehicle list and capacities come from the app's fee settings (the options above are a fallback).
         fetch(API + '/public/pricing').then((r) => r.json()).then((p) => {

@@ -41,6 +41,23 @@ router.get('/pricing', asyncH(async (req, res) => {
   });
 }));
 
+// "Track a delivery" box on the website: order number + the delivery ZIP code -> tracking link. The ZIP
+// check keeps people from paging through order numbers to see other customers' addresses.
+router.post('/track-lookup', rateLimit({ windowMs: 10 * 60 * 1000, max: 20 }), asyncH(async (req, res) => {
+  const raw = str(req.body?.orderNumber).toUpperCase().replace(/\s+/g, '');
+  const orderNumber = /^\d+$/.test(raw) ? `CD-${raw}` : raw;
+  const zip = (str(req.body?.zip).match(/\d{5}/) || [])[0];
+  const notFound = () => new HttpError(404,
+    "We couldn't find that order. Check the order number and the delivery ZIP code, or use the tracking link from your email.");
+  if (!orderNumber || !zip) throw new HttpError(400, 'Enter the order number and the delivery ZIP code');
+  const { rows: [o] } = await db.query(
+    `SELECT o.public_token,
+            (SELECT string_agg(s.address, ' ') FROM stops s WHERE s.order_id = o.id AND s.type = 'dropoff') AS dropoffs
+     FROM orders o WHERE o.order_number = $1 AND o.status <> 'quote'`, [orderNumber]);
+  if (!o || !new RegExp(`\\b${zip}\\b`).test(o.dropoffs || '')) throw notFound();
+  res.json({ token: o.public_token });
+}));
+
 // A driver's profile photo, shown to customers on the tracking page and to dispatch.
 router.get('/driver-photo/:id', asyncH(async (req, res) => {
   const { rows } = await db.query(
