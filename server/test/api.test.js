@@ -517,7 +517,10 @@ test('landing page is served on www; the app on other hosts', async () => {
   });
   let r = await get('choicedeliverysc.com', '/');
   assert.equal(r.status, 200);
-  assert.match(r.body, /Your Choice, Our Priority/);
+  assert.match(r.body, /Same-day courier in Columbia, SC/);
+  assert.match(r.body, /Instant Quote &middot; Instant Booking &middot; Local Same-Day Delivery/);
+  assert.ok(r.body.indexOf('id="quote-from"') < r.body.indexOf('id="services"'), 'the instant quote comes first');
+  assert.doesNotMatch(r.body, /Starting at \$|Starting Price|Monday - Friday/, 'no $25 anchor; one set of hours');
   r = await get('choicedeliverysc.com', '/privacy');
   assert.match(r.body, /Privacy Policy/);
   assert.match(r.body, /Deleting your account/);
