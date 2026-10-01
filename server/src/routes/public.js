@@ -136,8 +136,8 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
     priceCents: quote.totalCents,
     maxPieceLbs: fees.maxPieceLbs,
     pieceProblem,
-    extraChargesNote: `Wait time over ${fees.waitFreeMinutes} minutes at a stop ($${(fees.waitBlockCents / 100).toFixed(2)} per `
-      + `${fees.waitBlockMinutes} min), loading help, stairs, return trips and failed attempts may be charged extra.`,
+    extraChargesNote: `Waiting more than ${fees.waitFreeMinutes} minutes at a stop, loading help, stairs, return trips `
+      + 'and failed attempts are added to the total if they happen.',
     outOfArea,
     note: quote.needsReview
       ? `${quote.reviewReasons.join('. ')}. We'll price this one by hand: book it and we'll email you the price before anything is charged.`

@@ -131,8 +131,8 @@ export function PriceBreakdown({ q }) {
   if (!q) return null;
   return html`<details class="breakdown-details"><summary>See price details</summary>
     <dl class="breakdown">
-      <dt>${q.vehicleType || 'Base delivery'} (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
-      ${q.extraMileageCents > 0 && html`<dt>Distance fee (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
+      <dt>${q.vehicleType || 'Delivery'} delivery, first ${q.baseMiles} miles</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
+      ${q.extraMileageCents > 0 && html`<dt>Extra distance (${q.extraMiles} more miles)</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
       ${q.rushFeeCents > 0 && html`<dt>Rush delivery</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
       ${q.weightFeeCents > 0 && html`<dt>Weight (${q.weightTier})</dt><dd>+${formatMoney(q.weightFeeCents)}</dd>`}
       ${q.extraStopsCents > 0 && html`<dt>Extra stops (${q.extraStops})</dt><dd>+${formatMoney(q.extraStopsCents)}</dd>`}
@@ -148,13 +148,13 @@ export function ChargesNotice({ fees }) {
     <section class="card notice">
       <h2>Good to know: possible extra charges</h2>
       <ul class="small">
-        <li><strong>Wait time:</strong> the first ${fees.waitFreeMinutes} minutes at each stop are free. After that it's ${formatMoney(fees.waitBlockCents)}
-          per ${fees.waitBlockMinutes} minutes, so please have the shipment and the receiver ready.</li>
+        <li><strong>Wait time:</strong> the first ${fees.waitFreeMinutes} minutes at each stop are free. Longer waits are added to your total,
+          so please have the shipment and the receiver ready.</li>
         <li><strong>Weight:</strong> the price uses the weight you enter. If the shipment is heavier, the difference can be charged.</li>
         <li><strong>${fees.maxPieceLbs} lbs per piece, max:</strong> we can't move any single piece heavier than that. If the driver finds
           one at pickup, they'll decline it and a failed-attempt charge may apply.</li>
         <li><strong>Loading help and stairs:</strong> if the driver has to load, unload or carry items inside and it wasn't
-          booked, it can be added (${formatMoney(fees.addOns.loading_help?.cents)} / ${formatMoney(fees.addOns.inside_delivery?.cents)}).</li>
+          booked, it can be added to your total.</li>
         <li><strong>Return trips and failed attempts:</strong> if no one is available, the location is closed, or items must go back to the pickup.</li>
       </ul>
       <p class="small muted">We email you the reason and amount with any additional charge.</p>
@@ -310,8 +310,7 @@ export function NewOrderPage() {
                 <input type="radio" name="serviceLevel" value=${l.id} checked=${v.serviceLevel === l.id}
                   onChange=${() => setV({ ...v, serviceLevel: l.id })} />
                 <span><strong>${l.id === 'rush' ? 'Rush delivery' : 'Standard delivery'}</strong>
-                  <span class="muted small">${l.id === 'rush' ? '2 hours or less' : 'Priced by vehicle and distance'}</span></span>
-                <span class="price push">${l.feeCents ? `+${formatMoney(l.feeCents)}` : ''}</span>
+                  <span class="muted small">${l.id === 'rush' ? 'Picked up right away and delivered in about 2 hours' : 'Delivered today'}</span></span>
               </label>`)}
           </div>
           <div class="field">
@@ -335,13 +334,12 @@ export function NewOrderPage() {
                   <label class=${`choice ${v.addOns.includes(k) ? 'selected' : ''}`}>
                     <input type="checkbox" checked=${v.addOns.includes(k)} onChange=${() => toggleAddOn(k)} />
                     <span><strong>${a.label}</strong><span class="muted small">${a.description}</span></span>
-                    <span class="price push">+${formatMoney(a.cents)}</span>
                   </label>`)}
               </div>
             </div>`}
           <div class="estimate">
             <div class="estimate-head">
-              <span><strong>Estimated price</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
+              <span><strong>Estimated total</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
               <span class="price">${pieceProblem ? '—' : needsReview ? 'Custom' : quote ? formatMoney(quote.totalCents) : '—'}</span>
             </div>
             ${pieceProblem ? html`<div class="alert error" role="alert"><strong>Can't book this shipment:</strong> ${`${pieceProblem} Split it into lighter pieces, or call (803) 949-7034.`}</div>`

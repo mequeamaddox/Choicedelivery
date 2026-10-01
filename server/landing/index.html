@@ -204,7 +204,7 @@
                                 <div id="quote-price" class="text-lg font-bold text-choice-teal"></div>
                                 <details class="text-left mt-2"><summary class="text-sm text-choice-teal font-semibold cursor-pointer">See price details</summary><ul id="quote-breakdown" class="text-sm text-gray-700 mt-2 space-y-1"></ul></details>
                                 <div id="quote-note" class="text-sm text-gray-600 mt-2"></div>
-                                <p id="quote-extras" class="text-xs text-gray-500 mt-2 text-left">Wait time over 15 minutes at a stop, loading help, stairs, return trips and failed attempts may be charged extra.</p>
+                                <p id="quote-extras" class="text-xs text-gray-500 mt-2 text-left">Waiting more than 15 minutes at a stop, loading help, stairs, return trips and failed attempts are added to the total if they happen.</p>
                                 <a href="https://app.choicedeliverysc.com/#/signup" class="block mt-4 bg-choice-teal text-white py-3 rounded-lg font-semibold text-lg hover:opacity-90">Book This Delivery</a>
                                 <p class="text-xs text-gray-500 mt-2">Book and pay online in about 2 minutes. Already have an account? <a href="https://app.choicedeliverysc.com" class="text-choice-teal underline">Log in</a></p>
                             </div>
@@ -784,8 +784,8 @@
                 });
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
                 document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price' : `Estimated: ${money(q.totalCents)}`;
-                const lines = [[`${q.vehicleType || 'Base delivery'} (first ${q.baseMiles} miles)`, money(q.baseFeeCents)]];
-                if (q.extraMileageCents > 0) lines.push([`Distance fee (${q.extraMiles} mi × ${money(q.perMileCents)})`, '+' + money(q.extraMileageCents)]);
+                const lines = [[`${q.vehicleType || 'Car'} delivery, first ${q.baseMiles} miles`, money(q.baseFeeCents)]];
+                if (q.extraMileageCents > 0) lines.push([`Extra distance (${q.extraMiles} more miles)`, '+' + money(q.extraMileageCents)]);
                 if (q.rushFeeCents > 0) lines.push(['Rush delivery', '+' + money(q.rushFeeCents)]);
                 if (q.weightFeeCents > 0) lines.push([`Weight (${q.weightTier})`, '+' + money(q.weightFeeCents)]);
                 (q.surcharges || []).forEach((sc) => lines.push([sc.label, '+' + money(sc.cents)]));
