@@ -1344,7 +1344,8 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
   const stripe = require('../src/stripe');
   // A completed delivery for d1 to pay out.
   const completeFor = async (token) => {
-    let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ stops: [
+    // Booked by dispatch (billed to the account), so it's open to drivers even while Stripe is on.
+    let r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ organizationId: ids.acmeOrg, stops: [
       { type: 'pickup', address: '1 Main St', location: { lat: 34, lng: -81 } },
       { type: 'dropoff', address: '2 Oak Ave', location: { lat: 34.01, lng: -81 } }] }) });
     const id = r.data.id;
@@ -1367,10 +1368,15 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
   const calls = [];
   let account = { id: 'acct_d1', payouts_enabled: false, details_submitted: false };
   let transferFails = true;
+  let instantFails = false;
   stripe.setFetch(async (url, opts) => {
     const path = url.replace('https://api.stripe.com/v1', '');
     calls.push({ method: opts.method, path, body: opts.body ? Object.fromEntries(new URLSearchParams(opts.body)) : null,
-      idem: opts.headers['Idempotency-Key'] });
+      idem: opts.headers['Idempotency-Key'], account: opts.headers['Stripe-Account'] });
+    if (path === '/payouts') {
+      if (instantFails) return { ok: false, status: 400, json: async () => ({ error: { code: 'invalid_request_error', message: 'This bank account does not support instant payouts' } }) };
+      return { ok: true, json: async () => ({ id: 'po_instant' }) };
+    }
     if (path === '/accounts' && opts.method === 'POST') return { ok: true, json: async () => account };
     if (path === '/accounts/acct_d1') return { ok: true, json: async () => account };
     if (path === '/account_links') return { ok: true, json: async () => ({ url: 'https://connect.stripe.com/setup/e/abc' }) };
@@ -1428,7 +1434,60 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
     assert.ok(r.data.some((d) => d.orders.some((o) => o.id === o2.id && o.payoutMethod === 'stripe')));
 
     r = await call('POST', '/payouts/me/stripe/dashboard', { token: t.d1 });
-    assert.equal(r.data.url, 'https://connect.stripe.com/express/xyz');
+    assert.equal(r.status, 404, 'drivers are not sent to Stripe');
+    const createdAcct = calls.find((c) => c.path === '/accounts' && c.method === 'POST');
+    assert.equal(createdAcct.body['business_profile[url]'], 'https://choicedeliverysc.com', 'sign-up is pre-filled');
+    assert.ok(createdAcct.body['individual[first_name]'], 'name is pre-filled');
+
+    // Get paid now: $1.50 + 1.5% kept, the rest paid out instantly to their debit card.
+    const o3 = await completeFor(t.d1);
+    r = await call('GET', '/payouts/me', { token: t.d1 });
+    const owed = r.data.owedCents;
+    const fee = 150 + Math.round(owed * 0.015);
+    assert.equal(r.data.instant.feeCents, fee);
+    assert.equal(r.data.instant.netCents, owed - fee);
+    assert.ok(r.data.nextPayoutAt, 'shows the next Wednesday payout');
+    assert.equal(new Date(r.data.nextPayoutAt).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric' }), 'Wed 9 AM');
+    r = await call('POST', '/payouts/me/instant', { token: t.d1, body: { expectedNetCents: owed - fee - 1 } });
+    assert.equal(r.status, 409, 'a changed balance is not paid');
+    r = await call('POST', '/payouts/me/instant', { token: t.d1, body: { expectedNetCents: owed - fee } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.instant, true);
+    assert.equal(r.data.feeCents, fee);
+    assert.equal(r.data.netCents, owed - fee);
+    let tr = calls.filter((c) => c.path === '/transfers').at(-1);
+    assert.equal(Number(tr.body.amount), owed - fee, 'the fee stays with Choice Delivery');
+    const po = calls.filter((c) => c.path === '/payouts').at(-1);
+    assert.equal(po.body.method, 'instant');
+    assert.equal(po.account, 'acct_d1', 'paid out from the driver\'s Stripe account');
+    r = await call('GET', `/orders/${o3.id}`, { token: t.admin });
+    assert.ok(r.data.driverPaidAt);
+
+    // A bank that can't take instant payouts: full amount by standard deposit, no fee.
+    const o4 = await completeFor(t.d1);
+    instantFails = true;
+    r = await call('POST', '/payouts/me/instant', { token: t.d1, body: {} });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.instant, false);
+    assert.equal(r.data.instantFailed, true);
+    assert.equal(r.data.feeCents, 0);
+    assert.equal(r.data.netCents, o4.driverPayCents);
+    tr = calls.filter((c) => c.path === '/transfers').slice(-2);
+    assert.equal(tr.reduce((n, c) => n + Number(c.body.amount), 0), o4.driverPayCents, 'the fee is sent back');
+    instantFails = false;
+
+    // The Wednesday batch pays everyone with direct deposit, once per Wednesday.
+    const o5 = await completeFor(t.d1);
+    const payouts = require('../src/driver-payouts');
+    const wed = new Date('2026-10-07T13:05:00Z'); // Wednesday 9:05 AM in Columbia
+    assert.equal((await payouts.runWeeklyBatch(new Date('2026-10-06T13:05:00Z'))).ran, false, 'not on Tuesday');
+    let batch = await payouts.runWeeklyBatch(wed);
+    assert.equal(batch.ran, true);
+    assert.ok(batch.paid.some((p) => p.driver.id === ids.d1 || p.netCents >= o5.driverPayCents));
+    r = await call('GET', `/orders/${o5.id}`, { token: t.admin });
+    assert.ok(r.data.driverPaidAt, 'paid in the batch');
+    batch = await payouts.runWeeklyBatch(new Date('2026-10-07T15:00:00Z'));
+    assert.equal(batch.ran, false, 'only once per Wednesday');
   } finally {
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.PUBLIC_URL;

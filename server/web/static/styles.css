@@ -364,3 +364,7 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stat strong { font-size: 1.25rem; }
 @media (max-width: 520px) { .stat-row { grid-template-columns: 1fr; } }
 .stack-sm { display: flex; flex-direction: column; gap: .35rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.payout-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.payout-options > div { border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; }
+.payout-options p { margin: 0; }
+@media (max-width: 560px) { .payout-options { grid-template-columns: 1fr; } }

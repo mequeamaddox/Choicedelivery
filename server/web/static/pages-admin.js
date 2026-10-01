@@ -639,7 +639,7 @@ export function PayoutsPage() {
   const short = (a) => (a || '').split(',')[0];
   return html`
     <${Layout}>
-      <${PageHeader} title="Driver pay" subtitle="What drivers have earned on completed deliveries. Pay through Stripe (direct deposit), or send it another way and mark it paid." />
+      <${PageHeader} title="Driver pay" subtitle="Drivers with direct deposit are paid automatically every Wednesday at 9 AM (free), or can get paid instantly for $1.50 + 1.5%. Pay early with Pay with Stripe, or mark others paid when you pay them another way." />
       <div class="tabs" role="tablist">
         <button class=${`tab ${tab === 'unpaid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'unpaid'} onClick=${() => { setTab('unpaid'); setMsg({}); }}>Owed</button>
         <button class=${`tab ${tab === 'paid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'paid'} onClick=${() => { setTab('paid'); setMsg({}); }}>Paid (last 60 days)</button>
@@ -670,7 +670,7 @@ export function PayoutsPage() {
                   <td data-label="Delivered" class="small">${formatDate(o.completedAt)}</td>
                   <td data-label="Route" class="small">${short(o.pickup)} → ${short(o.dropoff)}</td>
                   <td data-label="Pay" class="num">${formatMoney(o.driverPayCents)}</td>
-                  ${tab === 'paid' && html`<td data-label="Paid" class="small">${formatDate(o.driverPaidAt)}${o.payoutMethod === 'stripe' ? ' · Stripe' : o.payoutMethod === 'manual' ? ' · by hand' : ''}</td>`}
+                  ${tab === 'paid' && html`<td data-label="Paid" class="small">${formatDate(o.driverPaidAt)} · ${o.payoutMethod === 'manual' ? 'by hand' : o.payoutKind === 'batch' ? 'Wednesday deposit' : o.payoutKind === 'instant' ? 'instant (driver)' : 'direct deposit'}</td>`}
                 </tr>`)}
               </tbody>
             </table>

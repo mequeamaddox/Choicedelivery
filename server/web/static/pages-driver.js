@@ -129,29 +129,57 @@ function DriverJobsList() {
     <//>`;
 }
 
-// Direct deposit through Stripe: set up once (Stripe's secure pages collect bank and tax details),
-// then dispatch's payouts go straight to the driver's bank.
-function DirectDeposit() {
+// Getting paid: set up direct deposit once (Stripe's secure form collects the bank account, and a debit
+// card for instant pay), then either wait for the free Wednesday bank deposit or get paid now to the
+// debit card for a small fee.
+function Payouts({ earnings, onPaid }) {
   const st = useApi('/payouts/me/stripe');
   const [error, setError] = useState(null);
+  const [done, setDone] = useState(null);
   const [busy, setBusy] = useState(false);
-  const go = (path) => async () => {
-    setBusy(true); setError(null);
-    try { window.location.href = (await api(path, { method: 'POST' })).url; } catch (err) { setError(err); setBusy(false); }
-  };
   const s = st.data;
-  if (!s?.available) return null;
+  const e = earnings;
+  if (!s?.available || !e) return null;
+  const setUp = async () => {
+    setBusy(true); setError(null);
+    try { window.location.href = (await api('/payouts/me/stripe/onboard', { method: 'POST' })).url; } catch (err) { setError(err); setBusy(false); }
+  };
+  const payNow = async () => {
+    if (!window.confirm(`Get ${formatMoney(e.instant.netCents)} now? A ${formatMoney(e.instant.feeCents)} fee ($1.50 + 1.5%) comes out of your ${formatMoney(e.owedCents)}.`)) return;
+    setBusy(true); setError(null); setDone(null);
+    try {
+      const r = await api('/payouts/me/instant', { method: 'POST', body: { expectedNetCents: e.instant.netCents } });
+      setDone(r.instant
+        ? `${formatMoney(r.netCents)} is on its way to your debit card. It usually arrives within 30 minutes.`
+        : `Your bank can't take instant payments, so we sent the full ${formatMoney(r.netCents)} by regular bank deposit (1–2 business days), no fee.`);
+      onPaid();
+    } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  const next = e.nextPayoutAt && new Date(e.nextPayoutAt).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   return html`
     <section class="card stack">
-      <h2>Direct deposit ${s.payoutsEnabled ? html`<span class="badge green">Ready</span>` : s.connected ? html`<span class="badge amber">Not finished</span>` : ''}</h2>
-      <${Alert} error=${error} />
-      ${s.payoutsEnabled ? html`
-        <p class="small muted">Your pay is sent to your bank through Stripe. See payouts, change your bank account or get tax forms in Stripe.</p>
-        <button class="btn" disabled=${busy} onClick=${go('/payouts/me/stripe/dashboard')}>Open my Stripe payouts</button>`
+      <h2>Getting paid ${s.payoutsEnabled ? html`<span class="badge green">Direct deposit on</span>` : s.connected ? html`<span class="badge amber">Not finished</span>` : ''}</h2>
+      <${Alert} error=${error} /><${Alert} tone="success">${done}<//>
+      ${!s.payoutsEnabled ? html`
+        <p class="small muted">${s.connected ? 'Finish your direct-deposit setup to get paid.'
+          : 'Add your bank account (and a debit card if you want instant pay). Stripe, our payments partner, keeps them secure; it takes about 5 minutes.'}</p>
+        <button class="btn primary" disabled=${busy} onClick=${setUp}>${busy ? 'Opening…' : s.connected ? 'Finish direct-deposit setup' : 'Set up direct deposit'}</button>`
       : html`
-        <p class="small muted">${s.connected ? 'Finish your Stripe setup to get paid by direct deposit.'
-          : 'Get paid straight to your bank account. Stripe, our payments partner, securely collects your bank and tax details; it takes about 5 minutes.'}</p>
-        <button class="btn primary" disabled=${busy} onClick=${go('/payouts/me/stripe/onboard')}>${busy ? 'Opening Stripe…' : s.connected ? 'Finish direct-deposit setup' : 'Set up direct deposit'}</button>`}
+        <div class="payout-options">
+          <div>
+            <strong>Free bank deposit</strong>
+            <p class="small muted">Everything you're owed goes to your bank ${next ? html`<strong>${next}</strong>` : 'every Wednesday at 9 AM'}. Arrives in 1–2 business days.</p>
+          </div>
+          <div>
+            <strong>Instant to your debit card</strong>
+            <p class="small muted">$1.50 + 1.5% fee. Usually arrives within 30 minutes.</p>
+            ${e.owedCents > 0 && html`
+              <button class="btn primary" disabled=${busy || !e.instant.available} onClick=${payNow}>
+                ${busy ? 'Sending…' : `Get ${formatMoney(e.instant.netCents)} now`}
+              </button>
+              ${!e.instant.available && html`<p class="small muted">Not enough owed yet for instant pay.</p>`}`}
+          </div>
+        </div>`}
     </section>`;
 }
 
@@ -167,7 +195,7 @@ export function DriverHistoryPage() {
         <div class="stat"><span class="muted small">Last 7 days</span><strong>${formatMoney(e.last7DaysCents)}</strong></div>
         <div class="stat"><span class="muted small">Paid, last 60 days</span><strong>${formatMoney(e.paidLast60DaysCents)}</strong></div>
       </div>`}
-      <${DirectDeposit} />
+      <${Payouts} earnings=${e} onPaid=${() => { earnings.reload(); done.reload(); }} />
       <${Alert} error=${done.error} />
       ${done.loading ? html`<${Spinner} />` : !done.data?.length ? html`<${Empty} title="No completed jobs yet" />` : html`
         <div class="job-list">${done.data.map((o) => html`<${JobCard} key=${o.id} o=${o}

@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Linking, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Alert, Linking, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api } from '../../lib/client';
 import { formatDate, formatMoney } from '../../lib/api';
 import { useLoader } from '../../lib/useLoader';
 import { colors } from '../../lib/theme';
-import { Badge, Button, Card, ErrorBox, H2, Muted } from '../../components/ui';
+import { Badge, Button, Card, ErrorBox, H2, Muted, Notice } from '../../components/ui';
 import JobCard from '../../components/JobCard';
 
 function Stat({ label, cents }) {
@@ -17,35 +17,65 @@ function Stat({ label, cents }) {
   );
 }
 
-// Direct deposit through Stripe. Sign-up happens on Stripe's site in the browser; the screen reloads
-// (and re-checks the status) when the driver comes back to the app.
-function DirectDeposit({ setup }) {
+// Getting paid: set up direct deposit once in Stripe's secure form (bank account, plus a debit card for
+// instant pay), then wait for the free Wednesday bank deposit or get paid now to the debit card for a fee.
+// The screen reloads (re-checking the setup) when the driver comes back to the app.
+function Payouts({ setup, earnings, onPaid }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  if (!setup?.available) return null;
-  const open = (fn) => async () => {
+  const [done, setDone] = useState(null);
+  if (!setup?.available || !earnings) return null;
+  const e = earnings;
+  const setUp = async () => {
     setBusy(true); setError(null);
-    try { await Linking.openURL((await fn()).url); } catch (e) { setError(e); } finally { setBusy(false); }
+    try { await Linking.openURL((await api.startPayoutSetup()).url); } catch (err) { setError(err); } finally { setBusy(false); }
   };
+  const send = async () => {
+    setBusy(true); setError(null); setDone(null);
+    try {
+      const r = await api.instantPayout(e.instant.netCents);
+      setDone(r.instant
+        ? `${formatMoney(r.netCents)} is on its way to your debit card. It usually arrives within 30 minutes.`
+        : `Your bank can't take instant payments, so we sent the full ${formatMoney(r.netCents)} by regular bank deposit (1–2 business days), no fee.`);
+      onPaid();
+    } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  const payNow = () => Alert.alert(
+    `Get ${formatMoney(e.instant.netCents)} now?`,
+    `A ${formatMoney(e.instant.feeCents)} fee ($1.50 + 1.5%) comes out of your ${formatMoney(e.owedCents)}. It goes to your debit card, usually within 30 minutes.`,
+    [{ text: 'Cancel', style: 'cancel' }, { text: 'Get paid now', onPress: send }],
+  );
+  const next = e.nextPayoutAt && new Date(e.nextPayoutAt).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   return (
-    <Card style={{ gap: 8 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <H2>Direct deposit</H2>
-        {setup.payoutsEnabled ? <Badge label="Ready" tone="green" /> : setup.connected ? <Badge label="Not finished" tone="amber" /> : null}
+    <Card style={{ gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <H2>Getting paid</H2>
+        {setup.payoutsEnabled ? <Badge label="Direct deposit on" tone="green" /> : setup.connected ? <Badge label="Not finished" tone="amber" /> : null}
       </View>
       <ErrorBox error={error} />
-      {setup.payoutsEnabled ? (
+      {done ? <Notice tone="green">{done}</Notice> : null}
+      {!setup.payoutsEnabled ? (
         <>
-          <Muted small>Your pay goes straight to your bank through Stripe. See payouts, change your bank or get tax forms in Stripe.</Muted>
-          <Button title="Open my Stripe payouts" variant="secondary" loading={busy} onPress={open(api.payoutDashboard)} />
+          <Muted small>
+            {setup.connected ? 'Finish your direct-deposit setup to get paid.'
+              : 'Add your bank account (and a debit card if you want instant pay). Stripe, our payments partner, keeps them secure; it takes about 5 minutes.'}
+          </Muted>
+          <Button title={setup.connected ? 'Finish direct-deposit setup' : 'Set up direct deposit'} loading={busy} onPress={setUp} />
         </>
       ) : (
         <>
-          <Muted small>
-            {setup.connected ? 'Finish your Stripe setup to get paid by direct deposit.'
-              : 'Get paid straight to your bank. Stripe, our payments partner, securely collects your bank and tax details (about 5 minutes).'}
-          </Muted>
-          <Button title={setup.connected ? 'Finish direct-deposit setup' : 'Set up direct deposit'} loading={busy} onPress={open(api.startPayoutSetup)} />
+          <View style={{ gap: 2 }}>
+            <Text style={{ fontWeight: '700', color: colors.text }}>Free bank deposit</Text>
+            <Muted small>Everything you're owed goes to your bank {next ? `on ${next}` : 'every Wednesday at 9 AM'}. Arrives in 1–2 business days.</Muted>
+          </View>
+          <View style={{ gap: 6 }}>
+            <Text style={{ fontWeight: '700', color: colors.text }}>Instant to your debit card</Text>
+            <Muted small>$1.50 + 1.5% fee. Usually arrives within 30 minutes.</Muted>
+            {e.owedCents > 0 ? (
+              <Button title={`Get ${formatMoney(e.instant.netCents)} now`} loading={busy} disabled={!e.instant.available} onPress={payNow} />
+            ) : null}
+            {e.owedCents > 0 && !e.instant.available ? <Muted small>Not enough owed yet for instant pay.</Muted> : null}
+          </View>
         </>
       )}
     </Card>
@@ -72,7 +102,7 @@ export default function History() {
           <Stat label="Paid (60 days)" cents={e.paidLast60DaysCents} />
         </View>
       ) : null}
-      <DirectDeposit setup={done.data?.setup} />
+      <Payouts setup={done.data?.setup} earnings={e} onPaid={done.refresh} />
       {done.loading ? <Muted>Loading…</Muted> : !orders?.length ? <Card><Muted>No completed deliveries yet.</Muted></Card>
         : <Muted small>{orders.length} completed deliveries</Muted>}
       {(orders || []).map((o) => (

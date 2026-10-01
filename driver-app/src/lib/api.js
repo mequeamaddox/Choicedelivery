@@ -61,9 +61,10 @@ export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch
     earnings: () => request('/payouts/me'),
     // Direct deposit (Stripe): { available, connected, payoutsEnabled, detailsSubmitted }
     payoutSetup: () => request('/payouts/me/stripe'),
-    // Each returns { url } of a Stripe page to open in the browser.
+    // Returns { url } of Stripe's secure setup form to open in the browser.
     startPayoutSetup: () => request('/payouts/me/stripe/onboard', { method: 'POST' }),
-    payoutDashboard: () => request('/payouts/me/stripe/dashboard', { method: 'POST' }),
+    // Get paid now to the debit card (fee taken out). expectedNetCents guards against a changed balance.
+    instantPayout: (expectedNetCents) => request('/payouts/me/instant', { method: 'POST', body: { expectedNetCents } }),
     job: (id) => request(`/orders/${encodeURIComponent(id)}`),
     accept: (id) => request(`/orders/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
     // location: { lat, lng, accuracy?, mocked? } from the phone; the driver must be at the stop.

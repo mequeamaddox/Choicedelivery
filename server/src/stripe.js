@@ -18,9 +18,11 @@ function encode(params, prefix = '', out = new URLSearchParams()) {
   return out;
 }
 
-async function stripeRequest(method, path, params, { idempotencyKey } = {}) {
+// `account` makes the request on behalf of a connected account (Stripe-Account header).
+async function stripeRequest(method, path, params, { idempotencyKey, account } = {}) {
   if (!enabled()) throw Object.assign(new Error('Payments are not set up yet'), { status: 503 });
   const headers = { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` };
+  if (account) headers['Stripe-Account'] = account;
   if (params) headers['Content-Type'] = 'application/x-www-form-urlencoded';
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   const res = await fetchImpl(`https://api.stripe.com/v1${path}`, {
@@ -124,13 +126,25 @@ function verifyWebhook(rawBody, header, secret = process.env.STRIPE_WEBHOOK_SECR
 // ---- Stripe Connect: paying drivers ----
 // Each driver gets an Express account. Stripe hosts the sign-up (identity, bank account, tax info)
 // and pays out to the driver's bank; we send money to it from the platform balance with a transfer.
-const createDriverAccount = ({ userId, email }) => stripeRequest('POST', '/accounts', {
+// What we already know is filled in up front, so Stripe's sign-up asks the driver as little as
+// possible (no industry or website questions; name, email and phone just need confirming).
+const createDriverAccount = ({ userId, email, firstName, lastName, phone }) => stripeRequest('POST', '/accounts', {
   type: 'express',
   country: 'US',
   email: email || undefined,
   business_type: 'individual',
   capabilities: { transfers: { requested: true } },
-  business_profile: { mcc: '4215', product_description: 'Independent delivery driver for Choice Delivery SC' },
+  business_profile: {
+    mcc: '4215',
+    product_description: 'Independent delivery driver for Choice Delivery SC',
+    url: 'https://choicedeliverysc.com',
+  },
+  individual: {
+    first_name: firstName || undefined,
+    last_name: lastName || undefined,
+    email: email || undefined,
+    phone: phone || undefined,
+  },
   metadata: { user_id: userId },
 // Keyed per minute: a double tap creates one account, but a retry later (say, after Connect was switched
 // on) isn't answered with Stripe's saved reply to the earlier failed attempt, which it keeps for 24 hours.
@@ -151,8 +165,14 @@ const transferToDriver = ({ payoutId, accountId, cents, description }) => stripe
   transfer_group: `payout-${payoutId}`, metadata: { payout_id: payoutId },
 }, { idempotencyKey: `payout-${payoutId}` });
 
+// Pays the connected account's Stripe balance out to their bank right away (typically within 30
+// minutes). Fails if their bank or card doesn't support instant payouts.
+const instantPayout = ({ accountId, cents, payoutId }) => stripeRequest('POST', '/payouts', {
+  amount: cents, currency: 'usd', method: 'instant', metadata: { payout_id: payoutId },
+}, { account: accountId, idempotencyKey: `instant-${payoutId}` });
+
 module.exports = {
   enabled, mode, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
   ensureWebhook, webhookReady,
-  createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver,
+  createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver, instantPayout,
 };

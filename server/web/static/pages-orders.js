@@ -441,6 +441,10 @@ function DispatchPanel({ order, onChange, setError }) {
   useEffect(() => { setPay(order.driverPayCents == null ? '' : (order.driverPayCents / 100).toFixed(2)); }, [order.driverPayCents]);
   const closed = ['completed', 'cancelled'].includes(order.status);
   const setDriverPay = (cents) => async () => onChange(await api(`/orders/${order.id}/driver-pay`, { method: 'PUT', body: { cents } }));
+  const payDriver = (viaStripe) => async () => {
+    await api(viaStripe ? '/payouts/pay-stripe' : '/payouts/mark-paid', { method: 'POST', body: { orderIds: [order.id] } });
+    onChange(await api(`/orders/${order.id}`));
+  };
   const markDelivered = async () => {
     const reason = window.prompt(`Mark ${order.orderNumber} delivered?\n\nWhy? (e.g. "driver's phone died, confirmed by phone with receiver")`);
     if (reason == null) return;
@@ -485,6 +489,18 @@ function DispatchPanel({ order, onChange, setError }) {
             ${order.driverPayIsCustom && !order.driverPaidAt && html`<${ActionButton} class="btn small" onError=${setError} onClick=${setDriverPay(null)}>Use rate<//>`}
           </div>
         <//>`}
+      ${order.status === 'completed' && order.driver && order.driverPayCents > 0 && html`
+        <div class="stack-sm">
+          ${order.driverPaidAt
+            ? html`<p class="small"><span class="badge green">Driver paid</span> ${formatMoney(order.driverPayCents)} on ${formatDate(order.driverPaidAt)}</p>`
+            : order.driver.directDeposit
+            ? html`<${ActionButton} class="btn primary block" onError=${setError} onClick=${payDriver(true)}
+                confirmText=${`Send ${formatMoney(order.driverPayCents)} to ${order.driver.name} now by direct deposit?`}>Pay driver ${formatMoney(order.driverPayCents)}<//>
+              <p class="muted small">Or leave it: it goes out free in Wednesday's 9 AM payout.</p>`
+            : html`<${ActionButton} class="btn block" onError=${setError} onClick=${payDriver(false)}
+                confirmText=${`${order.driver.name} hasn't set up direct deposit. Mark ${formatMoney(order.driverPayCents)} as paid another way (Cash App, Zelle, check)?`}>Mark driver paid ${formatMoney(order.driverPayCents)}<//>
+              <p class="muted small">${order.driver.name} hasn't set up direct deposit, so pay them another way and mark it here.</p>`}
+        </div>`}
       ${['pending', ...ACTIVE_STATUSES].includes(order.status) && html`
         <div class="stack-sm">
           <${ActionButton} class="btn block" onError=${setError} onClick=${markDelivered}>Mark delivered<//>

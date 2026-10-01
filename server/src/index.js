@@ -99,6 +99,9 @@ async function start() {
   require('./stripe').ensureWebhook(db)
     .then((r) => console.log(`Stripe webhook: ${r.status}${r.url ? ` (${r.url}, ${r.mode} mode)` : ''}${r.reason ? ` - ${r.reason}` : ''}`))
     .catch((e) => console.error('Stripe webhook setup failed:', e.message));
+
+  // Drivers with direct deposit are paid every Wednesday at 9:00 AM (Columbia time).
+  require('./driver-payouts').startWeeklyBatchTimer();
 }
 
 start();

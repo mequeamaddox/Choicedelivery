@@ -255,7 +255,7 @@ const ORDER_SELECT = `
   SELECT o.*, org.name AS organization_name,
          (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status = 'due')::int AS balance_due_cents,
          (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status <> 'waived')::int AS extra_charges_cents,
-         d.name AS driver_name, d.phone_number AS driver_phone,
+         d.name AS driver_name, d.phone_number AS driver_phone, d.stripe_payouts_enabled AS driver_direct_deposit,
          d.last_location AS driver_location, d.location_updated_at AS driver_location_updated_at,
          dv.color AS driver_vehicle_color, dv.make AS driver_vehicle_make, dv.model AS driver_vehicle_model,
          dv.plate AS driver_vehicle_plate, dp.updated_at AS driver_photo_at
@@ -362,6 +362,7 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
   }
   if (user && isStaff(user)) {
     Object.assign(out, { driverPayCents: o.driver_pay_cents, driverPayIsCustom: o.driver_pay_is_custom, driverPaidAt: o.driver_paid_at });
+    if (out.driver) out.driver.directDeposit = !!o.driver_direct_deposit;
   }
   return user?.role === 'driver' ? forDriver(out, o) : out;
 }
