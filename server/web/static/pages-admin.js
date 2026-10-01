@@ -460,7 +460,7 @@ function FeesEditor() {
         </fieldset>`)}
       <h3>Rush & surcharges</h3>
       <div class="grid-2">
-        <${Field} label="Rush / expedited ($)" hint="2 hours or less.">
+        <${Field} label="Rush / expedited ($)" hint="Picked up right away. About 2 hours within 50 miles; longer trips take as long as the drive.">
           <input type="number" min="0" step="0.01" value=${dollars(fees.rushCents)} onInput=${(e) => set({ rushCents: cents(e.target.value) })} />
         <//>
       </div>

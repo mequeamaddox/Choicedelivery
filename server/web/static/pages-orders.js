@@ -1,6 +1,6 @@
 import {
   html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
-  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath,
+  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText,
 } from './lib.js';
 import {
   Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
@@ -310,7 +310,7 @@ export function NewOrderPage() {
                 <input type="radio" name="serviceLevel" value=${l.id} checked=${v.serviceLevel === l.id}
                   onChange=${() => setV({ ...v, serviceLevel: l.id })} />
                 <span><strong>${l.id === 'rush' ? 'Rush delivery' : 'Standard delivery'}</strong>
-                  <span class="muted small">${l.id === 'rush' ? 'Picked up right away and delivered in about 2 hours' : 'Delivered today'}</span></span>
+                  <span class="muted small">${l.id === 'rush' ? `Picked up right away and driven straight there. ${rushTimeText(quote?.distanceMiles)}.` : 'Delivered today'}</span></span>
                 ${l.feeCents ? html`<span class="price push">+${formatMoney(l.feeCents)}</span>` : ''}
               </label>`)}
           </div>
@@ -794,7 +794,7 @@ export function OrderPage({ id }) {
           <section class="card">
             <h2>Shipment</h2>
             <dl class="facts">
-              <dt>Service</dt><dd>${SERVICE_LEVEL_LABELS[order.serviceLevel] || '—'}</dd>
+              <dt>Service</dt><dd>${SERVICE_LEVEL_LABELS[order.serviceLevel] || '—'}${order.serviceLevel === 'rush' ? ` · ${rushTimeText(order.distanceMiles).toLowerCase()}` : ''}</dd>
               <dt>Vehicle</dt><dd>${order.vehicleType || '—'}</dd>
               <dt>Weight</dt><dd>${order.weight || '—'}</dd>
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}${order.maxPieceLbs != null ? ` · heaviest ${order.maxPieceLbs} lbs` : ''}</dd>

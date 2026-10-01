@@ -3,7 +3,7 @@
 //
 //   By vehicle, each base covering the first 10 miles:
 //     Car $25 then $1.50/mile · Minivan $35 then $2.00/mile · Pickup Truck $45 then $2.50/mile
-//   + $50 rush (2 hours or less)
+//   + $50 rush (picked up right away; about 2 hours within 50 miles)
 //   + surcharges: weekend $15, holiday $25 (instead of the weekend charge, not on top of it),
 //     and from the original app: high demand (3+ open orders) $15, bad weather $15 (switched on by
 //     dispatch); lunch rush (11:30am-1:30pm) $5 exists but is off
@@ -266,8 +266,19 @@ function waitCharge(minutes, fees = DEFAULT_FEES) {
 
 const SERVICE_LEVELS = {
   standard: { label: 'Standard delivery', description: 'Scheduled delivery', feeCents: 0 },
-  rush: { label: 'Rush delivery', description: '2 hours or less', feeCents: RUSH_FEE_CENTS },
+  rush: { label: 'Rush delivery', description: 'Picked up right away and driven straight there. About 2 hours for local trips.', feeCents: RUSH_FEE_CENTS },
 };
+
+// Rush means "picked up right away, driven straight there". Only trips up to RUSH_LOCAL_MILES can be
+// promised in about 2 hours; longer ones take as long as the drive (30 min to get to the pickup, then
+// about 45 mph), rounded up to the half hour. A 200-mile rush is about 5 hours, never "2 hours".
+const RUSH_LOCAL_MILES = 50;
+function rushEstimate(miles) {
+  if (miles == null) return { local: null, hours: null, text: 'About 2 hours for local trips; longer trips take as long as the drive' };
+  if (miles <= RUSH_LOCAL_MILES) return { local: true, hours: 2, text: 'About 2 hours' };
+  const hours = Math.ceil(((30 + (miles / 45) * 60) / 60) * 2) / 2;
+  return { local: false, hours, text: `About ${hours} hours for this ${Math.round(miles)}-mile trip` };
+}
 
 // Monthly business plans: each included delivery is standard service covering the first
 // PLAN_LOCAL_MILES (miles beyond are per-mile); extra deliveries cost OVERAGE_CENTS, rush
@@ -369,6 +380,7 @@ function calculatePrice({
     extraMileageCents,
     serviceLevel: level,
     rushFeeCents,
+    rushEstimate: rushEstimate(miles),
     surcharges,
     weightLbs: lbs != null && Number.isFinite(lbs) ? lbs : null,
     weightTier,
@@ -415,5 +427,5 @@ module.exports = {
   holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES,
   businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS,
-  normalizeFees, getFees, driverPayFor, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
+  normalizeFees, getFees, driverPayFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
 };

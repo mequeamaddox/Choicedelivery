@@ -1660,3 +1660,14 @@ test('shipping forms get a barcode code, stay within the company, and prefill a 
   r = await call('GET', `/shipping-forms/${form.code}`, { token: t.acme });
   assert.equal(r.data.orders[0].id, orderId);
 });
+
+test("rush only promises about 2 hours on local trips", () => {
+  const { rushEstimate, calculatePrice } = require('../src/pricing');
+  assert.equal(rushEstimate(20).text, 'About 2 hours');
+  assert.equal(rushEstimate(50).local, true);
+  const far = rushEstimate(200);
+  assert.equal(far.local, false);
+  assert.equal(far.hours, 5, '200 miles: 30 min to pickup + about 4.5 hours of driving');
+  assert.match(far.text, /About 5 hours for this 200-mile trip/);
+  assert.equal(calculatePrice({ distanceMiles: 120, serviceLevel: 'rush' }).rushEstimate.local, false);
+});

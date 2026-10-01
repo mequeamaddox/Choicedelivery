@@ -335,7 +335,7 @@ export function DriverJobPage({ id }) {
     <${Layout}>
       <a class="back" href="#/driver">← Jobs</a>
       <${PageHeader} title=${html`${order.orderNumber} <${StatusBadge} status=${order.status} />`}
-        subtitle=${`${SERVICE_LEVEL_LABELS[order.serviceLevel] || ''}${order.vehicleType ? ` · ${order.vehicleType}` : ''}${order.distanceMiles != null ? ` · about ${order.distanceMiles} mi` : ''}`} />
+        subtitle=${`${SERVICE_LEVEL_LABELS[order.serviceLevel] || ''}${order.serviceLevel === 'rush' ? ' (go straight there)' : ''}${order.vehicleType ? ` · ${order.vehicleType}` : ''}${order.distanceMiles != null ? ` · about ${order.distanceMiles} mi` : ''}`} />
       <${Alert} error=${error} />
       ${order.driverPayCents != null && html`<p class="card pay-card">Your pay: <strong>${formatMoney(order.driverPayCents)}</strong>${order.driverPaidAt ? html` <span class="badge green">Paid</span>` : ''}</p>`}
       ${order.description && html`<p class="card small"><strong>Load:</strong> ${order.description}${order.weight ? ` · ${order.weight}` : ''}${order.numberOfPieces ? ` · ${order.numberOfPieces} pcs` : ''}</p>`}

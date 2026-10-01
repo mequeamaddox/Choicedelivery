@@ -127,7 +127,7 @@ export default function Job() {
       <Stack.Screen options={{ title: order.orderNumber }} />
       <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <Badge status={order.status} />
-        {order.serviceLevel === 'rush' ? <Badge label="RUSH · 2 hours or less" tone="red" /> : null}
+        {order.serviceLevel === 'rush' ? <Badge label={order.distanceMiles != null && order.distanceMiles > 50 ? 'RUSH · go straight there' : 'RUSH · about 2 hours'} tone="red" /> : null}
         {order.scheduledAt ? <Muted small>Pickup {formatDate(order.scheduledAt)}</Muted> : null}
       </View>
       <ErrorBox error={error} />

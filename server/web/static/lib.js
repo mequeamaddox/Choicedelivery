@@ -180,7 +180,13 @@ export async function startCheckout(orderId) {
   window.location.assign(url);
 }
 
-export const SERVICE_LEVEL_LABELS = { standard: 'Standard', rush: 'Rush (2 hours or less)' };
+export const SERVICE_LEVEL_LABELS = { standard: 'Standard', rush: 'Rush' };
+// Rush is "about 2 hours" only for local trips (up to 50 miles); longer ones take as long as the drive.
+export function rushTimeText(miles) {
+  if (miles == null) return 'About 2 hours for local trips';
+  if (miles <= 50) return 'About 2 hours';
+  return `About ${Math.ceil(((30 + (miles / 45) * 60) / 60) * 2) / 2} hours for this ${Math.round(miles)}-mile trip`;
+}
 
 export const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Pickup Truck'];
 

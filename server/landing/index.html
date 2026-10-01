@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Same-Day Courier &amp; Delivery Service in Columbia, SC | Choice Delivery SC</title>
-    <meta name="description" content="Same-day courier and delivery service in Columbia, SC and across South Carolina. Rush delivery in about 2 hours, live driver tracking, photo and signature proof of delivery. Get an instant quote and book online in minutes.">
+    <meta name="description" content="Same-day courier and delivery service in Columbia, SC and across South Carolina. Rush delivery in about 2 hours around Columbia, live driver tracking, photo and signature proof of delivery. Get an instant quote and book online in minutes.">
     <link rel="canonical" href="https://choicedeliverysc.com/">
     <meta name="theme-color" content="#0f766e">
 
@@ -46,7 +46,7 @@
       }],
       "makesOffer": [
         { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Same-day courier delivery" } },
-        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Rush delivery (about 2 hours)" } },
+        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Rush delivery (about 2 hours locally)" } },
         { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Legal document and court filing delivery" } },
         { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Medical office courier" } }
       ]
@@ -194,7 +194,7 @@
                                 <label for="quote-level" class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
                                 <select id="quote-level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                                     <option value="standard">Standard Delivery</option>
-                                    <option value="rush">Rush Delivery (about 2 hours, +$50)</option>
+                                    <option value="rush">Rush Delivery (+$50)</option>
                                 </select>
                             </div>
                             <button onclick="calculateQuote()" class="w-full bg-choice-teal text-white py-3 rounded-lg font-semibold text-lg hover:opacity-90">
@@ -212,7 +212,7 @@
                     </div>
             <div class="md:self-start md:col-start-1 md:row-start-2">
                 <ul class="space-y-3 text-lg mb-8">
-                    <li class="flex items-start gap-3"><svg class="w-6 h-6 flex-none text-choice-mint" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Same-day delivery, or about 2 hours with Rush</span></li>
+                    <li class="flex items-start gap-3"><svg class="w-6 h-6 flex-none text-choice-mint" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Same-day delivery, or about 2 hours around Columbia with Rush</span></li>
                     <li class="flex items-start gap-3"><svg class="w-6 h-6 flex-none text-choice-mint" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Book and pay online in about 2 minutes</span></li>
                     <li class="flex items-start gap-3"><svg class="w-6 h-6 flex-none text-choice-mint" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Live driver tracking, with photo and signature proof of delivery</span></li>
                 </ul>
@@ -274,7 +274,7 @@
                     </div>
                     <h3 class="text-2xl font-bold mb-4">Rush Delivery</h3>
                     <p class="text-gray-600 mb-6">
-                        Delivered in about 2 hours within Columbia, SC and surrounding areas. Perfect for time-sensitive documents and packages.
+                        Picked up right away and driven straight there: about 2 hours within 50 miles of pickup. Longer trips take as long as the drive.
                     </p>
                     <a href="#quote" class="text-choice-teal font-bold text-xl hover:underline">Get your Rush price &rarr;</a>
                 </div>
@@ -756,7 +756,7 @@
             if (p.fees?.maxPieceLbs) document.getElementById('quote-piece-limit').textContent = `No single piece over ${p.fees.maxPieceLbs} lbs.`;
             const rush = (p.serviceLevels || []).find((l) => l.id === 'rush');
             const rushOpt = document.querySelector('#quote-level option[value="rush"]');
-            if (rush && rushOpt) rushOpt.textContent = `Rush Delivery (about 2 hours, +$${(rush.feeCents / 100).toFixed(0)})`;
+            if (rush && rushOpt) rushOpt.textContent = `Rush Delivery (+$${(rush.feeCents / 100).toFixed(0)})`;
             const sel = document.getElementById('quote-vehicle');
             const opts = Object.entries(p.fees?.vehicles || {}).filter(([, v]) => v.enabled);
             if (!opts.length) return;
@@ -804,7 +804,8 @@
                 }));
                 if (q.extraChargesNote) document.getElementById('quote-extras').textContent = q.extraChargesNote;
                 document.getElementById('quote-note').textContent =
-                    (q.distanceMiles != null ? `About ${q.distanceMiles} miles. ` : '') + q.note;
+                    (q.distanceMiles != null ? `About ${q.distanceMiles} miles. ` : '')
+                    + (q.serviceLevel === 'rush' && q.rushEstimate ? `Rush: ${q.rushEstimate.text.toLowerCase()}. ` : '') + q.note;
             } catch (err) {
                 document.getElementById('quote-price').textContent = "We couldn't price that route just now.";
                 document.getElementById('quote-breakdown').replaceChildren();
