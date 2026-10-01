@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Same-Day Courier &amp; Delivery Service in Columbia, SC | Choice Delivery SC</title>
-    <meta name="description" content="Same-day courier and delivery service in Columbia, SC and across South Carolina. Rush delivery in about 2 hours, live driver tracking, photo and signature proof of delivery. Car deliveries from $25. Get an instant quote.">
+    <meta name="description" content="Same-day courier and delivery service in Columbia, SC and across South Carolina. Rush delivery in about 2 hours, live driver tracking, photo and signature proof of delivery. Get an instant quote and book online in minutes.">
     <link rel="canonical" href="https://choicedeliverysc.com/">
     <meta name="theme-color" content="#0f766e">
 
@@ -57,7 +57,7 @@
     <link rel="icon" type="image/png" href="favicon.png">
     
     <!-- Tailwind CSS, compiled (npm run build:landing-css) -->
-    <link rel="stylesheet" href="/site.css?v=3">
+    <link rel="stylesheet" href="/site.css?v=4">
     
     <!-- Custom CSS -->
     <style>
@@ -157,34 +157,89 @@
         </div>
     </nav>
 
-    <!-- Hero Section -->
-    <section class="gradient-bg text-white pt-20 pb-16">
-        <div class="max-w-6xl mx-auto px-4 text-center fade-in-up">
-            <img src="logo.png" 
-                 alt="Choice Delivery SC" class="h-24 w-auto mx-auto mb-8 filter brightness-0 invert">
-            
-            <h1 class="text-5xl md:text-7xl font-bold mb-6">
-                Your Choice, Our Priority
-            </h1>
-            
-            <p class="text-xl md:text-2xl mb-8 max-w-3xl mx-auto opacity-90">
-                Fast, reliable, and affordable courier services in Columbia, SC and the Southeast
-            </p>
-            
-            <!-- CTA Buttons -->
-            <div class="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-                <a href="#app" class="bg-white text-choice-teal px-8 py-4 rounded-lg text-lg font-semibold hover-scale hover:shadow-lg">
-                    Get Quote Now
-                </a>
-                <!-- business-plans --><a href="#business" class="border-2 border-white text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal hover-scale">
-                    Business Contracts
-                </a><!-- business-plans:else --><a href="https://app.choicedeliverysc.com/#/signup" class="border-2 border-white text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal hover-scale">
-                    Create Business Account
-                </a><!-- /business-plans -->
+    <!-- Hero Section: the instant quote comes first -->
+    <section class="gradient-bg text-white pt-28 pb-16">
+        <div class="max-w-6xl mx-auto px-4 grid md:grid-cols-2 gap-x-10 gap-y-6 items-center fade-in-up">
+            <div class="md:self-end">
+                <p class="uppercase tracking-wide text-sm font-semibold opacity-90 mb-3">Instant Quote &middot; Instant Booking &middot; Local Same-Day Delivery</p>
+                <h1 class="text-4xl md:text-6xl font-bold mb-5 leading-tight">Same-day courier in Columbia, SC</h1>
+                <p class="text-xl opacity-90">Get your exact price in seconds, book online, and we pick up today. No phone calls, no waiting for a callback.</p>
+            </div>
+            <div id="quote" class="bg-white text-gray-800 text-left rounded-xl p-6 shadow-xl scroll-mt-24 md:col-start-2 md:row-start-1 md:row-span-2">
+                        <h2 class="text-xl font-bold text-choice-teal mb-1">Get your price in seconds</h2>
+                        <p class="text-sm text-gray-600 mb-4">Enter the pickup and drop-off. Your price is set by your actual route.</p>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
+                                <input type="text" id="quote-from" placeholder="Pickup address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
+                                <input type="text" id="quote-to" placeholder="Delivery address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                            </div>
+                            <div>
+                                <label for="quote-vehicle" class="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
+                                <select id="quote-vehicle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                    <option value="Car">Car (up to 150 lbs)</option>
+                                    <option value="Minivan">Minivan (up to 500 lbs)</option>
+                                    <option value="Pickup Truck">Pickup Truck (up to 1,000 lbs)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="quote-weight" class="block text-sm font-medium text-gray-700 mb-1">Total weight (lbs)</label>
+                                <input type="number" min="1" step="1" id="quote-weight" placeholder="e.g. 25" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                <p id="quote-piece-limit" class="text-xs text-gray-500 mt-1">No single piece over 75 lbs.</p>
+                            </div>
+                            <div>
+                                <label for="quote-level" class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+                                <select id="quote-level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                    <option value="standard">Standard Delivery</option>
+                                    <option value="rush">Rush Delivery (+$50)</option>
+                                </select>
+                            </div>
+                            <button onclick="calculateQuote()" class="w-full bg-choice-teal text-white py-3 rounded-lg font-semibold text-lg hover:opacity-90">
+                                Get Instant Quote
+                            </button>
+                            <div id="quote-result" class="text-center hidden" aria-live="polite">
+                                <div id="quote-price" class="text-lg font-bold text-choice-teal"></div>
+                                <ul id="quote-breakdown" class="text-sm text-gray-700 mt-2 space-y-1 text-left"></ul>
+                                <div id="quote-note" class="text-sm text-gray-600 mt-2"></div>
+                                <p id="quote-extras" class="text-xs text-gray-500 mt-2 text-left">Wait time over 15 minutes at a stop, loading help, stairs, return trips and failed attempts may be charged extra.</p>
+                                <a href="https://app.choicedeliverysc.com/#/signup" class="block mt-4 bg-choice-teal text-white py-3 rounded-lg font-semibold text-lg hover:opacity-90">Book This Delivery</a>
+                                <p class="text-xs text-gray-500 mt-2">Book and pay online in about 2 minutes. Already have an account? <a href="https://app.choicedeliverysc.com" class="text-choice-teal underline">Log in</a></p>
+                            </div>
+                        </div>
+                    </div>
+            <div class="md:self-start md:col-start-1 md:row-start-2">
+                <ul class="space-y-3 text-lg mb-8">
+                    <li class="flex items-start gap-3"><svg class="w-6 h-6 flex-none text-choice-mint" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Same-day delivery, or about 2 hours with Rush</span></li>
+                    <li class="flex items-start gap-3"><svg class="w-6 h-6 flex-none text-choice-mint" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Book and pay online in about 2 minutes</span></li>
+                    <li class="flex items-start gap-3"><svg class="w-6 h-6 flex-none text-choice-mint" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg><span>Live driver tracking, with photo and signature proof of delivery</span></li>
+                </ul>
+                <div class="flex flex-wrap gap-4 text-sm">
+                    <a href="#track" class="underline hover:opacity-80">Track a delivery</a>
+                    <a href="tel:8039497034" class="underline hover:opacity-80">Questions? (803) 949-7034</a>
+                </div>
             </div>
 
-            <!-- Track a delivery -->
-            <div id="track" class="bg-white text-gray-800 rounded-xl shadow-lg max-w-2xl mx-auto p-5 text-left scroll-mt-24">
+        </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="app" class="py-16 bg-white">
+        <div class="max-w-6xl mx-auto px-4 text-center">
+            <h2 class="text-4xl font-bold mb-4">How it works</h2>
+            <p class="text-xl text-gray-600 mb-10 max-w-3xl mx-auto">Book a delivery in about 2 minutes, then follow it to the door.</p>
+            <div class="grid md:grid-cols-3 gap-6 mb-10">
+                <div class="bg-gray-50 rounded-xl p-6 text-left"><div class="w-10 h-10 rounded-full bg-choice-teal text-white font-bold flex items-center justify-center mb-4">1</div><h3 class="text-xl font-bold mb-2">Get an instant quote</h3><p class="text-gray-600">Enter pickup and drop-off. You see the full price up front, set by your actual route.</p></div>
+                <div class="bg-gray-50 rounded-xl p-6 text-left"><div class="w-10 h-10 rounded-full bg-choice-teal text-white font-bold flex items-center justify-center mb-4">2</div><h3 class="text-xl font-bold mb-2">Book and pay online</h3><p class="text-gray-600">Pick a time, add instructions and pay by card. We send a driver today.</p></div>
+                <div class="bg-gray-50 rounded-xl p-6 text-left"><div class="w-10 h-10 rounded-full bg-choice-teal text-white font-bold flex items-center justify-center mb-4">3</div><h3 class="text-xl font-bold mb-2">Track it live</h3><p class="text-gray-600">Watch your driver on the map. Every delivery is confirmed with a photo, signature and GPS location.</p></div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center mb-12">
+                <a href="#quote" class="bg-choice-teal text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-opacity-90 hover-scale">Get Instant Quote</a>
+                <a href="https://app.choicedeliverysc.com/#/signup" class="border-2 border-choice-teal text-choice-teal px-8 py-4 rounded-lg text-lg font-semibold hover-scale">Create Account</a>
+            </div>
+            <div id="track" class="bg-white text-gray-800 rounded-xl shadow-lg border border-gray-200 max-w-2xl mx-auto p-5 text-left scroll-mt-24">
                 <h2 class="text-lg font-bold text-choice-teal mb-1">Track a delivery</h2>
                 <p class="text-sm text-gray-600 mb-3">Paste the tracking link from your email, or enter the order number and the delivery ZIP code.</p>
                 <form id="track-form" class="flex flex-col sm:flex-row gap-2" novalidate>
@@ -197,22 +252,6 @@
                     <button type="submit" class="bg-choice-teal text-white px-6 py-2 rounded-lg font-semibold hover:opacity-90">Track</button>
                 </form>
                 <p id="track-status" class="text-sm text-red-700 mt-2 hidden" aria-live="polite"></p>
-            </div>
-            
-            <!-- Key Stats -->
-            <div class="grid md:grid-cols-3 gap-8 mt-12 max-w-4xl mx-auto">
-                <div class="text-center">
-                    <div class="text-3xl font-bold mb-2">Columbia</div>
-                    <div class="opacity-80">Based</div>
-                </div>
-                <div class="text-center">
-                    <div class="text-3xl font-bold mb-2">$25</div>
-                    <div class="opacity-80">Starting Price</div>
-                </div>
-                <div class="text-center">
-                    <div class="text-3xl font-bold mb-2">Same Day</div>
-                    <div class="opacity-80">Rush Delivery</div>
-                </div>
             </div>
         </div>
     </section>
@@ -235,9 +274,9 @@
                     </div>
                     <h3 class="text-2xl font-bold mb-4">Rush Delivery</h3>
                     <p class="text-gray-600 mb-6">
-                        Delivered in 2 hours or less within Columbia, SC and surrounding areas. Perfect for time-sensitive documents and packages.
+                        Delivered in about 2 hours within Columbia, SC and surrounding areas. Perfect for time-sensitive documents and packages.
                     </p>
-                    <div class="text-choice-teal font-bold text-xl">Starting at $75</div>
+                    <a href="#quote" class="text-choice-teal font-bold text-xl hover:underline">Get your Rush price &rarr;</a>
                 </div>
                 
                 <!-- Standard Delivery -->
@@ -251,7 +290,7 @@
                     <p class="text-gray-600 mb-6">
                         Reliable same-day delivery across SC, NC and GA. The first 10 miles are included in the base price; longer trips add a per-mile rate.
                     </p>
-                    <div class="text-choice-teal font-bold text-xl">Starting at $25</div>
+                    <a href="#quote" class="text-choice-teal font-bold text-xl hover:underline">Get your price &rarr;</a>
                 </div>
                 
 <!-- business-plans -->
@@ -457,102 +496,6 @@
     </section>
     <!-- /business-plans -->
 
-    <!-- App Integration Section -->
-    <section id="app" class="py-16 bg-white">
-        <div class="max-w-6xl mx-auto px-4 text-center">
-            <h2 class="text-4xl font-bold mb-4">Order Online</h2>
-            <p class="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
-                Get instant quotes, schedule deliveries, and track your packages with our online platform
-            </p>
-            
-            <div class="bg-gray-50 rounded-xl p-8 max-w-4xl mx-auto">
-                <div class="grid md:grid-cols-2 gap-8 items-center">
-                    <div class="text-left">
-                        <h3 class="text-2xl font-bold mb-4">Launch the App</h3>
-                        <ul class="space-y-3 mb-6">
-                            <li class="flex items-center">
-                                <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                </svg>
-                                Instant price quotes
-                            </li>
-                            <li class="flex items-center">
-                                <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                </svg>
-                                Schedule deliveries
-                            </li>
-                            <li class="flex items-center">
-                                <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                </svg>
-                                Real-time tracking
-                            </li>
-                            <li class="flex items-center">
-                                <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                </svg>
-                                Signature &amp; photo proof of delivery
-                            </li>
-                        </ul>
-                        <div class="flex flex-col sm:flex-row gap-3">
-                            <a href="https://app.choicedeliverysc.com/#/signup" target="_blank" rel="noopener" class="bg-choice-teal text-white px-6 py-4 rounded-lg text-lg font-semibold hover:bg-opacity-90 hover-scale text-center">
-                                Create Account
-                            </a>
-                            <a href="https://app.choicedeliverysc.com" target="_blank" rel="noopener" class="border-2 border-choice-teal text-choice-teal px-6 py-4 rounded-lg text-lg font-semibold hover-scale text-center">
-                                Log In
-                            </a>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-white rounded-lg p-6 shadow-lg">
-                        <h4 class="text-lg font-bold mb-4">Quick Quote Calculator</h4>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
-                                <input type="text" id="quote-from" placeholder="Pickup address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
-                                <input type="text" id="quote-to" placeholder="Delivery address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
-                            </div>
-                            <div>
-                                <label for="quote-vehicle" class="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
-                                <select id="quote-vehicle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
-                                    <option value="Car">Car (up to 150 lbs)</option>
-                                    <option value="Minivan">Minivan (up to 500 lbs)</option>
-                                    <option value="Pickup Truck">Pickup Truck (up to 1,000 lbs)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="quote-weight" class="block text-sm font-medium text-gray-700 mb-1">Total weight (lbs)</label>
-                                <input type="number" min="1" step="1" id="quote-weight" placeholder="e.g. 25" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
-                                <p id="quote-piece-limit" class="text-xs text-gray-500 mt-1">No single piece over 75 lbs.</p>
-                            </div>
-                            <div>
-                                <label for="quote-level" class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-                                <select id="quote-level" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
-                                    <option value="standard">Standard Delivery</option>
-                                    <option value="rush">Rush Delivery (+$50)</option>
-                                </select>
-                            </div>
-                            <button onclick="calculateQuote()" class="w-full bg-choice-mint text-choice-teal py-2 rounded-lg font-semibold hover:bg-opacity-80">
-                                Calculate Quote
-                            </button>
-                            <div id="quote-result" class="text-center hidden" aria-live="polite">
-                                <div id="quote-price" class="text-lg font-bold text-choice-teal"></div>
-                                <ul id="quote-breakdown" class="text-sm text-gray-700 mt-2 space-y-1 text-left"></ul>
-                                <div id="quote-note" class="text-sm text-gray-600 mt-2"></div>
-                                <p id="quote-extras" class="text-xs text-gray-500 mt-2 text-left">Wait time over 15 minutes at a stop, loading help, stairs, return trips and failed attempts may be charged extra.</p>
-                                <a href="https://app.choicedeliverysc.com/#/signup" target="_blank" rel="noopener" class="inline-block mt-3 text-choice-teal font-semibold hover:underline">Book this delivery →</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
     <!-- Contact Section -->
     <section id="contact" class="py-16 bg-gray-50">
         <div class="max-w-6xl mx-auto px-4">
@@ -572,7 +515,7 @@
                             <div>
                                 <h4 class="font-semibold text-lg">Phone</h4>
                                 <a href="tel:8039497034" class="text-choice-teal hover:underline text-lg">(803) 949-7034</a>
-                                <p class="text-gray-600 text-sm">Monday - Friday: 8 AM - 6 PM</p>
+                                <p class="text-gray-600 text-sm">8 AM - 10 PM daily</p>
                             </div>
                         </div>
                         
@@ -859,7 +802,7 @@
                 document.getElementById('quote-note').textContent =
                     (q.distanceMiles != null ? `About ${q.distanceMiles} miles. ` : '') + q.note;
             } catch (err) {
-                document.getElementById('quote-price').textContent = 'Starting at $25.00';
+                document.getElementById('quote-price').textContent = "We couldn't price that route just now.";
                 document.getElementById('quote-breakdown').replaceChildren();
                 document.getElementById('quote-note').textContent = 'Call (803) 949-7034 for an exact quote.';
             }
