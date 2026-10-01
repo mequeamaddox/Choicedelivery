@@ -36,5 +36,8 @@
     "web": "expo start --web",
     "test": "node --test test/*.test.mjs"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
 }
