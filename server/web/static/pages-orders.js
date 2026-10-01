@@ -311,6 +311,7 @@ export function NewOrderPage() {
                   onChange=${() => setV({ ...v, serviceLevel: l.id })} />
                 <span><strong>${l.id === 'rush' ? 'Rush delivery' : 'Standard delivery'}</strong>
                   <span class="muted small">${l.id === 'rush' ? 'Picked up right away and delivered in about 2 hours' : 'Delivered today'}</span></span>
+                ${l.feeCents ? html`<span class="price push">+${formatMoney(l.feeCents)}</span>` : ''}
               </label>`)}
           </div>
           <div class="field">
