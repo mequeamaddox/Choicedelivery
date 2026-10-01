@@ -172,6 +172,13 @@ const createAccountSession = (accountId) => stripeRequest('POST', '/account_sess
   components: { account_management: { enabled: true, features: { external_account_collection: true } } },
 });
 
+// A driver's own bank accounts and debit cards. The token comes from Stripe.js in the driver's
+// browser, so the full card or account number never reaches our server.
+const extPath = (accountId, id) => `/accounts/${encodeURIComponent(accountId)}/external_accounts${id ? `/${encodeURIComponent(id)}` : ''}`;
+const addExternalAccount = (accountId, token) => stripeRequest('POST', extPath(accountId), { external_account: token });
+const makeDefaultExternalAccount = (accountId, id) => stripeRequest('POST', extPath(accountId, id), { default_for_currency: true });
+const removeExternalAccount = (accountId, id) => stripeRequest('DELETE', extPath(accountId, id));
+
 // Pays the connected account's Stripe balance out to their bank right away (typically within 30
 // minutes). Fails if their bank or card doesn't support instant payouts.
 const instantPayout = ({ accountId, cents, payoutId }) => stripeRequest('POST', '/payouts', {
@@ -182,4 +189,5 @@ module.exports = {
   enabled, mode, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
   ensureWebhook, webhookReady,
   createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver, instantPayout, createAccountSession,
+  addExternalAccount, makeDefaultExternalAccount, removeExternalAccount,
 };

@@ -371,3 +371,36 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .payout-options p { margin: 0; }
 @media (max-width: 560px) { .payout-options { grid-template-columns: 1fr; } }
 .stripe-embed { min-height: 120px; }
+
+/* ---------- Driver payment info (cards & bank accounts) ---------- */
+.pm-section { font-size: .95rem; font-weight: 600; color: var(--muted); margin: 1.25rem 0 .5rem; }
+.pm-card { background: var(--surface); border-radius: 18px; padding: .25rem 1.25rem; box-shadow: 0 1px 2px rgba(0,0,0,.04); border: 1px solid var(--border); }
+.pm-personal { display: flex; justify-content: space-between; gap: 1rem; padding: 1rem 0; }
+.pm-personal-fields { display: flex; flex-direction: column; gap: 1rem; }
+.pm-label { color: var(--muted); font-size: .9rem; }
+.pm-value { font-weight: 600; font-size: 1.05rem; margin-top: .15rem; line-height: 1.35; }
+.pm-row { border-bottom: 1px solid var(--border); padding: 1rem 0; }
+.pm-row-main { display: flex; align-items: center; gap: .85rem; }
+.pm-row-text { flex: 1; min-width: 0; }
+.pm-title { font-weight: 600; font-size: 1.05rem; }
+.pm-default { color: var(--muted); font-weight: 500; font-size: .85rem; margin-left: .35rem; }
+.pm-detail { color: var(--muted); margin-top: .15rem; }
+.pm-edit { flex: none; width: 46px; height: 46px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.pm-edit:hover, .pm-edit[aria-expanded=true] { border-color: var(--teal); color: var(--teal); }
+.pm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .75rem; }
+.pm-add { display: flex; align-items: center; gap: .75rem; width: 100%; padding: 1.1rem 0; background: none; border: 0;
+  font: inherit; font-size: 1.05rem; font-weight: 600; color: var(--text); cursor: pointer; text-align: left; }
+.pm-add span { font-size: 1.6rem; font-weight: 400; line-height: 1; width: 1.6rem; text-align: center; }
+.pm-add:hover:not(:disabled) { color: var(--teal); }
+.pm-add:disabled { opacity: .5; cursor: not-allowed; }
+.pm-form { padding: 1rem 0; border-top: 1px solid var(--border); }
+.pm-personal + .pm-form { margin-top: 0; }
+.pm-card-input { border: 1px solid var(--border); border-radius: 10px; padding: .8rem .75rem; margin: .4rem 0 .5rem; background: #fff; }
+.pm-foot { margin-top: 1rem; }
+.brand-chip { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 46px; height: 28px; padding: 0 .4rem;
+  border-radius: 6px; font-size: .72rem; font-weight: 800; letter-spacing: .02em; background: #e5e7eb; color: #374151; font-style: italic; }
+.brand-chip.visa { background: #1a1f71; color: #fff; }
+.brand-chip.mastercard { background: #eb001b; color: #fff; }
+.brand-chip.discover { background: #ff6000; color: #fff; }
+.brand-chip.bank { background: var(--mint-light); color: var(--teal); font-style: normal; }

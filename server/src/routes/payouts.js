@@ -12,8 +12,8 @@ const {
 
 const router = express.Router();
 // The payout-method page can also be opened from the driver app with a short-lived link.
-const PAYOUT_METHOD_PATHS = ['/me/payout-method', '/me/account-session'];
-router.use((req, res, next) => { if (PAYOUT_METHOD_PATHS.includes(req.path)) req.authScope = 'payout_method'; next(); });
+const PAYOUT_METHOD_PATHS = /^\/me\/(payout-method|payout-info|account-session|external-accounts(\/[^/]+(\/default)?)?)$/;
+router.use((req, res, next) => { if (PAYOUT_METHOD_PATHS.test(req.path)) req.authScope = 'payout_method'; next(); });
 router.use(requireAuth);
 
 const ORDER_COLS = `o.id, o.order_number, o.completed_at, o.driver_pay_cents, o.driver_paid_at, o.driver_id,
@@ -232,6 +232,64 @@ router.get('/me/payout-method', requireRole('driver'), asyncH(async (req, res) =
   const { rows: [u] } = await db.query('SELECT stripe_account_id FROM users WHERE id = $1', [req.user.id]);
   if (!u.stripe_account_id || !stripe.enabled()) return res.json({ method: null, instantMethod: null });
   res.json(await payoutDestinations(u.stripe_account_id));
+}));
+
+// The driver's "Payment info" page: who's being paid, and their debit cards and bank accounts.
+// Express accounts don't show identity details back after sign-up, so name and city come from
+// our profile and the SSN is only shown as "on file".
+const card = (x) => ({
+  id: x.id, brand: x.brand || 'Card', funding: x.funding, last4: x.last4, expMonth: x.exp_month, expYear: x.exp_year,
+  isDefault: !!x.default_for_currency, instant: (x.available_payout_methods || []).includes('instant'),
+});
+const bank = (x) => ({ id: x.id, bankName: x.bank_name || 'Bank account', last4: x.last4, isDefault: !!x.default_for_currency,
+  instant: (x.available_payout_methods || []).includes('instant') });
+async function driverAccountId(userId) {
+  const { rows: [u] } = await db.query('SELECT stripe_account_id FROM users WHERE id = $1', [userId]);
+  if (!u.stripe_account_id || !stripe.enabled()) throw new HttpError(409, 'Set up direct deposit first');
+  return u.stripe_account_id;
+}
+
+router.get('/me/payout-info', requireRole('driver'), asyncH(async (req, res) => {
+  const { rows: [u] } = await db.query('SELECT name, driver_profile, stripe_account_id FROM users WHERE id = $1', [req.user.id]);
+  const p = u.driver_profile || {};
+  const out = {
+    name: u.name, cityLine: [p.city, ['SC', p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') || null,
+    ssnOnFile: false, cards: [], banks: [], setUp: !!u.stripe_account_id, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || null,
+  };
+  if (u.stripe_account_id && stripe.enabled()) {
+    const acct = await stripe.getAccount(u.stripe_account_id);
+    const a = acct.individual?.address;
+    if (a?.line1) out.address = { line1: a.line1, line2: a.line2 || null, cityLine: `${a.city}, ${a.state} ${a.postal_code}` };
+    out.ssnOnFile = !!(acct.individual?.ssn_last_4_provided || acct.details_submitted);
+    for (const x of acct.external_accounts?.data || []) (x.object === 'card' ? out.cards : out.banks).push(x.object === 'card' ? card(x) : bank(x));
+  }
+  res.json(out);
+}));
+
+const EXT_ID = /^(ba|card)_[A-Za-z0-9]+$/;
+const stripeMessage = (e) => new HttpError(400, e.message || "Stripe couldn't save that. Try again.");
+router.post('/me/external-accounts', requireRole('driver'), asyncH(async (req, res) => {
+  const token = String(req.body?.token || '');
+  if (!/^(tok|btok)_[A-Za-z0-9_]+$/.test(token)) throw new HttpError(400, 'Card or bank details are missing');
+  const accountId = await driverAccountId(req.user.id);
+  try { await stripe.addExternalAccount(accountId, token); } catch (e) { throw stripeMessage(e); }
+  res.status(201).json({ ok: true });
+}));
+router.post('/me/external-accounts/:id/default', requireRole('driver'), asyncH(async (req, res) => {
+  if (!EXT_ID.test(req.params.id)) throw new HttpError(404, 'Not found');
+  const accountId = await driverAccountId(req.user.id);
+  try { await stripe.makeDefaultExternalAccount(accountId, req.params.id); } catch (e) { throw stripeMessage(e); }
+  res.json({ ok: true });
+}));
+router.delete('/me/external-accounts/:id', requireRole('driver'), asyncH(async (req, res) => {
+  if (!EXT_ID.test(req.params.id)) throw new HttpError(404, 'Not found');
+  const accountId = await driverAccountId(req.user.id);
+  const acct = await stripe.getAccount(accountId);
+  const target = (acct.external_accounts?.data || []).find((x) => x.id === req.params.id);
+  if (!target) throw new HttpError(404, 'Not found');
+  if (target.default_for_currency) throw new HttpError(409, 'This is where your pay goes. Make another card or account the default first.');
+  try { await stripe.removeExternalAccount(accountId, req.params.id); } catch (e) { throw stripeMessage(e); }
+  res.json({ ok: true });
 }));
 
 // Drivers: a session for Stripe's embedded form to add or change the bank account / debit card.

@@ -3,7 +3,7 @@ import {
   html, useState, useEffect, useRef, api, navigate, useApi, getUser, formatDate, timeAgo, mapsLink, STATUS, ACTIVE_STATUSES,
   SERVICE_LEVEL_LABELS, formatMoney, currentPath,
 } from './lib.js';
-import { Layout, PageHeader, Alert, Spinner, Empty, StatusBadge, RouteSummary, ActionButton, StopTimeline, Logo } from './components.js';
+import { Layout, PageHeader, Alert, Spinner, Empty, StatusBadge, RouteSummary, ActionButton, StopTimeline, Logo, Field } from './components.js';
 
 // ---------- Online status + location sharing ----------
 // While online, the phone's location is sent every ~30s (and when it moves) so dispatch and
@@ -376,10 +376,8 @@ export function DriverJobPage({ id }) {
     <//>`;
 }
 
-// ---------- Bank & debit card ----------
-// Stripe's secure embedded form, inside our page, for adding or changing where pay goes (bank account
-// for the free Wednesday deposit, debit card for instant pay). Opened from History on the website, or
-// from the driver app with a 15-minute link (?t=...) that works for this page only.
+// ---------- Payment info (bank accounts & debit cards) ----------
+// Stripe's embedded account form (connect.js), used for name, address and SSN changes.
 let connectJs = null;
 function loadConnectJs() {
   if (window.StripeConnect?.init) return Promise.resolve(window.StripeConnect);
@@ -397,25 +395,136 @@ function loadConnectJs() {
   return connectJs;
 }
 
-export function PayoutMethodPage() {
-  const linkToken = new URLSearchParams(currentPath().split('?')[1] || '').get('t');
-  const call = (path, method = 'GET') => (linkToken
-    ? fetch(path, { method, headers: { Accept: 'application/json', Authorization: `Bearer ${linkToken}` } }).then(async (r) => {
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.message || 'Something went wrong');
-      return d;
-    })
-    : api(path, { method }));
+// Stripe.js, for turning a typed card or bank account into a one-time token in the browser.
+let stripeJs = null;
+function loadStripeJs() {
+  if (window.Stripe) return Promise.resolve(window.Stripe);
+  if (!stripeJs) {
+    stripeJs = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://js.stripe.com/v3/';
+      s.async = true;
+      s.onload = () => resolve(window.Stripe);
+      s.onerror = () => { stripeJs = null; reject(new Error("Couldn't load the secure form. Check your connection and try again.")); };
+      document.head.appendChild(s);
+    });
+  }
+  return stripeJs;
+}
+
+const pencil = html`<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
+const BRAND_CHIP = { visa: 'VISA', mastercard: 'MC', discover: 'DISC', 'american express': 'AMEX' };
+const twoDigits = (n) => String(n).padStart(2, '0');
+
+function BrandChip({ brand }) {
+  const label = BRAND_CHIP[String(brand).toLowerCase()] || String(brand).slice(0, 4).toUpperCase();
+  return html`<span class=${`brand-chip ${String(brand).toLowerCase().replace(/\s+/g, '-')}`}>${label}</span>`;
+}
+
+// One card or bank row. The pencil opens "Make default" / "Remove".
+function MethodRow({ title, detail, chip, item, call, onChanged, onError }) {
+  const [open, setOpen] = useState(false);
+  return html`
+    <div class="pm-row">
+      <div class="pm-row-main">
+        ${chip}
+        <div class="pm-row-text">
+          <div class="pm-title">${title}${item.isDefault && html` <span class="pm-default">Default</span>`}</div>
+          <div class="pm-detail">${detail}</div>
+        </div>
+        <button type="button" class="pm-edit" aria-label=${`Edit ${title}`} aria-expanded=${open} onClick=${() => setOpen(!open)}>${pencil}</button>
+      </div>
+      ${open && html`<div class="pm-actions">
+        ${!item.isDefault && html`<${ActionButton} class="btn small" onError=${onError} onClick=${async () => {
+          await call(`/payouts/me/external-accounts/${item.id}/default`, 'POST'); setOpen(false); onChanged();
+        }}>Make default<//>`}
+        <${ActionButton} class="btn small danger" onError=${onError} confirmText=${`Remove ${title} ${detail}?`} onClick=${async () => {
+          await call(`/payouts/me/external-accounts/${item.id}`, 'DELETE'); onChanged();
+        }}>Remove<//>
+        ${item.isDefault && html`<span class="small muted">Your pay goes here. To remove it, make another one the default first.</span>`}
+      </div>`}
+    </div>`;
+}
+
+function AddCardForm({ stripe, call, onDone, onCancel }) {
   const box = useRef(null);
-  const [dest, setDest] = useState(null);
+  const el = useRef(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    el.current = stripe.elements().create('card', {
+      hidePostalCode: false,
+      style: { base: { fontSize: '16px', color: '#111827', fontFamily: 'system-ui, sans-serif', '::placeholder': { color: '#9ca3af' } } },
+    });
+    el.current.mount(box.current);
+    return () => el.current?.destroy();
+  }, []);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      const { token, error: err } = await stripe.createToken(el.current, { currency: 'usd' });
+      if (err) throw new Error(err.message);
+      if (token.card?.funding && token.card.funding !== 'debit') throw new Error('That looks like a credit card. Pay can only go to a debit card.');
+      await call('/payouts/me/external-accounts', 'POST', { token: token.id });
+      onDone();
+    } catch (x) { setError(x); } finally { setBusy(false); }
+  };
+  return html`<form class="pm-form" onSubmit=${save}>
+    <span class="field-label">Debit card</span>
+    <div ref=${box} class="pm-card-input"></div>
+    <p class="small muted">Visa, Mastercard or Discover debit card from a US bank. Instant pay arrives in about 30 minutes.</p>
+    <${Alert} error=${error} />
+    <div class="inline"><button class="btn primary" disabled=${busy}>${busy ? 'Saving…' : 'Save card'}</button>
+      <button type="button" class="btn" onClick=${onCancel}>Cancel</button></div>
+  </form>`;
+}
+
+function AddBankForm({ stripe, call, name, onDone, onCancel }) {
+  const [v, setV] = useState({ holder: name || '', routing: '', account: '', confirm: '' });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const bind = (k) => ({ value: v[k], onInput: (e) => setV({ ...v, [k]: e.target.value.trimStart() }) });
+  const save = async (e) => {
+    e.preventDefault();
+    setError(null);
+    const routing = v.routing.replace(/\D/g, '');
+    const account = v.account.replace(/\s/g, '');
+    if (routing.length !== 9) return setError(new Error('The routing number is 9 digits.'));
+    if (account !== v.confirm.replace(/\s/g, '')) return setError(new Error("The account numbers don't match."));
+    setBusy(true);
+    try {
+      // Goes straight from this page to Stripe; Choice Delivery only gets back a one-time token.
+      const { token, error: err } = await stripe.createToken('bank_account', {
+        country: 'US', currency: 'usd', routing_number: routing, account_number: account,
+        account_holder_name: v.holder.trim(), account_holder_type: 'individual',
+      });
+      if (err) throw new Error(err.message);
+      await call('/payouts/me/external-accounts', 'POST', { token: token.id });
+      onDone();
+    } catch (x) { setError(x); } finally { setBusy(false); }
+  };
+  return html`<form class="pm-form" onSubmit=${save} autocomplete="off">
+    <${Field} label="Name on the account"><input required ...${bind('holder')} /><//>
+    <${Field} label="Routing number"><input required inputmode="numeric" maxlength="9" ...${bind('routing')} /><//>
+    <${Field} label="Account number"><input required inputmode="numeric" ...${bind('account')} /><//>
+    <${Field} label="Confirm account number"><input required inputmode="numeric" ...${bind('confirm')} /><//>
+    <p class="small muted">Checking account in your name. Free deposits every Wednesday.</p>
+    <${Alert} error=${error} />
+    <div class="inline"><button class="btn primary" disabled=${busy}>${busy ? 'Saving…' : 'Save bank account'}</button>
+      <button type="button" class="btn" onClick=${onCancel}>Cancel</button></div>
+  </form>`;
+}
+
+// Stripe's own form, for changing name, address or SSN (and as a backup way to change cards/banks).
+function StripeAccountForm({ call }) {
+  const box = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const refresh = () => call('/payouts/me/payout-method').then(setDest).catch(setError);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        await refresh();
         const first = await call('/payouts/me/account-session', 'POST');
         const StripeConnect = await loadConnectJs();
         if (cancelled) return;
@@ -434,23 +543,86 @@ export function PayoutMethodPage() {
     })();
     return () => { cancelled = true; };
   }, []);
-  const body = html`
-    <section class="card stack">
-      <h2>Where your pay goes</h2>
-      ${dest?.method
-        ? html`<p>Paying to <strong>${dest.method.label}</strong>.</p>
-          <p class="small muted">${dest.instantMethod ? html`Instant pay goes to <strong>${dest.instantMethod.label}</strong>.`
-            : 'To use instant pay, add a debit card below.'}</p>`
-        : !loading && !error && html`<p class="small muted">No bank account or card yet.</p>`}
+  return html`<div class="pm-form"><${Alert} error=${error} />${loading && html`<${Spinner} />`}<div ref=${box} class="stripe-embed"></div></div>`;
+}
+
+// "Payment info": who's being paid, their debit cards (instant pay) and bank accounts (free Wednesday
+// deposit). Opened from Earnings on the website, or from the driver app with a 15-minute link (?t=...)
+// that works for this page only. Card and bank numbers go straight from the browser to Stripe.
+export function PayoutMethodPage() {
+  const linkToken = new URLSearchParams(currentPath().split('?')[1] || '').get('t');
+  const call = (path, method = 'GET', body) => (linkToken
+    ? fetch(path, {
+      method,
+      headers: { Accept: 'application/json', Authorization: `Bearer ${linkToken}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(async (r) => {
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401) throw new Error('This link has expired. Go back to the app and tap "Change bank or debit card" again.');
+      if (!r.ok) throw new Error(d.message || 'Something went wrong');
+      return d;
+    })
+    : api(path, { method, body }));
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState(null);
+  const [stripe, setStripe] = useState(null);
+  const [adding, setAdding] = useState(null); // 'card' | 'bank' | 'stripe'
+  const refresh = () => call('/payouts/me/payout-info').then((d) => { setInfo(d); setError(null); }).catch(setError);
+  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    if (!info?.publishableKey || stripe) return;
+    loadStripeJs().then((S) => setStripe(S(info.publishableKey))).catch(setError);
+  }, [info?.publishableKey]);
+  const done = () => { setAdding(null); refresh(); };
+  const open = (what) => { setError(null); setAdding(adding === what ? null : what); };
+  const canAdd = !!stripe;
+
+  let body;
+  if (!info) body = error ? html`<${Alert} error=${error} />` : html`<${Spinner} />`;
+  else if (!info.setUp) {
+    body = html`<section class="card"><p>Set up direct deposit first, from <a href="#/driver/history">Earnings</a>.</p></section>`;
+  } else {
+    const addr = info.address;
+    body = html`
+      <h3 class="pm-section">Personal information</h3>
+      <section class="pm-card">
+        <div class="pm-personal">
+          <div class="pm-personal-fields">
+            <div><div class="pm-label">Name</div><div class="pm-value">${info.name}</div></div>
+            <div><div class="pm-label">SSN</div><div class="pm-value">${info.ssnOnFile ? '•••-••-••••' : 'Not added yet'}</div></div>
+            ${(addr || info.cityLine) && html`<div><div class="pm-label">Address</div><div class="pm-value">
+              ${addr ? html`${addr.line1}${addr.line2 && html`<br />${addr.line2}`}<br />${addr.cityLine}` : info.cityLine}</div></div>`}
+          </div>
+          <button type="button" class="pm-edit" aria-label="Edit personal information" aria-expanded=${adding === 'stripe'}
+            onClick=${() => open('stripe')}>${pencil}</button>
+        </div>
+        ${adding === 'stripe' && html`<${StripeAccountForm} call=${call} />`}
+      </section>
+
+      <h3 class="pm-section">Debit card</h3>
+      <section class="pm-card">
+        ${info.cards.map((c) => html`<${MethodRow} key=${c.id} item=${c} call=${call} onChanged=${refresh} onError=${setError}
+          chip=${html`<${BrandChip} brand=${c.brand} />`} title=${`${c.brand} ${c.funding === 'debit' ? 'Debit' : 'Card'}`}
+          detail=${`Debit ••••${c.last4} · Exp ${twoDigits(c.expMonth)}/${String(c.expYear).slice(-2)}`} />`)}
+        ${adding === 'card' && stripe ? html`<${AddCardForm} stripe=${stripe} call=${call} onDone=${done} onCancel=${() => setAdding(null)} />`
+          : html`<button type="button" class="pm-add" disabled=${!canAdd} onClick=${() => open('card')}><span>+</span> Add new card</button>`}
+      </section>
+
+      <h3 class="pm-section">Bank account</h3>
+      <section class="pm-card">
+        ${info.banks.map((b) => html`<${MethodRow} key=${b.id} item=${b} call=${call} onChanged=${refresh} onError=${setError}
+          chip=${html`<span class="brand-chip bank">BANK</span>`} title=${b.bankName} detail=${`Checking ••••${b.last4}`} />`)}
+        ${adding === 'bank' && stripe ? html`<${AddBankForm} stripe=${stripe} call=${call} name=${info.name} onDone=${done} onCancel=${() => setAdding(null)} />`
+          : html`<button type="button" class="pm-add" disabled=${!canAdd} onClick=${() => open('bank')}><span>+</span> Add new account</button>`}
+      </section>
       <${Alert} error=${error} />
-      ${loading && html`<${Spinner} />`}
-      <div ref=${box} class="stripe-embed"></div>
-      <p class="small muted">Your bank and card details are kept by Stripe, our payments partner; Choice Delivery never sees the full numbers.
-        After making a change, <button class="link" onClick=${refresh}>refresh</button> to see it here.</p>
-    </section>`;
+      ${!info.publishableKey && html`<${Alert} error=${{ message: "Adding cards and accounts isn't switched on yet. Ask Choice Delivery to add their Stripe publishable key." }} />`}
+      <p class="small muted pm-foot">The default card or account gets your pay: instant pay needs a debit card; the free Wednesday deposit can go to either.
+        Card and bank numbers go straight to Stripe, our payments partner. Choice Delivery never sees them.</p>`;
+  }
   if (linkToken) {
-    return html`<div class="page narrow"><${Logo} /><h1>Bank & debit card</h1>${body}
+    return html`<div class="page narrow"><${Logo} /><h1>Payment info</h1>${body}
       <p class="muted small">When you're done, go back to the Choice Delivery Driver app.</p></div>`;
   }
-  return html`<${Layout}><a class="back" href="#/driver/history">← Earnings</a><${PageHeader} title="Bank & debit card" />${body}<//>`;
+  return html`<${Layout}><a class="back" href="#/driver/history">← Earnings</a><${PageHeader} title="Payment info" />${body}<//>`;
 }

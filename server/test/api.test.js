@@ -1380,6 +1380,7 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
     }
     if (path === '/accounts' && opts.method === 'POST') return { ok: true, json: async () => account };
     if (path === '/accounts/acct_d1') return { ok: true, json: async () => account };
+    if (path.startsWith('/accounts/acct_d1/external_accounts')) return { ok: true, json: async () => ({ id: 'card_new' }) };
     if (path === '/account_links') return { ok: true, json: async () => ({ url: 'https://connect.stripe.com/setup/e/abc' }) };
     if (path === '/accounts/acct_d1/login_links') return { ok: true, json: async () => ({ url: 'https://connect.stripe.com/express/xyz' }) };
     if (path === '/transfers') {
@@ -1503,6 +1504,34 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
     assert.equal((await call('POST', '/payouts/me/account-session', { token: linkToken })).status, 200);
     assert.equal((await call('GET', '/users/me', { token: linkToken })).status, 401, 'the link is not a login');
     assert.equal((await call('POST', '/payouts/me/instant', { token: linkToken, body: {} })).status, 401);
+
+    // Payment info: cards and banks listed separately; add (Stripe.js token), make default, remove.
+    account = { ...account, details_submitted: true, external_accounts: { data: [
+      { id: 'ba_1', object: 'bank_account', bank_name: 'STRIPE TEST BANK', last4: '6789', default_for_currency: true, available_payout_methods: ['standard'] },
+      { id: 'card_1', object: 'card', brand: 'Visa', funding: 'debit', last4: '2368', exp_month: 10, exp_year: 2031, available_payout_methods: ['standard', 'instant'] },
+    ] } };
+    r = await call('GET', '/payouts/me/payout-info', { token: linkToken });
+    assert.equal(r.status, 200, 'works from the app link');
+    assert.equal(r.data.publishableKey, 'pk_test_123');
+    assert.equal(r.data.ssnOnFile, true);
+    assert.deepEqual(r.data.cards, [{ id: 'card_1', brand: 'Visa', funding: 'debit', last4: '2368', expMonth: 10, expYear: 2031, isDefault: false, instant: true }]);
+    assert.deepEqual(r.data.banks.map((b) => [b.id, b.isDefault]), [['ba_1', true]]);
+    r = await call('POST', '/payouts/me/external-accounts', { token: linkToken, body: { token: '4242424242424242' } });
+    assert.equal(r.status, 400, 'only Stripe tokens, never raw numbers');
+    r = await call('POST', '/payouts/me/external-accounts', { token: linkToken, body: { token: 'tok_visa_debit' } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    assert.deepEqual(calls.at(-1), { method: 'POST', path: '/accounts/acct_d1/external_accounts', body: { external_account: 'tok_visa_debit' }, idem: undefined, account: undefined });
+    r = await call('POST', '/payouts/me/external-accounts/card_1/default', { token: linkToken });
+    assert.equal(r.status, 200);
+    assert.equal(calls.at(-1).path, '/accounts/acct_d1/external_accounts/card_1');
+    assert.equal(calls.at(-1).body.default_for_currency, 'true');
+    r = await call('DELETE', '/payouts/me/external-accounts/ba_1', { token: linkToken });
+    assert.equal(r.status, 409, "can't remove where pay goes");
+    r = await call('DELETE', '/payouts/me/external-accounts/card_1', { token: linkToken });
+    assert.equal(r.status, 200);
+    assert.equal(calls.at(-1).method, 'DELETE');
+    assert.equal((await call('DELETE', '/payouts/me/external-accounts/card_zz', { token: linkToken })).status, 404);
+    assert.equal((await call('GET', '/payouts/me/payout-info', { token: t.acme })).status, 403);
     delete process.env.STRIPE_PUBLISHABLE_KEY;
 
     // The Wednesday batch pays everyone with direct deposit, once per Wednesday.
