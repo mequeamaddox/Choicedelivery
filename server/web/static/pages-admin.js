@@ -181,7 +181,12 @@ export function DriverDetailPage({ id }) {
               ${u.photoUrl ? html`<img class="avatar big" src=${u.photoUrl} alt="" />` : html`<div class="avatar big empty">${(u.name || '?')[0]}</div>`}
               <div>
                 <p><strong>${u.name}</strong></p>
-                <p class="small"><a href=${`mailto:${u.email}`}>${u.email}</a>${u.phoneNumber && html` · <a href=${`tel:${u.phoneNumber}`}>${u.phoneNumber}</a>`}</p>
+                <p class="small"><a href=${`mailto:${u.email}`}>${u.email}</a>${u.phoneNumber && html` · <a href=${`tel:${u.phoneNumber}`}>${u.phoneNumber}</a>`}
+                  · <${ActionButton} class="link small" onError=${setActionError} onClick=${async () => {
+                    const email = window.prompt('New email for this driver (they sign in with it):', u.email);
+                    if (email == null || email.trim() === u.email) return;
+                    await api(`/users/${u.id}`, { method: 'PATCH', body: { email: email.trim() } }); reload();
+                  }}>Change email<//></p>
                 <p class="small muted">${[p.city, p.zip].filter(Boolean).join(' ')}</p>
               </div>
             </div>

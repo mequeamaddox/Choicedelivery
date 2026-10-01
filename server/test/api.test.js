@@ -1554,3 +1554,19 @@ test('dispatch can mark an order delivered by hand, with a reason', async () => 
   r = await call('POST', `/orders/${order.id}/mark-delivered`, { token: t.admin, body: { reason: 'again' } });
   assert.equal(r.status, 409, 'already completed');
 });
+
+test("staff can fix a typo in a driver's email", async () => {
+  const me = (await call('GET', '/users/me', { token: t.d1 })).data;
+  let r = await call('PATCH', `/users/${me.id}`, { token: t.dispatcher, body: { email: 'not-an-email' } });
+  assert.equal(r.status, 400);
+  r = await call('PATCH', `/users/${me.id}`, { token: t.dispatcher, body: { email: 'Admin@Test.com' } });
+  assert.equal(r.status, 409, 'emails stay unique');
+  r = await call('PATCH', `/users/${me.id}`, { token: t.dispatcher, body: { email: ' Fixed.Driver@Test.com ' } });
+  assert.equal(r.status, 200);
+  assert.equal((await call('GET', '/users/me', { token: t.d1 })).data.email, 'fixed.driver@test.com');
+  r = await call('PATCH', `/users/${me.id}`, { token: t.dispatcher, body: { email: me.email } });
+  assert.equal(r.status, 200);
+  const admin = (await call('GET', '/users/me', { token: t.admin })).data;
+  r = await call('PATCH', `/users/${admin.id}`, { token: t.dispatcher, body: { email: 'x@y.co' } });
+  assert.equal(r.status, 403, "dispatchers can't change staff emails");
+});

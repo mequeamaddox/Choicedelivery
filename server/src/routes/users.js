@@ -170,8 +170,12 @@ router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res)
   const target = await getUser(req.params.id).catch(() => null);
   if (!target) throw new HttpError(404, 'User not found');
   const { role, organizationId, isActive, name, phoneNumber, vehicleType, driverProfile, vehicle } = req.body || {};
+  // Staff can fix a typo in someone's email (it's how they sign in). Staff accounts' emails: admins only.
+  const email = req.body?.email === undefined ? undefined : str(req.body.email).toLowerCase();
+  if (email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address');
   if (req.user.role !== 'admin') {
     if (['admin', 'dispatcher'].includes(target.role) || role !== undefined || organizationId !== undefined) {
+      // (covers changing a staff member's email too)
       throw new HttpError(403, 'Only admins can change roles or companies');
     }
   }
@@ -185,12 +189,13 @@ router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res)
         `UPDATE users SET role = COALESCE($2, role),
            organization_id = CASE WHEN $3::boolean THEN $4::uuid ELSE organization_id END,
            is_active = COALESCE($5, is_active), name = COALESCE($6, name),
-           phone_number = COALESCE($7, phone_number), updated_at = now()
+           phone_number = COALESCE($7, phone_number), email = COALESCE($8, email), updated_at = now()
          WHERE id = $1`,
         [target.id, role ?? null, organizationId !== undefined, organizationId || null,
-          isActive ?? null, name ?? null, phoneNumber ?? null]
+          isActive ?? null, name ?? null, phoneNumber ?? null, email ?? null]
       );
     } catch (e) {
+      if (e.code === '23505') throw new HttpError(409, 'That email is already used by another account');
       if (e.code === '23514') throw new HttpError(400, 'Shipper accounts need an organizationId');
       if (e.code === '23503') throw new HttpError(400, 'Organization not found');
       throw e;
