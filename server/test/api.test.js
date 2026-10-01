@@ -1549,6 +1549,17 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
     assert.ok(r.data.driverPaidAt, 'paid in the batch');
     batch = await payouts.runWeeklyBatch(new Date('2026-10-07T15:00:00Z'));
     assert.equal(batch.ran, false, 'only once per Wednesday');
+
+    // A publishable key from the other mode is ignored rather than breaking the card forms.
+    process.env.STRIPE_PUBLISHABLE_KEY = 'pk_live_mismatch';
+    assert.equal((await call('GET', '/payouts/me/payout-info', { token: t.d1 })).data.publishableKey, null);
+    delete process.env.STRIPE_PUBLISHABLE_KEY;
+    // Going live: drivers' test-mode accounts are cleared so they set up direct deposit again.
+    assert.equal(await stripe.retireOtherModeAccounts(require('../src/db')), 0, 'nothing to clear in test mode');
+    process.env.STRIPE_SECRET_KEY = 'sk_live_connect';
+    assert.ok(await stripe.retireOtherModeAccounts(require('../src/db')) >= 1);
+    r = await call('GET', '/payouts/me/payout-info', { token: t.d1 });
+    assert.equal(r.data.setUp, false);
   } finally {
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.PUBLIC_URL;

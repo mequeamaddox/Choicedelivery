@@ -95,6 +95,11 @@ async function start() {
   handler = app;
   console.log(`Choice Delivery API ready on :${port}`);
 
+  // Switched between test and live keys: drivers' accounts from the other mode no longer exist.
+  require('./stripe').retireOtherModeAccounts(db)
+    .then((n) => n && console.log(`Stripe: ${n} driver account(s) from the other mode cleared; they set up direct deposit again`))
+    .catch((e) => console.error('Stripe account mode check failed:', e.message));
+
   // Payments: create/verify the Stripe webhook in the background (never blocks startup).
   require('./stripe').ensureWebhook(db)
     .then((r) => console.log(`Stripe webhook: ${r.status}${r.url ? ` (${r.url}, ${r.mode} mode)` : ''}${r.reason ? ` - ${r.reason}` : ''}`))

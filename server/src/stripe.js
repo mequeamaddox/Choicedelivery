@@ -68,7 +68,24 @@ const refund = (paymentIntent, amountCents, orderId) => stripeRequest(
 );
 
 const WEBHOOK_EVENTS = ['checkout.session.completed', 'checkout.session.async_payment_succeeded'];
-const mode = () => (String(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_live_') ? 'live' : 'test');
+const mode = () => (/^(sk|rk)_live_/.test(String(process.env.STRIPE_SECRET_KEY || '')) ? 'live' : 'test');
+// The publishable key for the browser, only when it's from the same mode as the secret key
+// (a pk_test key with live keys would make every card form fail).
+const publishableKey = () => {
+  const pk = String(process.env.STRIPE_PUBLISHABLE_KEY || '').trim();
+  return pk && pk.startsWith(`pk_${mode()}_`) ? pk : null;
+};
+
+// Drivers whose connected account was made in the other mode (test accounts after going live) set
+// up direct deposit again; their old account id would only give "No such account" errors.
+async function retireOtherModeAccounts(db) {
+  if (!enabled()) return 0;
+  const { rowCount } = await db.query(
+    `UPDATE users SET stripe_account_id = NULL, stripe_payouts_enabled = false, stripe_details_submitted = false,
+       stripe_account_mode = NULL
+     WHERE stripe_account_id IS NOT NULL AND stripe_account_mode IS DISTINCT FROM $1`, [mode()]);
+  return rowCount;
+}
 
 // Signing secret of the webhook this server created (see ensureWebhook), cached from the settings table.
 let storedSecret = null;
@@ -186,7 +203,7 @@ const instantPayout = ({ accountId, cents, payoutId }) => stripeRequest('POST', 
 }, { account: accountId, idempotencyKey: `instant-${payoutId}` });
 
 module.exports = {
-  enabled, mode, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
+  enabled, mode, publishableKey, retireOtherModeAccounts, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
   ensureWebhook, webhookReady,
   createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver, instantPayout, createAccountSession,
   addExternalAccount, makeDefaultExternalAccount, removeExternalAccount,

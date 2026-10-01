@@ -204,7 +204,7 @@ router.post('/me/stripe/onboard', requireRole('driver'), asyncH(async (req, res)
       accountId = (await stripe.createDriverAccount({
         userId: u.id, email: u.email, firstName: firstName || undefined, lastName: rest.join(' ') || undefined, phone,
       })).id;
-      await db.query('UPDATE users SET stripe_account_id = $2 WHERE id = $1', [u.id, accountId]);
+      await db.query('UPDATE users SET stripe_account_id = $2, stripe_account_mode = $3 WHERE id = $1', [u.id, accountId, stripe.mode()]);
     }
     const link = await stripe.createAccountLink({
       accountId, refreshUrl: `${base()}/public/stripe-return?expired=1`, returnUrl: `${base()}/public/stripe-return`,
@@ -254,7 +254,7 @@ router.get('/me/payout-info', requireRole('driver'), asyncH(async (req, res) => 
   const p = u.driver_profile || {};
   const out = {
     name: u.name, cityLine: [p.city, ['SC', p.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ') || null,
-    ssnOnFile: false, cards: [], banks: [], setUp: !!u.stripe_account_id, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || null,
+    ssnOnFile: false, cards: [], banks: [], setUp: !!u.stripe_account_id, publishableKey: stripe.publishableKey(),
   };
   if (u.stripe_account_id && stripe.enabled()) {
     const acct = await stripe.getAccount(u.stripe_account_id);
@@ -294,7 +294,7 @@ router.delete('/me/external-accounts/:id', requireRole('driver'), asyncH(async (
 
 // Drivers: a session for Stripe's embedded form to add or change the bank account / debit card.
 router.post('/me/account-session', requireRole('driver'), asyncH(async (req, res) => {
-  const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+  const publishableKey = stripe.publishableKey();
   if (!publishableKey) throw new HttpError(409, "Changing your bank or card here isn't switched on yet. Ask Choice Delivery to add their Stripe publishable key.");
   const { rows: [u] } = await db.query('SELECT stripe_account_id FROM users WHERE id = $1', [req.user.id]);
   if (!u.stripe_account_id) throw new HttpError(409, 'Set up direct deposit first');
