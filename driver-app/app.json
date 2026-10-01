@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Choice Delivery Driver",
-    "slug": "choice-delivery-driver",
+    "slug": "choicedelivery",
     "scheme": "choicedriver",
     "version": "1.0.0",
     "orientation": "portrait",
