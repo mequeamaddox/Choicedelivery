@@ -38,7 +38,7 @@ export function Layout({ children }) {
           ${links.map((l) => html`<a href=${`#${l.href}`} class=${active(l.href) ? 'active' : ''}>${l.label}</a>`)}
           <span class="nav-user">
             ${user?.organization?.name || ROLE_LABELS[user?.role]}
-            <button class="link" onClick=${logout}>Log out</button>
+            <button type="button" class="logout-btn" onClick=${logout}>Log out</button>
           </span>
         </nav>
       </div>

@@ -62,7 +62,9 @@ code { font-size: .9em; background: var(--gray-bg); padding: 0 .3em; border-radi
 .nav a:hover { color: var(--teal); }
 .nav a.active { color: var(--teal); border-bottom-color: var(--teal); font-weight: 600; }
 .nav-user { margin-left: auto; display: flex; align-items: center; gap: .75rem; color: var(--muted); font-size: .9rem; }
-.nav-user .link { color: var(--teal); }
+.nav-user .logout-btn { background: var(--surface); color: var(--teal); border: 1px solid var(--teal); border-radius: 8px;
+  padding: .4rem .9rem; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+.nav-user .logout-btn:hover { background: var(--teal); color: #fff; }
 .menu-btn { display: none; margin-left: auto; background: none; border: 0; font-size: 1.5rem; color: #374151; cursor: pointer; }
 
 @media (max-width: 760px) {
