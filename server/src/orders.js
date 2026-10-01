@@ -352,7 +352,13 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
   if (events) {
     // Driver pay is between dispatch and the driver; customers don't see it in the timeline.
     const shown = user && user.role === 'shipper' ? events.filter((e) => !STAFF_DRIVER_EVENTS.includes(e.type)) : events;
-    out.events = shown.map((e) => ({ type: e.type, data: e.data, actorId: e.actor_id, at: e.created_at }));
+    out.events = shown.map((e) => ({
+      type: e.type,
+      // Dispatch's note on a hand-marked delivery is internal.
+      data: e.type === 'marked_delivered' && !isStaff(user || {}) ? {} : e.data,
+      actorId: e.actor_id,
+      at: e.created_at,
+    }));
   }
   if (user && isStaff(user)) {
     Object.assign(out, { driverPayCents: o.driver_pay_cents, driverPayIsCustom: o.driver_pay_is_custom, driverPaidAt: o.driver_paid_at });

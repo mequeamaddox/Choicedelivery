@@ -230,6 +230,42 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   res.json(updated);
 }));
 
+// Dispatch marks an order delivered by hand (the driver's phone died, they forgot to finish in the app,
+// or it was delivered outside the app). Completes every remaining stop without GPS or photo proof, and
+// records who did it and why. Body: { reason }. The driver's pay is still owed as usual.
+router.post('/:id/mark-delivered', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const current = await getOrderFor(req.user, req.params.id);
+  const reason = str(req.body?.reason).slice(0, 300);
+  if (!reason) throw new HttpError(400, 'Say why you are marking it delivered (for example, "driver\'s phone died")');
+  if (!['pending', ...ACTIVE].includes(current.status)) {
+    throw new HttpError(409, current.status === 'quote' ? 'This is a quote, not a booked order' : `Order is ${current.status}`);
+  }
+  if (current.paymentStatus === 'unpaid') {
+    throw new HttpError(409, "This order hasn't been paid yet. Record the payment first (Payment → mark paid), then mark it delivered.");
+  }
+  const done = await db.withTx(async (client) => {
+    const { rows: [o] } = await client.query(
+      `SELECT status FROM orders WHERE id = $1 AND status IN ('pending', 'accepted', 'at_pickup', 'in_transit', 'at_dropoff') FOR UPDATE`,
+      [current.id]);
+    if (!o) return null;
+    const { rowCount } = await client.query(
+      `UPDATE stops SET status = 'completed', arrived_at = COALESCE(arrived_at, now()), completed_at = now()
+       WHERE order_id = $1 AND status <> 'completed'`, [current.id]);
+    await client.query(
+      "UPDATE orders SET status = 'completed', completed_at = now(), updated_at = now() WHERE id = $1", [current.id]);
+    await recordEvent(client, current.id, req.user.id, 'marked_delivered', { reason, stopsCompleted: rowCount });
+    await recordEvent(client, current.id, req.user.id, 'completed');
+    return true;
+  });
+  if (!done) throw new HttpError(409, 'This order changed; refresh and try again');
+  emailShipper(current.id, 'delivered');
+  if (current.driver?.id) {
+    notifyUser(current.driver.id, 'Order marked delivered', `Dispatch marked ${current.orderNumber} delivered`, { orderId: current.id })
+      .catch((e) => console.error('Push notify failed:', e));
+  }
+  res.json(await getOrderFor(req.user, current.id));
+}));
+
 router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
   const current = await getOrderFor(req.user, req.params.id);
   if (current.status === 'quote') throw new HttpError(409, 'This is a saved quote; delete it instead');

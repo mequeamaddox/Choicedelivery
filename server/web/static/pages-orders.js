@@ -401,6 +401,7 @@ const EVENT_LABELS = {
   barcode_scanned: 'Driver scanned the package barcode',
   review_requested: 'Sent for a custom price',
   price_set: 'Price set by dispatch',
+  marked_delivered: 'Marked delivered by dispatch',
   driver_pay_set: 'Driver pay changed',
   driver_paid: 'Driver paid out',
   charge_added: 'Additional charge added',
@@ -428,6 +429,7 @@ function describeEvent(e) {
     return `${e.data.type === 'pickup' ? 'Picked up' : 'Dropped off'}${who}`;
   }
   if (e.type === 'cancelled' && e.data?.reason) return `${base}: ${e.data.reason}`;
+  if (e.type === 'marked_delivered' && e.data?.reason) return `${base}: ${e.data.reason}`;
   return base;
 }
 
@@ -439,6 +441,12 @@ function DispatchPanel({ order, onChange, setError }) {
   useEffect(() => { setPay(order.driverPayCents == null ? '' : (order.driverPayCents / 100).toFixed(2)); }, [order.driverPayCents]);
   const closed = ['completed', 'cancelled'].includes(order.status);
   const setDriverPay = (cents) => async () => onChange(await api(`/orders/${order.id}/driver-pay`, { method: 'PUT', body: { cents } }));
+  const markDelivered = async () => {
+    const reason = window.prompt(`Mark ${order.orderNumber} delivered?\n\nWhy? (e.g. "driver's phone died, confirmed by phone with receiver")`);
+    if (reason == null) return;
+    if (!reason.trim()) throw new Error('Add a short reason so there\'s a record of why it was marked delivered.');
+    onChange(await api(`/orders/${order.id}/mark-delivered`, { method: 'POST', body: { reason: reason.trim() } }));
+  };
   const active = (drivers.data || []).filter((d) => d.isActive)
     .sort((a, b) => Number(b.isOnline) - Number(a.isOnline) || (a.name || a.email).localeCompare(b.name || b.email));
   return html`
@@ -477,6 +485,12 @@ function DispatchPanel({ order, onChange, setError }) {
             ${order.driverPayIsCustom && !order.driverPaidAt && html`<${ActionButton} class="btn small" onError=${setError} onClick=${setDriverPay(null)}>Use rate<//>`}
           </div>
         <//>`}
+      ${['pending', ...ACTIVE_STATUSES].includes(order.status) && html`
+        <div class="stack-sm">
+          <${ActionButton} class="btn block" onError=${setError} onClick=${markDelivered}>Mark delivered<//>
+          <p class="muted small">For when the driver can't finish in the app (phone died, forgot). Completes every stop without
+            GPS or photo proof, emails the customer, and keeps the driver's pay owed.</p>
+        </div>`}
     </section>`;
 }
 

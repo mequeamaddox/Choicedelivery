@@ -363,3 +363,4 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; display: flex; flex-direction: column; gap: .2rem; }
 .stat strong { font-size: 1.25rem; }
 @media (max-width: 520px) { .stat-row { grid-template-columns: 1fr; } }
+.stack-sm { display: flex; flex-direction: column; gap: .35rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }

@@ -1435,3 +1435,34 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
     stripe.setFetch((...args) => fetch(...args));
   }
 });
+
+test('dispatch can mark an order delivered by hand, with a reason', async () => {
+  let r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+  const order = r.data;
+  await call('POST', `/orders/${order.id}/accept`, { token: t.d1 });
+  await call('POST', `/orders/${order.id}/stops/${order.stops[0].id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
+  await call('POST', `/orders/${order.id}/stops/${order.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:s', location: AT_PICKUP } });
+
+  r = await call('POST', `/orders/${order.id}/mark-delivered`, { token: t.acme, body: { reason: 'x' } });
+  assert.equal(r.status, 403, 'customers cannot');
+  r = await call('POST', `/orders/${order.id}/mark-delivered`, { token: t.d1, body: { reason: 'x' } });
+  assert.equal(r.status, 403, 'drivers cannot');
+  r = await call('POST', `/orders/${order.id}/mark-delivered`, { token: t.admin, body: { reason: ' ' } });
+  assert.equal(r.status, 400, 'a reason is required');
+
+  r = await call('POST', `/orders/${order.id}/mark-delivered`, { token: t.admin, body: { reason: "Driver's phone died; receiver confirmed" } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.status, 'completed');
+  assert.ok(r.data.completedAt);
+  assert.ok(r.data.stops.every((s) => s.status === 'completed'));
+  const ev = r.data.events.find((e) => e.type === 'marked_delivered');
+  assert.equal(ev.data.reason, "Driver's phone died; receiver confirmed");
+  assert.equal(ev.data.stopsCompleted, 1, 'only the unfinished drop-off was completed');
+
+  r = await call('GET', `/orders/${order.id}`, { token: t.acme });
+  assert.deepEqual(r.data.events.find((e) => e.type === 'marked_delivered').data, {}, "customers don't see dispatch's note");
+  r = await call('GET', '/payouts/me', { token: t.d1 });
+  assert.ok(r.data.orders.some((o) => o.id === order.id && !o.driverPaidAt), "the driver's pay is still owed");
+  r = await call('POST', `/orders/${order.id}/mark-delivered`, { token: t.admin, body: { reason: 'again' } });
+  assert.equal(r.status, 409, 'already completed');
+});
