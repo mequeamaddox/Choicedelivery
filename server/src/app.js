@@ -41,12 +41,21 @@ const LANDING_FILES = {
   '/privacy.html': 'privacy.html',
   '/terms': 'terms.html',
   '/terms.html': 'terms.html',
+  '/site.css': 'site.css',
+  '/robots.txt': 'robots.txt',
+  '/sitemap.xml': 'sitemap.xml',
   '/logo.png': 'logo.png',
   '/favicon.png': 'favicon.png',
   '/favicon.ico': 'favicon.png',
 };
 app.use((req, res, next) => {
   const host = (req.hostname || '').toLowerCase();
+  // The app (logins, orders, tracking links with addresses) stays out of search engines; only the
+  // public website is indexed.
+  if (!LANDING_HOSTS.includes(host)) {
+    res.set('X-Robots-Tag', 'noindex, nofollow');
+    if (req.path === '/robots.txt') return res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+  }
   if (!LANDING_HOSTS.includes(host) || !['GET', 'HEAD'].includes(req.method)) return next();
   const file = LANDING_FILES[req.path];
   if (!file) return next();
@@ -54,7 +63,7 @@ app.use((req, res, next) => {
   if (host.startsWith('www.') && LANDING_HOSTS.includes(host.slice(4))) {
     return res.redirect(301, `https://${host.slice(4)}${req.originalUrl}`);
   }
-  res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': file.endsWith('.html') ? 'no-cache' : 'public, max-age=86400' });
+  res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': /\.(html|txt|xml)$/.test(file) ? 'no-cache' : 'public, max-age=86400' });
   res.sendFile(path.join(LANDING_DIR, file));
 });
 

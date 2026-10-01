@@ -12,7 +12,8 @@
     "migrate": "node scripts/migrate.js",
     "create-user": "node scripts/create-user.js",
     "import-firebase": "node scripts/import-firebase.js",
-    "test": "node --test"
+    "test": "node --test",
+    "build:landing-css": "npx -y tailwindcss@3.4.19 -c landing/tailwind.config.js -i landing/tailwind.css -o landing/site.css --minify"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
