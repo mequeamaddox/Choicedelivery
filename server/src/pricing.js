@@ -268,13 +268,23 @@ const SERVICE_LEVELS = {
 
 // Business plans as advertised on choicedeliverysc.com (chosen over the original app's code, which
 // had 10/8/8/6 included deliveries with $40/$30/$35/$25 overages).
+// Monthly business plans: included deliveries are standard service within PLAN_LOCAL_MILES of
+// Columbia; extra deliveries cost OVERAGE_CENTS, rush PLAN_RUSH_CENTS more. Shown on the website only
+// when SHOW_BUSINESS_PLANS=true (hidden for now).
 const BUSINESS_PLANS = {
-  law_firm: { name: 'Law Firm Plan', monthlyCents: 50000, includedDeliveries: 20 },
-  medical: { name: 'Medical Office Plan', monthlyCents: 30000, includedDeliveries: 15 },
-  real_estate: { name: 'Real Estate Plan', monthlyCents: 40000, includedDeliveries: 18 },
-  usc_department: { name: 'USC Department Plan', monthlyCents: 20000, includedDeliveries: 12 },
+  starter: { name: 'Starter Plan', monthlyCents: 23000, includedDeliveries: 10 },
+  pro: { name: 'Pro Plan', monthlyCents: 52500, includedDeliveries: 25 },
+  business: { name: 'Business Plan', monthlyCents: 95000, includedDeliveries: 50 },
 };
-const OVERAGE_CENTS = 1500;
+const OVERAGE_CENTS = 2200;
+const PLAN_LOCAL_MILES = 15;
+const PLAN_RUSH_CENTS = 3500;
+const businessPlansEnabled = () => String(process.env.SHOW_BUSINESS_PLANS || '').toLowerCase() === 'true';
+// Names of plans offered before, so older plan requests still read correctly.
+const PLAN_NAMES = {
+  ...Object.fromEntries(Object.entries(BUSINESS_PLANS).map(([k, p]) => [k, p.name])),
+  law_firm: 'Law Firm Plan', medical: 'Medical Office Plan', real_estate: 'Real Estate Plan', usc_department: 'USC Department Plan',
+};
 
 const normalizeServiceLevel = (v) => (v === 'same_day' ? 'rush' : v);
 const isServiceLevel = (v) => Object.prototype.hasOwnProperty.call(SERVICE_LEVELS, normalizeServiceLevel(v));
@@ -402,6 +412,7 @@ async function pricingContext(client, excludeOrderId = null) {
 module.exports = {
   TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HOLIDAYS, HIGH_DEMAND_OPEN_ORDERS,
   holidayOn, holidayName,
-  VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, DEFAULT_FEES, CHARGE_KINDS,
+  VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES,
+  businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS,
   normalizeFees, getFees, driverPayFor, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
 };

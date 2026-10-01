@@ -1,8 +1,10 @@
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
 const resetPage = require('./reset-page');
+const { businessPlansEnabled } = require('./pricing');
 
 const app = express();
 app.set('trust proxy', 1); // Railway terminates TLS at its proxy
@@ -48,6 +50,24 @@ const LANDING_FILES = {
   '/favicon.png': 'favicon.png',
   '/favicon.ico': 'favicon.png',
 };
+// The business-plan parts of the home page are marked <!-- business-plans -->…<!-- /business-plans -->
+// (optionally with <!-- business-plans:else --> shown instead when hidden), and /* business-plans */
+// in its script. They're left out unless SHOW_BUSINESS_PLANS=true.
+const landingCache = new Map();
+function landingIndex() {
+  const show = businessPlansEnabled();
+  if (!landingCache.has(show)) {
+    const html = fs.readFileSync(path.join(LANDING_DIR, 'index.html'), 'utf8');
+    landingCache.set(show, html
+      .replace(/<!-- business-plans -->([\s\S]*?)<!-- \/business-plans -->/g, (m, inner) => {
+        const [on, off = ''] = inner.split('<!-- business-plans:else -->');
+        return show ? on : off;
+      })
+      .replace(/\/\* business-plans \*\/([\s\S]*?)\/\* \/business-plans \*\//g, (m, inner) => (show ? inner : '')));
+  }
+  return landingCache.get(show);
+}
+
 app.use((req, res, next) => {
   const host = (req.hostname || '').toLowerCase();
   // The app (logins, orders, tracking links with addresses) stays out of search engines; only the
@@ -64,6 +84,7 @@ app.use((req, res, next) => {
     return res.redirect(301, `https://${host.slice(4)}${req.originalUrl}`);
   }
   res.set({ 'X-Content-Type-Options': 'nosniff', 'Cache-Control': /\.(html|txt|xml)$/.test(file) ? 'no-cache' : 'public, max-age=86400' });
+  if (file === 'index.html') return res.type('html').send(landingIndex());
   res.sendFile(path.join(LANDING_DIR, file));
 });
 

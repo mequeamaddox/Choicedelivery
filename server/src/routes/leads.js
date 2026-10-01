@@ -2,7 +2,7 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth');
-const { BUSINESS_PLANS } = require('../pricing');
+const { PLAN_NAMES } = require('../pricing');
 const { asyncH, HttpError } = require('../util');
 
 const router = express.Router();
@@ -11,7 +11,7 @@ router.use(requireAuth, requireRole('admin', 'dispatcher'));
 const STATUSES = ['new', 'contacted', 'won', 'closed'];
 const serialize = (l) => ({
   id: l.id, type: l.type, name: l.name, company: l.company, email: l.email, phone: l.phone, message: l.message,
-  plan: l.plan, planName: l.plan ? BUSINESS_PLANS[l.plan]?.name || l.plan : null, status: l.status,
+  plan: l.plan, planName: l.plan ? PLAN_NAMES[l.plan] || l.plan : null, status: l.status,
   createdAt: l.created_at, updatedAt: l.updated_at, isDemo: l.is_demo,
 });
 

@@ -413,7 +413,14 @@ test('orders are priced on the server by distance; dispatch can override', async
 
 test('website: contact messages and plan requests become leads', async () => {
   let r = await call('GET', '/public/pricing');
-  assert.equal(r.data.businessPlans.length, 4);
+  assert.deepEqual(r.data.businessPlans, [], 'business plans are hidden for now');
+  r = await call('POST', '/public/contract-request', { body: { plan: 'pro', name: 'Ann', company: 'Smith Law', email: 'ann@smith.law' } });
+  assert.equal(r.status, 404, 'and plan requests are turned off');
+  process.env.SHOW_BUSINESS_PLANS = 'true';
+  r = await call('GET', '/public/pricing');
+  assert.deepEqual(r.data.businessPlans.map((p) => [p.id, p.monthlyCents, p.includedDeliveries]),
+    [['starter', 23000, 10], ['pro', 52500, 25], ['business', 95000, 50]]);
+  assert.equal(r.data.overageCents, 2200);
 
   r = await call('POST', '/public/contact', { body: { firstName: 'Jo', lastName: 'Ray', email: 'jo@x.com', message: 'Need weekly runs' } });
   assert.equal(r.status, 201);
@@ -421,17 +428,20 @@ test('website: contact messages and plan requests become leads', async () => {
   assert.equal(r.status, 400);
   r = await call('POST', '/public/contact', { body: { firstName: 'Bot', email: 'b@x.com', message: 'spam', website: 'http://spam' } });
   assert.equal(r.status, 201, 'honeypot submissions look accepted');
-  r = await call('POST', '/public/contract-request', { body: { plan: 'law_firm', name: 'Ann', company: 'Smith Law', email: 'ann@smith.law' } });
+  r = await call('POST', '/public/contract-request', { body: { plan: 'pro', name: 'Ann', company: 'Smith Law', email: 'ann@smith.law' } });
   assert.equal(r.status, 201);
+  r = await call('POST', '/public/contract-request', { body: { plan: 'law_firm', name: 'A', email: 'a@b.co' } });
+  assert.equal(r.status, 400, 'old plans are no longer offered');
   r = await call('POST', '/public/contract-request', { body: { plan: 'free_stuff', name: 'A', email: 'a@b.co' } });
   assert.equal(r.status, 400);
+  delete process.env.SHOW_BUSINESS_PLANS;
 
   r = await call('GET', '/leads', { token: t.acme });
   assert.equal(r.status, 403, 'shippers cannot see leads');
   r = await call('GET', '/leads?status=new', { token: t.dispatcher });
   assert.deepEqual(r.data.map((l) => l.type).sort(), ['contact', 'contract'], 'spam was dropped');
   const contract = r.data.find((l) => l.type === 'contract');
-  assert.equal(contract.planName, 'Law Firm Plan');
+  assert.equal(contract.planName, 'Pro Plan');
   r = await call('PATCH', `/leads/${contract.id}`, { token: t.dispatcher, body: { status: 'contacted' } });
   assert.equal(r.data.status, 'contacted');
 });
@@ -511,6 +521,15 @@ test('landing page is served on www; the app on other hosts', async () => {
   r = await get('choicedeliverysc.com', '/privacy');
   assert.match(r.body, /Privacy Policy/);
   assert.match(r.body, /Deleting your account/);
+  r = await get('choicedeliverysc.com', '/');
+  assert.doesNotMatch(r.body, /id="business"|requestBusinessContract|Business Plans/, 'business plans are hidden');
+  assert.match(r.body, /Live Tracking &amp; Proof/);
+  process.env.SHOW_BUSINESS_PLANS = 'true';
+  const withPlans = await get('choicedeliverysc.com', '/');
+  delete process.env.SHOW_BUSINESS_PLANS;
+  assert.match(withPlans.body, /id="business"/);
+  assert.match(withPlans.body, /\$525/);
+  assert.doesNotMatch(withPlans.body, /Live Tracking &amp; Proof|business-plans/);
   r = await get('choicedeliverysc.com', '/robots.txt');
   assert.match(r.body, /Sitemap: https:\/\/choicedeliverysc.com\/sitemap.xml/);
   r = await get('choicedeliverysc.com', '/sitemap.xml');

@@ -4,7 +4,7 @@ const db = require('../db');
 const { sendMail } = require('../mailer');
 const { rateLimit } = require('../rate-limit');
 const {
-  SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS,
+  SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES, businessPlansEnabled,
   SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs,
   CHARGE_KINDS, pieceWeightProblem,
 } = require('../pricing');
@@ -34,8 +34,11 @@ router.get('/pricing', asyncH(async (req, res) => {
     rushFeeCents: fees.rushCents,
     vehicleTypes: Object.entries(fees.vehicles).filter(([, v]) => v.enabled).map(([k]) => k),
     serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, sv]) => ({ id, ...sv, feeCents: id === 'rush' ? fees.rushCents : 0 })),
-    businessPlans: Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })),
+    // Business plans are hidden until SHOW_BUSINESS_PLANS=true.
+    businessPlans: businessPlansEnabled() ? Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })) : [],
     overageCents: OVERAGE_CENTS,
+    planLocalMiles: PLAN_LOCAL_MILES,
+    planRushCents: PLAN_RUSH_CENTS,
     fees: { ...fees, driverPay: undefined }, // what drivers earn is internal
     chargeKinds: CHARGE_KINDS,
   });
@@ -155,10 +158,10 @@ async function saveLead(req, lead) {
     [lead.type, lead.name, lead.company, lead.email, lead.phone, lead.message, lead.plan || null, req.ip]
   );
   const subject = lead.type === 'contract'
-    ? `Business plan request: ${BUSINESS_PLANS[lead.plan]?.name} — ${lead.company || lead.name}`
+    ? `Business plan request: ${PLAN_NAMES[lead.plan] || lead.plan} — ${lead.company || lead.name}`
     : `Website message from ${lead.name}`;
   const rowsHtml = [['Name', lead.name], ['Company', lead.company], ['Email', lead.email], ['Phone', lead.phone],
-    ['Plan', lead.plan && BUSINESS_PLANS[lead.plan]?.name], ['Message', lead.message]]
+    ['Plan', lead.plan && PLAN_NAMES[lead.plan]], ['Message', lead.message]]
     .filter(([, v]) => v).map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join('');
   const base = process.env.PUBLIC_URL || '';
   sendMail({
@@ -181,6 +184,7 @@ router.post('/contact', limitWrites, asyncH(async (req, res) => {
 
 router.post('/contract-request', limitWrites, asyncH(async (req, res) => {
   const b = req.body || {};
+  if (!businessPlansEnabled()) throw new HttpError(404, "Business plans aren't available right now; send us a message instead");
   if (!BUSINESS_PLANS[b.plan]) throw new HttpError(400, 'Unknown plan');
   const name = limit(b.name, 120);
   const email = limit(b.email, 200).toLowerCase();

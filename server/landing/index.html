@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Choice Delivery SC">
     <meta property="og:title" content="Choice Delivery SC - Same-Day Courier Service in Columbia, SC">
-    <meta property="og:description" content="Fast, reliable same-day delivery in Columbia, SC and across the Southeast, with live tracking and proof of delivery. Business contracts for law firms, medical offices and more.">
+    <meta property="og:description" content="Fast, reliable same-day delivery in Columbia, SC and across the Southeast, with live tracking and proof of delivery.">
     <meta property="og:image" content="https://choicedeliverysc.com/logo.png">
     <meta property="og:url" content="https://choicedeliverysc.com/">
     <meta name="twitter:card" content="summary">
@@ -57,7 +57,7 @@
     <link rel="icon" type="image/png" href="favicon.png">
     
     <!-- Tailwind CSS, compiled (npm run build:landing-css) -->
-    <link rel="stylesheet" href="/site.css?v=1">
+    <link rel="stylesheet" href="/site.css?v=2">
     
     <!-- Custom CSS -->
     <style>
@@ -128,7 +128,7 @@
                 </div>
                 <div class="hidden md:flex space-x-6">
                     <a href="#services" class="text-gray-700 hover:text-choice-teal">Services</a>
-                    <a href="#business" class="text-gray-700 hover:text-choice-teal">Business Plans</a>
+                    <!-- business-plans --><a href="#business" class="text-gray-700 hover:text-choice-teal">Business Plans</a><!-- /business-plans -->
                     <a href="#track" class="text-gray-700 hover:text-choice-teal">Track</a>
                     <a href="#contact" class="text-gray-700 hover:text-choice-teal">Contact</a>
                     <a href="https://app.choicedeliverysc.com/#/drive" class="text-gray-700 hover:text-choice-teal">Drive with us</a>
@@ -146,7 +146,7 @@
             <!-- Mobile menu -->
             <div id="mobile-menu" class="hidden md:hidden pb-4">
                 <a href="#services" class="block py-2 text-gray-700 hover:text-choice-teal">Services</a>
-                <a href="#business" class="block py-2 text-gray-700 hover:text-choice-teal">Business Plans</a>
+                <!-- business-plans --><a href="#business" class="block py-2 text-gray-700 hover:text-choice-teal">Business Plans</a><!-- /business-plans -->
                 <a href="#track" class="block py-2 text-gray-700 hover:text-choice-teal">Track a delivery</a>
                 <a href="#contact" class="block py-2 text-gray-700 hover:text-choice-teal">Contact</a>
                 <a href="https://app.choicedeliverysc.com/#/drive" class="block py-2 text-gray-700 hover:text-choice-teal">Drive with us</a>
@@ -174,9 +174,11 @@
                 <a href="#app" class="bg-white text-choice-teal px-8 py-4 rounded-lg text-lg font-semibold hover-scale hover:shadow-lg">
                     Get Quote Now
                 </a>
-                <a href="#business" class="border-2 border-white text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal hover-scale">
+                <!-- business-plans --><a href="#business" class="border-2 border-white text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal hover-scale">
                     Business Contracts
-                </a>
+                </a><!-- business-plans:else --><a href="https://app.choicedeliverysc.com/#/signup" class="border-2 border-white text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal hover-scale">
+                    Create Business Account
+                </a><!-- /business-plans -->
             </div>
 
             <!-- Track a delivery -->
@@ -250,6 +252,7 @@
                     <div class="text-choice-teal font-bold text-xl">Starting at $25</div>
                 </div>
                 
+<!-- business-plans -->
                 <!-- Business Contracts -->
                 <div class="bg-white rounded-xl shadow-lg p-8 hover-scale border-2 border-choice-mint">
                     <div class="w-16 h-16 bg-choice-teal rounded-lg flex items-center justify-center mb-6">
@@ -266,6 +269,22 @@
                         <span class="bg-choice-mint text-choice-teal px-3 py-1 rounded-full text-sm font-medium">Most Popular</span>
                     </div>
                 </div>
+<!-- business-plans:else -->
+                <!-- Tracking & proof -->
+                <div class="bg-white rounded-xl shadow-lg p-8 hover-scale border-2 border-choice-mint">
+                    <div class="w-16 h-16 bg-choice-teal rounded-lg flex items-center justify-center mb-6">
+                        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-2xl font-bold mb-4 text-choice-teal">Live Tracking &amp; Proof</h3>
+                    <p class="text-gray-600 mb-6">
+                        Follow your driver on the map in real time. Every delivery is confirmed with a photo, signature and GPS location.
+                    </p>
+                    <div class="text-choice-teal font-bold text-xl">Included with every order</div>
+                </div>
+<!-- /business-plans -->
             </div>
         </div>
     </section>
@@ -333,196 +352,108 @@
         </div>
     </section>
 
-    <!-- Business Contracts Section -->
+    <!-- business-plans -->
+    <!-- Business Plans Section -->
     <section id="business" class="py-16 bg-gray-50">
         <div class="max-w-6xl mx-auto px-4">
-            <h2 class="text-4xl font-bold text-center mb-4">Business Delivery Contracts</h2>
+            <h2 class="text-4xl font-bold text-center mb-4">Business Delivery Plans</h2>
             <p class="text-xl text-gray-600 text-center mb-12 max-w-3xl mx-auto">
-                Predictable monthly pricing with included deliveries. Perfect for professional services requiring regular courier needs.
+                Predictable monthly pricing for offices with regular courier needs: law firms, medical offices, real estate, campus departments and more.
             </p>
-            
-            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <!-- Law Firm Plan -->
-                <div class="bg-white rounded-xl shadow-lg p-6 hover-scale border-t-4 border-blue-500">
+            <div class="grid md:grid-cols-3 gap-6">
+                <div class="bg-white rounded-xl shadow-lg p-6 hover-scale border-t-4 border-gray-200">
                     <div class="text-center mb-6">
-                        <div class="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-bold mb-2">Law Firm Plan</h3>
-                        <div class="text-3xl font-bold text-blue-600 mb-1">$500</div>
-                        <div class="text-gray-600">/month</div>
+                        <div class="mb-3"><span class="invisible px-3 py-1 text-sm">&nbsp;</span></div>
+                        <h3 class="text-xl font-bold mb-2">Starter</h3>
+                        <div class="text-4xl font-bold text-choice-teal mb-1">$230</div>
+                        <div class="text-gray-600">/month &middot; 10 deliveries ($23 each)</div>
                     </div>
                     <ul class="space-y-3 mb-6">
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            20 deliveries included
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            10 local deliveries a month
                         </li>
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Legal document delivery
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Live tracking &amp; proof of delivery
                         </li>
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Court filing services
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Online booking and monthly invoice
+                        </li>
+                    </ul>
+                    <button onclick="requestBusinessContract('starter')" class="w-full border-2 border-choice-teal text-choice-teal hover:bg-gray-50 py-3 rounded-lg font-semibold">
+                        Request This Plan
+                    </button>
+                </div>
+                <div class="bg-white rounded-xl shadow-lg p-6 hover-scale border-t-4 border-choice-teal">
+                    <div class="text-center mb-6">
+                        <div class="mb-3"><span class="bg-choice-mint text-choice-teal px-3 py-1 rounded-full text-sm font-medium">Most Popular</span></div>
+                        <h3 class="text-xl font-bold mb-2">Pro</h3>
+                        <div class="text-4xl font-bold text-choice-teal mb-1">$525</div>
+                        <div class="text-gray-600">/month &middot; 25 deliveries ($21 each)</div>
+                    </div>
+                    <ul class="space-y-3 mb-6">
+                        <li class="flex items-center">
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            25 local deliveries a month
                         </li>
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                             Priority scheduling
                         </li>
+                        <li class="flex items-center">
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Live tracking &amp; proof of delivery
+                        </li>
+                        <li class="flex items-center">
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Monthly invoice
+                        </li>
                     </ul>
-                    <button onclick="requestBusinessContract('law_firm')" class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700">
+                    <button onclick="requestBusinessContract('pro')" class="w-full bg-choice-teal text-white hover:bg-opacity-90 py-3 rounded-lg font-semibold">
                         Request This Plan
                     </button>
                 </div>
-                
-                <!-- Medical Plan -->
-                <div class="bg-white rounded-xl shadow-lg p-6 hover-scale border-t-4 border-green-500">
+                <div class="bg-white rounded-xl shadow-lg p-6 hover-scale border-t-4 border-gray-200">
                     <div class="text-center mb-6">
-                        <div class="w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-bold mb-2">Medical Office Plan</h3>
-                        <div class="text-3xl font-bold text-green-600 mb-1">$300</div>
-                        <div class="text-gray-600">/month</div>
+                        <div class="mb-3"><span class="invisible px-3 py-1 text-sm">&nbsp;</span></div>
+                        <h3 class="text-xl font-bold mb-2">Business</h3>
+                        <div class="text-4xl font-bold text-choice-teal mb-1">$950</div>
+                        <div class="text-gray-600">/month &middot; 50 deliveries ($19 each)</div>
                     </div>
                     <ul class="space-y-3 mb-6">
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            15 deliveries included
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            50 local deliveries a month
                         </li>
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Medical records delivery
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Priority scheduling
                         </li>
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            HIPAA compliant
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Dedicated account contact
                         </li>
                         <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Lab result transport
+                            <svg class="w-5 h-5 text-green-500 mr-3 flex-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                            Monthly invoice
                         </li>
                     </ul>
-                    <button onclick="requestBusinessContract('medical')" class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700">
-                        Request This Plan
-                    </button>
-                </div>
-                
-                <!-- Real Estate Plan -->
-                <div class="bg-white rounded-xl shadow-lg p-6 hover-scale border-t-4 border-purple-500">
-                    <div class="text-center mb-6">
-                        <div class="w-16 h-16 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-bold mb-2">Real Estate Plan</h3>
-                        <div class="text-3xl font-bold text-purple-600 mb-1">$400</div>
-                        <div class="text-gray-600">/month</div>
-                    </div>
-                    <ul class="space-y-3 mb-6">
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            18 deliveries included
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Contract delivery
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Key transport
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Closing documents
-                        </li>
-                    </ul>
-                    <button onclick="requestBusinessContract('real_estate')" class="w-full bg-purple-600 text-white py-3 rounded-lg font-semibold hover:bg-purple-700">
-                        Request This Plan
-                    </button>
-                </div>
-                
-                <!-- USC Plan -->
-                <div class="bg-white rounded-xl shadow-lg p-6 hover-scale border-t-4 border-red-500">
-                    <div class="text-center mb-6">
-                        <div class="w-16 h-16 bg-red-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-bold mb-2">USC Department Plan</h3>
-                        <div class="text-3xl font-bold text-red-600 mb-1">$200</div>
-                        <div class="text-gray-600">/month</div>
-                    </div>
-                    <ul class="space-y-3 mb-6">
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            12 deliveries included
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Campus delivery
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Inter-department transport
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Special USC pricing
-                        </li>
-                    </ul>
-                    <button onclick="requestBusinessContract('usc_department')" class="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700">
+                    <button onclick="requestBusinessContract('business')" class="w-full border-2 border-choice-teal text-choice-teal hover:bg-gray-50 py-3 rounded-lg font-semibold">
                         Request This Plan
                     </button>
                 </div>
             </div>
-            
-            <div class="text-center mt-12">
-                <p class="text-gray-600 mb-4">All plans include $15/delivery overage fee and real-time tracking</p>
-                <a href="#contact" class="text-choice-teal font-semibold hover:underline">
-                    Questions about business contracts? Contact us →
-                </a>
+            <div class="text-center mt-10 text-gray-600 space-y-2 max-w-3xl mx-auto">
+                <p>Included deliveries are standard service within 15 miles of Columbia. Extra deliveries are $22 each; rush is $35 more;
+                    longer trips are billed at our per-mile rate. Wait time, extra stops and heavy items are charged as on regular orders.
+                    Unused deliveries don't roll over.</p>
+                <a href="#contact" class="text-choice-teal font-semibold hover:underline">Need something different? Contact us &rarr;</a>
             </div>
         </div>
     </section>
+    <!-- /business-plans -->
 
     <!-- App Integration Section -->
     <section id="app" class="py-16 bg-white">
@@ -715,6 +646,7 @@
         </div>
     </section>
 
+    <!-- business-plans -->
     <!-- Business plan request dialog -->
     <div id="plan-dialog" class="fixed inset-0 z-50 hidden items-center justify-center bg-black bg-opacity-50 p-4" role="dialog" aria-modal="true" aria-labelledby="plan-title">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
@@ -755,6 +687,7 @@
             </form>
         </div>
     </div>
+    <!-- /business-plans -->
 
     <!-- Footer -->
     <footer class="bg-choice-teal text-white py-12">
@@ -773,7 +706,7 @@
                     <ul class="space-y-2 text-choice-mint-light">
                         <li><a href="#services" class="hover:text-white">Rush Delivery</a></li>
                         <li><a href="#services" class="hover:text-white">Standard Delivery</a></li>
-                        <li><a href="#business" class="hover:text-white">Business Contracts</a></li>
+                        <!-- business-plans --><li><a href="#business" class="hover:text-white">Business Contracts</a></li><!-- /business-plans -->
                         <li><a href="#app" class="hover:text-white">Online Ordering</a></li>
                     </ul>
                 </div>
@@ -931,12 +864,12 @@
             resultDiv.classList.remove('hidden');
         }
 
+        /* business-plans */
         // Business contract request
         const PLANS = {
-            law_firm: { name: 'Law Firm Plan', price: 500 },
-            medical: { name: 'Medical Office Plan', price: 300 },
-            real_estate: { name: 'Real Estate Plan', price: 400 },
-            usc_department: { name: 'USC Department Plan', price: 200 }
+            starter: { name: 'Starter Plan', price: 230 },
+            pro: { name: 'Pro Plan', price: 525 },
+            business: { name: 'Business Plan', price: 950 }
         };
         const planDialog = document.getElementById('plan-dialog');
         const planForm = document.getElementById('plan-form');
@@ -975,6 +908,7 @@
                 button.disabled = false;
             }
         });
+        /* /business-plans */
 
         // Contact form submission
         document.getElementById('contact-form').addEventListener('submit', async function (e) {
