@@ -29,6 +29,13 @@ router.get('/email', requireRole('admin'), asyncH(async (req, res) => {
   res.json({ configured: !!process.env.RESEND_API_KEY, from: process.env.MAIL_FROM || 'Choice Delivery <onboarding@resend.dev>' });
 }));
 
+// The latest outgoing emails and whether Resend accepted them.
+router.get('/email/log', requireRole('admin'), asyncH(async (req, res) => {
+  const { rows } = await db.query(
+    'SELECT recipient, subject, status, error, created_at FROM email_log ORDER BY id DESC LIMIT 25');
+  res.json(rows.map((r) => ({ to: r.recipient, subject: r.subject, status: r.status, error: r.error, at: r.created_at })));
+}));
+
 router.post('/email/test', requireRole('admin'), asyncH(async (req, res) => {
   if (!process.env.RESEND_API_KEY) throw new HttpError(409, 'RESEND_API_KEY is not set in Railway yet');
   const { rows: [me] } = await db.query('SELECT email FROM users WHERE id = $1', [req.user.id]);

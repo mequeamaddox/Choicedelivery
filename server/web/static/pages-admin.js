@@ -237,6 +237,7 @@ export function DriverDetailPage({ id }) {
 // Owner: is email (Resend) set up, and a test send.
 function EmailStatus() {
   const cfg = useApi('/settings/email');
+  const log = useApi('/settings/email/log', { pollMs: 30000 });
   const [msg, setMsg] = useState({});
   if (!cfg.data) return null;
   return html`
@@ -247,7 +248,17 @@ function EmailStatus() {
         : html`<p class="muted">Not connected. Add <code>RESEND_API_KEY</code> (and <code>MAIL_FROM</code>) in Railway → Variables. Until then emails are only written to the server log.</p>`}
       <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
       ${cfg.data.configured && html`<div><${ActionButton} class="btn" onError=${(e) => setMsg({ error: e })}
-        onClick=${async () => { setMsg({}); const r = await api('/settings/email/test', { method: 'POST' }); setMsg({ ok: r.message }); }}>Send test email<//></div>`}
+        onClick=${async () => { setMsg({}); try { const r = await api('/settings/email/test', { method: 'POST' }); setMsg({ ok: r.message }); } finally { log.reload(); } }}>Send test email<//></div>`}
+      <h3>Recent emails</h3>
+      ${!log.data?.length ? html`<p class="small muted">None yet.</p>` : html`
+        <ul class="email-log">
+          ${log.data.map((m) => html`<li>
+            <span class=${`badge ${m.status === 'sent' ? 'green' : m.status === 'failed' ? 'red' : 'gray'}`}>${{ sent: 'Sent', failed: 'Failed', not_configured: 'Not sent' }[m.status]}</span>
+            <span><strong>${m.subject}</strong><span class="small muted"> → ${m.to} · ${timeAgo(m.at)}</span>
+              ${m.error && html`<span class="small danger-text block">${m.error}</span>`}
+              ${m.status === 'not_configured' && html`<span class="small muted block">RESEND_API_KEY wasn't set</span>`}</span>
+          </li>`)}
+        </ul>`}
     </section>`;
 }
 

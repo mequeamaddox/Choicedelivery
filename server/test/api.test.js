@@ -1144,6 +1144,12 @@ test('owner can check email setup and send a test email', async () => {
     r = await call('POST', '/settings/email/test', { token: t.admin });
     assert.equal(r.status, 502);
     assert.match(r.data.message, /Resend said: .*not verified/);
+    r = await call('GET', '/settings/email/log', { token: t.admin });
+    assert.equal(r.data[0].status, 'failed', 'failures are logged for the owner to see');
+    assert.match(r.data[0].error, /not verified/);
+    assert.equal(r.data[1].status, 'sent');
+    assert.equal(r.data[1].to, 'admin@test.com');
+    assert.equal((await call('GET', '/settings/email/log', { token: t.dispatcher })).status, 403);
   } finally {
     delete process.env.RESEND_API_KEY;
     mailer.setSender(null);

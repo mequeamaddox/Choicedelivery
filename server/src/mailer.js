@@ -1,12 +1,22 @@
 // Sends mail through Resend (https://resend.com) when RESEND_API_KEY is set; otherwise logs.
+// Every attempt is recorded in email_log (shown on the owner's Account page) with Resend's error if it failed.
 let override = null;
 const setSender = (fn) => { override = fn; }; // for tests
 
-async function sendMail({ to, subject, html }) {
+async function record(to, subject, status, error) {
+  try {
+    const db = require('./db'); // required lazily: the mailer is loaded before the database in some scripts
+    await db.query('INSERT INTO email_log (recipient, subject, status, error) VALUES ($1, $2, $3, $4)',
+      [String(Array.isArray(to) ? to.join(', ') : to).slice(0, 300), String(subject).slice(0, 300), status, error ? String(error).slice(0, 1000) : null]);
+    if (Math.random() < 0.05) await db.query('DELETE FROM email_log WHERE id < (SELECT max(id) - 500 FROM email_log)');
+  } catch { /* the log is best-effort */ }
+}
+
+async function deliver({ to, subject, html }) {
   if (override) return override({ to, subject, html });
   if (!process.env.RESEND_API_KEY) {
     console.log(`[mail disabled] To: ${to} | ${subject}\n${html}`);
-    return;
+    return 'not_configured';
   }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -23,7 +33,25 @@ async function sendMail({ to, subject, html }) {
       html,
     }),
   });
-  if (!res.ok) throw new Error(`Email send failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    let reason = body;
+    try { reason = JSON.parse(body).message || body; } catch { /* not JSON */ }
+    throw new Error(`Email send failed: ${res.status} ${reason}`);
+  }
+  return 'sent';
+}
+
+async function sendMail(message) {
+  try {
+    const status = await deliver(message);
+    await record(message.to, message.subject, status === 'not_configured' ? 'not_configured' : 'sent');
+    return status;
+  } catch (e) {
+    console.error(`Email to ${message.to} failed: ${e.message}`);
+    await record(message.to, message.subject, 'failed', e.message.replace(/^Email send failed: /, ''));
+    throw e;
+  }
 }
 
 module.exports = { sendMail, setSender };
