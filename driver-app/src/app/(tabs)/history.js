@@ -20,7 +20,7 @@ function Stat({ label, cents }) {
 // Getting paid: set up direct deposit once in Stripe's secure form (bank account, plus a debit card for
 // instant pay), then wait for the free Wednesday bank deposit or get paid now to the debit card for a fee.
 // The screen reloads (re-checking the setup) when the driver comes back to the app.
-function Payouts({ setup, earnings, onPaid }) {
+function Payouts({ setup, dest, earnings, onPaid }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
@@ -29,6 +29,10 @@ function Payouts({ setup, earnings, onPaid }) {
   const setUp = async () => {
     setBusy(true); setError(null);
     try { await Linking.openURL((await api.startPayoutSetup()).url); } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  const changeMethod = async () => {
+    setBusy(true); setError(null);
+    try { await Linking.openURL((await api.payoutMethodLink()).url); } catch (err) { setError(err); } finally { setBusy(false); }
   };
   const send = async () => {
     setBusy(true); setError(null); setDone(null);
@@ -75,7 +79,10 @@ function Payouts({ setup, earnings, onPaid }) {
               <Button title={`Get ${formatMoney(e.instant.netCents)} now`} loading={busy} disabled={!e.instant.available} onPress={payNow} />
             ) : null}
             {e.owedCents > 0 && !e.instant.available ? <Muted small>Not enough owed yet for instant pay.</Muted> : null}
+            {dest && !dest.instantMethod ? <Muted small>Add a debit card below to use instant pay.</Muted> : null}
           </View>
+          {dest?.method ? <Muted small>Paying to {dest.method.label}{dest.instantMethod && dest.instantMethod.label !== dest.method.label ? ` · instant to ${dest.instantMethod.label}` : ''}</Muted> : null}
+          <Button title="Change bank or debit card" variant="secondary" loading={busy} onPress={changeMethod} />
         </>
       )}
     </Card>
@@ -87,7 +94,8 @@ export default function History() {
   const router = useRouter();
   const done = useLoader(async () => {
     const [orders, earnings, setup] = await Promise.all([api.history(), api.earnings(), api.payoutSetup().catch(() => null)]);
-    return { orders, earnings, setup };
+    const dest = setup?.payoutsEnabled ? await api.payoutMethod().catch(() => null) : null;
+    return { orders, earnings, setup, dest };
   });
   const orders = done.data?.orders;
   const e = done.data?.earnings;
@@ -102,7 +110,7 @@ export default function History() {
           <Stat label="Paid (60 days)" cents={e.paidLast60DaysCents} />
         </View>
       ) : null}
-      <Payouts setup={done.data?.setup} earnings={e} onPaid={done.refresh} />
+      <Payouts setup={done.data?.setup} dest={done.data?.dest} earnings={e} onPaid={done.refresh} />
       {done.loading ? <Muted>Loading…</Muted> : !orders?.length ? <Card><Muted>No completed deliveries yet.</Muted></Card>
         : <Muted small>{orders.length} completed deliveries</Muted>}
       {(orders || []).map((o) => (

@@ -64,6 +64,10 @@ export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch
     // Returns { url } of Stripe's secure setup form to open in the browser.
     startPayoutSetup: () => request('/payouts/me/stripe/onboard', { method: 'POST' }),
     // Get paid now to the debit card (fee taken out). expectedNetCents guards against a changed balance.
+    // { method, instantMethod }: where pay goes (e.g. "Visa debit •••• 4242").
+    payoutMethod: () => request('/payouts/me/payout-method'),
+    // { url }: a 15-minute link to the Bank & debit card page, opened in the phone's browser.
+    payoutMethodLink: () => request('/payouts/me/payout-link', { method: 'POST' }),
     instantPayout: (expectedNetCents) => request('/payouts/me/instant', { method: 'POST', body: { expectedNetCents } }),
     job: (id) => request(`/orders/${encodeURIComponent(id)}`),
     accept: (id) => request(`/orders/${encodeURIComponent(id)}/accept`, { method: 'POST' }),

@@ -165,6 +165,13 @@ const transferToDriver = ({ payoutId, accountId, cents, description }) => stripe
   transfer_group: `payout-${payoutId}`, metadata: { payout_id: payoutId },
 }, { idempotencyKey: `payout-${payoutId}` });
 
+// A session for Stripe's embedded account-management form, where a driver adds or changes the bank
+// account or debit card their pay goes to, without leaving our site.
+const createAccountSession = (accountId) => stripeRequest('POST', '/account_sessions', {
+  account: accountId,
+  components: { account_management: { enabled: true, features: { external_account_collection: true } } },
+});
+
 // Pays the connected account's Stripe balance out to their bank right away (typically within 30
 // minutes). Fails if their bank or card doesn't support instant payouts.
 const instantPayout = ({ accountId, cents, payoutId }) => stripeRequest('POST', '/payouts', {
@@ -174,5 +181,5 @@ const instantPayout = ({ accountId, cents, payoutId }) => stripeRequest('POST', 
 module.exports = {
   enabled, mode, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
   ensureWebhook, webhookReady,
-  createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver, instantPayout,
+  createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver, instantPayout, createAccountSession,
 };

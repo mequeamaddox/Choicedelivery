@@ -1373,6 +1373,7 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
     const path = url.replace('https://api.stripe.com/v1', '');
     calls.push({ method: opts.method, path, body: opts.body ? Object.fromEntries(new URLSearchParams(opts.body)) : null,
       idem: opts.headers['Idempotency-Key'], account: opts.headers['Stripe-Account'] });
+    if (path === '/account_sessions') return { ok: true, json: async () => ({ client_secret: 'accs_secret_1' }) };
     if (path === '/payouts') {
       if (instantFails) return { ok: false, status: 400, json: async () => ({ error: { code: 'invalid_request_error', message: 'This bank account does not support instant payouts' } }) };
       return { ok: true, json: async () => ({ id: 'po_instant' }) };
@@ -1475,6 +1476,34 @@ test('drivers set up direct deposit with Stripe and are paid by transfer', async
     tr = calls.filter((c) => c.path === '/transfers').slice(-2);
     assert.equal(tr.reduce((n, c) => n + Number(c.body.amount), 0), o4.driverPayCents, 'the fee is sent back');
     instantFails = false;
+
+    // Bank & debit card: shown in the app, changed in Stripe's embedded form on our page.
+    account = { ...account, external_accounts: { data: [
+      { object: 'bank_account', bank_name: 'STRIPE TEST BANK', last4: '6789', default_for_currency: true, available_payout_methods: ['standard'] },
+      { object: 'card', brand: 'Visa', funding: 'debit', last4: '4242', available_payout_methods: ['standard', 'instant'] },
+    ] } };
+    r = await call('GET', '/payouts/me/payout-method', { token: t.d1 });
+    assert.deepEqual(r.data, {
+      method: { type: 'bank', label: 'STRIPE TEST BANK •••• 6789', instant: false },
+      instantMethod: { type: 'card', label: 'Visa debit •••• 4242', instant: true },
+    });
+    r = await call('POST', '/payouts/me/account-session', { token: t.d1 });
+    assert.equal(r.status, 409, 'needs the publishable key');
+    process.env.STRIPE_PUBLISHABLE_KEY = 'pk_test_123';
+    r = await call('POST', '/payouts/me/account-session', { token: t.d1 });
+    assert.deepEqual(r.data, { clientSecret: 'accs_secret_1', publishableKey: 'pk_test_123' });
+    const sess = calls.find((c) => c.path === '/account_sessions');
+    assert.equal(sess.body.account, 'acct_d1');
+    assert.equal(sess.body['components[account_management][features][external_account_collection]'], 'true');
+    // The app opens the page in a browser with a 15-minute link that only works for this page.
+    r = await call('POST', '/payouts/me/payout-link', { token: t.d1 });
+    const linkToken = decodeURIComponent(r.data.url.split('t=')[1]);
+    assert.match(r.data.url, /#\/driver\/payout-method\?t=/);
+    assert.equal((await call('GET', '/payouts/me/payout-method', { token: linkToken })).status, 200);
+    assert.equal((await call('POST', '/payouts/me/account-session', { token: linkToken })).status, 200);
+    assert.equal((await call('GET', '/users/me', { token: linkToken })).status, 401, 'the link is not a login');
+    assert.equal((await call('POST', '/payouts/me/instant', { token: linkToken, body: {} })).status, 401);
+    delete process.env.STRIPE_PUBLISHABLE_KEY;
 
     // The Wednesday batch pays everyone with direct deposit, once per Wednesday.
     const o5 = await completeFor(t.d1);

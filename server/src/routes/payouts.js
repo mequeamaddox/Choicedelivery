@@ -3,7 +3,7 @@
 // also be marked paid by hand (Cash App, Zelle, check). Every payout is recorded with its orders.
 const express = require('express');
 const db = require('../db');
-const { requireAuth, requireRole, isStaff } = require('../auth');
+const { requireAuth, requireRole, isStaff, signScopedToken } = require('../auth');
 const { asyncH, HttpError } = require('../util');
 const stripe = require('../stripe');
 const {
@@ -11,6 +11,9 @@ const {
 } = require('../driver-payouts');
 
 const router = express.Router();
+// The payout-method page can also be opened from the driver app with a short-lived link.
+const PAYOUT_METHOD_PATHS = ['/me/payout-method', '/me/account-session'];
+router.use((req, res, next) => { if (PAYOUT_METHOD_PATHS.includes(req.path)) req.authScope = 'payout_method'; next(); });
 router.use(requireAuth);
 
 const ORDER_COLS = `o.id, o.order_number, o.completed_at, o.driver_pay_cents, o.driver_paid_at, o.driver_id,
@@ -208,6 +211,44 @@ router.post('/me/stripe/onboard', requireRole('driver'), asyncH(async (req, res)
     });
     res.json({ url: link.url });
   } catch (e) { throw connectError(e); }
+}));
+
+// Where a driver's pay goes: { method: { type: 'card'|'bank', label, instant } | null }.
+const describeDestination = (x) => (!x ? null : {
+  type: x.object === 'card' ? 'card' : 'bank',
+  label: x.object === 'card' ? `${x.brand || 'Card'} ${x.funding === 'debit' ? 'debit ' : ''}•••• ${x.last4}` : `${x.bank_name || 'Bank account'} •••• ${x.last4}`,
+  instant: (x.available_payout_methods || []).includes('instant'),
+});
+async function payoutDestinations(accountId) {
+  const acct = await stripe.getAccount(accountId);
+  const list = acct.external_accounts?.data || [];
+  return {
+    method: describeDestination(list.find((x) => x.default_for_currency) || list[0]),
+    instantMethod: describeDestination(list.find((x) => (x.available_payout_methods || []).includes('instant'))),
+  };
+}
+
+router.get('/me/payout-method', requireRole('driver'), asyncH(async (req, res) => {
+  const { rows: [u] } = await db.query('SELECT stripe_account_id FROM users WHERE id = $1', [req.user.id]);
+  if (!u.stripe_account_id || !stripe.enabled()) return res.json({ method: null, instantMethod: null });
+  res.json(await payoutDestinations(u.stripe_account_id));
+}));
+
+// Drivers: a session for Stripe's embedded form to add or change the bank account / debit card.
+router.post('/me/account-session', requireRole('driver'), asyncH(async (req, res) => {
+  const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
+  if (!publishableKey) throw new HttpError(409, "Changing your bank or card here isn't switched on yet. Ask Choice Delivery to add their Stripe publishable key.");
+  const { rows: [u] } = await db.query('SELECT stripe_account_id FROM users WHERE id = $1', [req.user.id]);
+  if (!u.stripe_account_id) throw new HttpError(409, 'Set up direct deposit first');
+  const session = await stripe.createAccountSession(u.stripe_account_id);
+  res.json({ clientSecret: session.client_secret, publishableKey });
+}));
+
+// Drivers (phone app): a 15-minute link that opens the bank & debit card page in the browser,
+// already signed in for that page only.
+router.post('/me/payout-link', requireRole('driver'), asyncH(async (req, res) => {
+  const t = signScopedToken(req.user.id, 'payout_method');
+  res.json({ url: `${base()}/#/driver/payout-method?t=${encodeURIComponent(t)}` });
 }));
 
 module.exports = router;

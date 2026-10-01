@@ -3,7 +3,7 @@ import { Spinner } from './components.js';
 import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage, DriverSignupPage, DriverAppPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
 import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDetailPage, PayoutsPage } from './pages-admin.js';
-import { DriverJobsPage, DriverJobPage, DriverHistoryPage } from './pages-driver.js';
+import { DriverJobsPage, DriverJobPage, DriverHistoryPage, PayoutMethodPage } from './pages-driver.js';
 
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
 
@@ -24,6 +24,10 @@ function App() {
   const reset = match('/reset/:token', path);
   if (reset) return html`<${ResetPage} token=${reset.token} />`;
   if (path.split('?')[0] === '/driver-app') return html`<${DriverAppPage} />`;
+  // Opened from the driver app with its own short-lived link, so it works without a website login.
+  if (path.split('?')[0] === '/driver/payout-method' && (path.includes('t=') || (ready && user?.role === 'driver'))) {
+    return html`<${PayoutMethodPage} />`;
+  }
   if (!ready) return html`<div class="page"><${Spinner} /></div>`;
 
   if (!user) {

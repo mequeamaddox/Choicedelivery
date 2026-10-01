@@ -13,6 +13,12 @@ function signToken(user) {
   return jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '30d' });
 }
 
+// A short-lived token good for one purpose only (e.g. opening the payout-method page from the driver
+// app in a browser). requireAuth accepts it only on routes that set req.authScope to that purpose.
+function signScopedToken(userId, purpose, expiresIn = '15m') {
+  return jwt.sign({ sub: userId, purpose }, JWT_SECRET, { expiresIn });
+}
+
 // Accepts a user JWT or, for server-to-server integrations (e.g. a website order form),
 // the DISPATCH_API_KEY sent as "Authorization: Bearer <key>", which acts as a dispatcher.
 // The user row is re-read on each request so role changes and deactivation apply immediately.
@@ -30,6 +36,9 @@ async function requireAuth(req, res, next) {
     payload = jwt.verify(token, JWT_SECRET);
   } catch {
     return res.status(401).json({ message: 'Session expired, please log in again' });
+  }
+  if (payload.purpose && payload.purpose !== req.authScope) {
+    return res.status(401).json({ message: 'This link has expired. Go back to the app and try again.' });
   }
   try {
     const { rows } = await db.query(
@@ -49,4 +58,4 @@ const requireRole = (...roles) => (req, res, next) => {
 
 const isStaff = (user) => STAFF.includes(user.role);
 
-module.exports = { ROLES, STAFF, signToken, requireAuth, requireRole, isStaff };
+module.exports = { ROLES, STAFF, signToken, signScopedToken, requireAuth, requireRole, isStaff };

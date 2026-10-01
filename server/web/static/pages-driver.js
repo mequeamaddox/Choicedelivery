@@ -1,9 +1,9 @@
 // Driver portal: works in any phone browser at app.choicedeliverysc.com, no app install needed.
 import {
   html, useState, useEffect, useRef, api, navigate, useApi, getUser, formatDate, timeAgo, mapsLink, STATUS, ACTIVE_STATUSES,
-  SERVICE_LEVEL_LABELS, formatMoney,
+  SERVICE_LEVEL_LABELS, formatMoney, currentPath,
 } from './lib.js';
-import { Layout, PageHeader, Alert, Spinner, Empty, StatusBadge, RouteSummary, ActionButton, StopTimeline } from './components.js';
+import { Layout, PageHeader, Alert, Spinner, Empty, StatusBadge, RouteSummary, ActionButton, StopTimeline, Logo } from './components.js';
 
 // ---------- Online status + location sharing ----------
 // While online, the phone's location is sent every ~30s (and when it moves) so dispatch and
@@ -134,6 +134,8 @@ function DriverJobsList() {
 // debit card for a small fee.
 function Payouts({ earnings, onPaid }) {
   const st = useApi('/payouts/me/stripe');
+  const destination = useApi(st.data?.payoutsEnabled ? '/payouts/me/payout-method' : null);
+  const dest = destination.data;
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -173,13 +175,15 @@ function Payouts({ earnings, onPaid }) {
           <div>
             <strong>Instant to your debit card</strong>
             <p class="small muted">$1.50 + 1.5% fee. Usually arrives within 30 minutes.</p>
+            ${dest && !dest.instantMethod && html`<p class="small"><a href="#/driver/payout-method">Add a debit card</a> to use instant pay.</p>`}
             ${e.owedCents > 0 && html`
               <button class="btn primary" disabled=${busy || !e.instant.available} onClick=${payNow}>
                 ${busy ? 'Sending…' : `Get ${formatMoney(e.instant.netCents)} now`}
               </button>
               ${!e.instant.available && html`<p class="small muted">Not enough owed yet for instant pay.</p>`}`}
           </div>
-        </div>`}
+        </div>
+        <p class="small">${dest?.method ? html`Paying to <strong>${dest.method.label}</strong> · ` : ''}<a href="#/driver/payout-method">Change bank or debit card</a></p>`}
     </section>`;
 }
 
@@ -370,4 +374,83 @@ export function DriverJobPage({ id }) {
           <ul class="notes">${order.notes.map((n) => html`<li><p>${n.note}</p><span class="muted small">${n.authorRole || ''} · ${timeAgo(n.createdAt)}</span></li>`)}</ul>
         </section>`}
     <//>`;
+}
+
+// ---------- Bank & debit card ----------
+// Stripe's secure embedded form, inside our page, for adding or changing where pay goes (bank account
+// for the free Wednesday deposit, debit card for instant pay). Opened from History on the website, or
+// from the driver app with a 15-minute link (?t=...) that works for this page only.
+let connectJs = null;
+function loadConnectJs() {
+  if (window.StripeConnect?.init) return Promise.resolve(window.StripeConnect);
+  if (!connectJs) {
+    connectJs = new Promise((resolve, reject) => {
+      window.StripeConnect = window.StripeConnect || {};
+      window.StripeConnect.onLoad = () => resolve(window.StripeConnect);
+      const s = document.createElement('script');
+      s.src = 'https://connect-js.stripe.com/v1.0/connect.js';
+      s.async = true;
+      s.onerror = () => { connectJs = null; reject(new Error("Couldn't load the secure form. Check your connection and try again.")); };
+      document.head.appendChild(s);
+    });
+  }
+  return connectJs;
+}
+
+export function PayoutMethodPage() {
+  const linkToken = new URLSearchParams(currentPath().split('?')[1] || '').get('t');
+  const call = (path, method = 'GET') => (linkToken
+    ? fetch(path, { method, headers: { Accept: 'application/json', Authorization: `Bearer ${linkToken}` } }).then(async (r) => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.message || 'Something went wrong');
+      return d;
+    })
+    : api(path, { method }));
+  const box = useRef(null);
+  const [dest, setDest] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const refresh = () => call('/payouts/me/payout-method').then(setDest).catch(setError);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await refresh();
+        const first = await call('/payouts/me/account-session', 'POST');
+        const StripeConnect = await loadConnectJs();
+        if (cancelled) return;
+        let secret = first.clientSecret;
+        const instance = StripeConnect.init({
+          publishableKey: first.publishableKey,
+          fetchClientSecret: async () => {
+            if (secret) { const s = secret; secret = null; return s; }
+            return (await call('/payouts/me/account-session', 'POST')).clientSecret;
+          },
+          appearance: { variables: { colorPrimary: '#0f766e', fontFamily: 'inherit', borderRadius: '10px' } },
+        });
+        const el = instance.create('account-management');
+        if (box.current) { box.current.innerHTML = ''; box.current.appendChild(el); }
+      } catch (err) { if (!cancelled) setError(err); } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const body = html`
+    <section class="card stack">
+      <h2>Where your pay goes</h2>
+      ${dest?.method
+        ? html`<p>Paying to <strong>${dest.method.label}</strong>.</p>
+          <p class="small muted">${dest.instantMethod ? html`Instant pay goes to <strong>${dest.instantMethod.label}</strong>.`
+            : 'To use instant pay, add a debit card below.'}</p>`
+        : !loading && !error && html`<p class="small muted">No bank account or card yet.</p>`}
+      <${Alert} error=${error} />
+      ${loading && html`<${Spinner} />`}
+      <div ref=${box} class="stripe-embed"></div>
+      <p class="small muted">Your bank and card details are kept by Stripe, our payments partner; Choice Delivery never sees the full numbers.
+        After making a change, <button class="link" onClick=${refresh}>refresh</button> to see it here.</p>
+    </section>`;
+  if (linkToken) {
+    return html`<div class="page narrow"><${Logo} /><h1>Bank & debit card</h1>${body}
+      <p class="muted small">When you're done, go back to the Choice Delivery Driver app.</p></div>`;
+  }
+  return html`<${Layout}><a class="back" href="#/driver/history">← Earnings</a><${PageHeader} title="Bank & debit card" />${body}<//>`;
 }

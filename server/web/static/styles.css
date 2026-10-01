@@ -368,3 +368,4 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .payout-options > div { border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; }
 .payout-options p { margin: 0; }
 @media (max-width: 560px) { .payout-options { grid-template-columns: 1fr; } }
+.stripe-embed { min-height: 120px; }
