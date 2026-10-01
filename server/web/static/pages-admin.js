@@ -458,6 +458,15 @@ function FeesEditor() {
               onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, maxLbs: Number(e.target.value) } } })} /><//>
           </div>
         </fieldset>`)}
+      <h3>Long trips</h3>
+      <div class="grid-2">
+        <${Field} label="Long distance starts after (miles)">
+          <input type="number" min="1" step="1" value=${fees.longDistance.afterMiles}
+            onInput=${(e) => set({ longDistance: { ...fees.longDistance, afterMiles: Number(e.target.value) } })} /><//>
+        <${Field} label="Extra on each mile after that (%)" hint=${`Car: ${formatMoney(fees.vehicles.Car.perMileCents)}/mi becomes ${formatMoney(Math.round(fees.vehicles.Car.perMileCents * (1 + fees.longDistance.percent / 100)))}/mi. Covers the empty drive back.`}>
+          <input type="number" min="0" max="500" step="1" value=${fees.longDistance.percent}
+            onInput=${(e) => set({ longDistance: { ...fees.longDistance, percent: Number(e.target.value) } })} /><//>
+      </div>
       <h3>Rush & surcharges</h3>
       <div class="grid-2">
         <${Field} label="Rush / expedited ($)" hint="Picked up right away. About 2 hours within 50 miles; longer trips take as long as the drive.">

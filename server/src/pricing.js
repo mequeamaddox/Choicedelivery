@@ -114,6 +114,9 @@ const DEFAULT_FEES = {
     'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', baseCents: 4500, includedMiles: 10, perMileCents: 250, maxLbs: 1000, enabled: true },
   },
   rushCents: RUSH_FEE_CENTS,
+  // Long trips: miles past afterMiles cost percent more than the vehicle's per-mile rate (covers the
+  // driver's empty drive back and a day tied up on one job).
+  longDistance: { afterMiles: 100, percent: 50 },
   // Lunch rush is off by the owner's choice (it can be switched back on).
   surcharges: Object.fromEntries(Object.entries(SURCHARGES).map(([k, sc]) => [k, { cents: sc.cents, enabled: k !== 'lunch' }])),
   holidays: Object.fromEntries(Object.entries(HOLIDAYS).map(([k, h]) => [k, h.on])),
@@ -205,6 +208,10 @@ function normalizeFees(saved) {
     weightTiers,
     vehicles,
     rushCents: cleanCents(current ? f.rushCents : undefined, DEFAULT_FEES.rushCents),
+    longDistance: {
+      afterMiles: Math.max(1, cleanCents(f.longDistance?.afterMiles, DEFAULT_FEES.longDistance.afterMiles)),
+      percent: Math.min(500, cleanCents(f.longDistance?.percent, DEFAULT_FEES.longDistance.percent)),
+    },
     surcharges,
     holidays,
     extraHolidayDates,
@@ -329,7 +336,12 @@ function calculatePrice({
   const rates = vehicle || fees.vehicles?.Car || { baseCents: BASE_FEE_CENTS, includedMiles: BASE_MILES, perMileCents: PER_MILE_CENTS };
   const miles = distanceMiles == null ? null : Math.round(Number(distanceMiles) * 10) / 10;
   const extraMiles = miles == null ? 0 : Math.max(0, Math.round((miles - rates.includedMiles) * 10) / 10);
-  const extraMileageCents = Math.round(extraMiles * rates.perMileCents);
+  // Miles past the long-distance point are charged at the higher rate (they're part of extraMiles).
+  const long = fees.longDistance || DEFAULT_FEES.longDistance;
+  const longMiles = miles == null ? 0 : Math.min(extraMiles, Math.max(0, Math.round((miles - Math.max(long.afterMiles, rates.includedMiles)) * 10) / 10));
+  const longPerMileCents = Math.round(rates.perMileCents * (1 + long.percent / 100));
+  const longMileageCents = Math.round(longMiles * longPerMileCents);
+  const extraMileageCents = Math.round((extraMiles - longMiles) * rates.perMileCents) + longMileageCents;
   const rushFeeCents = level === 'rush' ? fees.rushCents : 0;
 
   const { weekday, hour, date } = localTime(at instanceof Date ? at : new Date(at));
@@ -377,7 +389,11 @@ function calculatePrice({
     extraMiles,
     perMileCents: rates.perMileCents,
     vehicleType: vehicle ? vehicleType : null,
-    extraMileageCents,
+    extraMileageCents, // all miles past the included ones, long-distance ones included
+    longDistanceAfterMiles: long.afterMiles,
+    longMiles,
+    longPerMileCents,
+    longMileageCents,
     serviceLevel: level,
     rushFeeCents,
     rushEstimate: rushEstimate(miles),

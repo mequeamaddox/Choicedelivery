@@ -788,7 +788,9 @@
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
                 document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price' : `Estimated: ${money(q.totalCents)}`;
                 const lines = [[`${q.vehicleType || 'Car'} delivery, first ${q.baseMiles} miles`, money(q.baseFeeCents)]];
-                if (q.extraMileageCents > 0) lines.push([`Extra distance (${q.extraMiles} more miles)`, '+' + money(q.extraMileageCents)]);
+                const shortMileage = q.extraMileageCents - (q.longMileageCents || 0);
+                if (shortMileage > 0) lines.push([`Extra distance (${Math.round((q.extraMiles - (q.longMiles || 0)) * 10) / 10} more miles)`, '+' + money(shortMileage)]);
+                if (q.longMileageCents > 0) lines.push([`Long distance (${q.longMiles} miles past ${q.longDistanceAfterMiles})`, '+' + money(q.longMileageCents)]);
                 if (q.rushFeeCents > 0) lines.push(['Rush delivery', '+' + money(q.rushFeeCents)]);
                 if (q.weightFeeCents > 0) lines.push([`Weight (${q.weightTier})`, '+' + money(q.weightFeeCents)]);
                 (q.surcharges || []).forEach((sc) => lines.push([sc.label, '+' + money(sc.cents)]));

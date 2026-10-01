@@ -375,7 +375,8 @@ test('orders are priced on the server by distance; dispatch can override', async
   const miles = r.data.distanceMiles;
   assert.ok(miles > 100 && miles < 160, `distance ${miles}`);
   const bd = r.data.priceBreakdown;
-  assert.equal(bd.extraMileageCents, Math.round((miles - 10) * 150));
+  // 10-100 miles at $1.50, past 100 at $2.25 (long distance).
+  assert.equal(bd.extraMileageCents, Math.round((90 - 0) * 150) + Math.round(Math.round((miles - 100) * 10) / 10 * 225));
   assert.equal(r.data.priceCents, 2500 + bd.extraMileageCents + surchargeTotal(bd));
   assert.equal(r.data.priceIsCustom, false);
   const id = r.data.id;
@@ -476,7 +477,7 @@ test('address suggestions and distance-aware quotes', async () => {
     scheduledAt: '2026-09-30T14:00:00Z' } });
   assert.ok(r.data.distanceMiles > 100 && r.data.distanceMiles < 160, `distance ${r.data.distanceMiles}`);
   const demand = r.data.surcharges.reduce((sum, x) => sum + x.cents, 0);
-  assert.equal(r.data.totalCents, 2500 + Math.round((r.data.distanceMiles - 10) * 150) + 5000 + demand);
+  assert.equal(r.data.totalCents, 2500 + 90 * 150 + Math.round(Math.round((r.data.distanceMiles - 100) * 10) / 10 * 225) + 5000 + demand);
   assert.equal(r.data.priceCents, r.data.totalCents);
   assert.equal(r.data.outOfArea, false);
   r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'x',
@@ -1670,4 +1671,19 @@ test("rush only promises about 2 hours on local trips", () => {
   assert.equal(far.hours, 5, '200 miles: 30 min to pickup + about 4.5 hours of driving');
   assert.match(far.text, /About 5 hours for this 200-mile trip/);
   assert.equal(calculatePrice({ distanceMiles: 120, serviceLevel: 'rush' }).rushEstimate.local, false);
+});
+
+test('miles past 100 cost 50% more per mile, and drivers share it', () => {
+  const { calculatePrice, driverPayFor, normalizeFees } = require('../src/pricing');
+  const fees = normalizeFees({});
+  const near = calculatePrice({ distanceMiles: 80, vehicleType: 'Car', fees });
+  assert.equal(near.longMileageCents, 0);
+  assert.equal(near.totalCents, 2500 + 70 * 150);
+  const far = calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees });
+  assert.equal(far.longMiles, 100);
+  assert.equal(far.longPerMileCents, 225);
+  assert.equal(far.totalCents, 2500 + 90 * 150 + 100 * 225, '200 miles by car: $385');
+  assert.equal(driverPayFor(far.totalCents, 0, fees, far), 1000 + Math.round((90 * 150 + 100 * 225) * 0.7));
+  const custom = normalizeFees({ longDistance: { afterMiles: 150, percent: 20 } });
+  assert.equal(calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees: custom }).longMileageCents, 50 * 180);
 });

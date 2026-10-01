@@ -132,7 +132,8 @@ export function PriceBreakdown({ q }) {
   return html`<details class="breakdown-details"><summary>See price details</summary>
     <dl class="breakdown">
       <dt>${q.vehicleType || 'Delivery'} delivery, first ${q.baseMiles} miles</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
-      ${q.extraMileageCents > 0 && html`<dt>Extra distance (${q.extraMiles} more miles)</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
+      ${q.extraMileageCents - (q.longMileageCents || 0) > 0 && html`<dt>Extra distance (${Math.round((q.extraMiles - (q.longMiles || 0)) * 10) / 10} more miles)</dt><dd>+${formatMoney(q.extraMileageCents - (q.longMileageCents || 0))}</dd>`}
+      ${q.longMileageCents > 0 && html`<dt>Long distance (${q.longMiles} miles past ${q.longDistanceAfterMiles})</dt><dd>+${formatMoney(q.longMileageCents)}</dd>`}
       ${q.rushFeeCents > 0 && html`<dt>Rush delivery</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
       ${q.weightFeeCents > 0 && html`<dt>Weight (${q.weightTier})</dt><dd>+${formatMoney(q.weightFeeCents)}</dd>`}
       ${q.extraStopsCents > 0 && html`<dt>Extra stops (${q.extraStops})</dt><dd>+${formatMoney(q.extraStopsCents)}</dd>`}
