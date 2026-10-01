@@ -228,12 +228,13 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
 // Called whenever either changes. Pay that was already paid out is left alone.
 async function refreshDriverPay(client, orderId) {
   const { rows: [o] } = await client.query(
-    `SELECT price_cents, driver_pay_is_custom, driver_paid_at,
+    `SELECT o.price_cents, o.price_breakdown, o.driver_pay_is_custom, o.driver_paid_at, d.no_driver_pay,
        (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status <> 'waived')::int AS extras
-     FROM orders o WHERE id = $1`, [orderId]);
+     FROM orders o LEFT JOIN users d ON d.id = o.driver_id WHERE o.id = $1`, [orderId]);
   if (!o || o.driver_pay_is_custom || o.driver_paid_at) return;
-  await client.query('UPDATE orders SET driver_pay_cents = $2 WHERE id = $1',
-    [orderId, driverPayFor(o.price_cents, o.extras, await getFees(client))]);
+  // Owners driving their own deliveries aren't paid out: the money already stays in the business.
+  const pay = o.no_driver_pay ? 0 : driverPayFor(o.price_cents, o.extras, await getFees(client), o.price_breakdown);
+  await client.query('UPDATE orders SET driver_pay_cents = $2 WHERE id = $1', [orderId, pay]);
 }
 
 // SQL fragment + params limiting which orders a user can see.

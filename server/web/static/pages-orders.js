@@ -126,10 +126,10 @@ function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleTy
   return quote;
 }
 
-// Itemized price, as on the original quote page.
+// Itemized price, tucked behind "See price details" so the total is what stands out.
 export function PriceBreakdown({ q }) {
   if (!q) return null;
-  return html`
+  return html`<details class="breakdown-details"><summary>See price details</summary>
     <dl class="breakdown">
       <dt>${q.vehicleType || 'Base delivery'} (first ${q.baseMiles} miles)</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
       ${q.extraMileageCents > 0 && html`<dt>Distance fee (${q.extraMiles} mi × ${formatMoney(q.perMileCents)})</dt><dd>+${formatMoney(q.extraMileageCents)}</dd>`}
@@ -139,7 +139,7 @@ export function PriceBreakdown({ q }) {
       ${(q.addOns || []).map((a) => html`<dt>${a.label}</dt><dd>+${formatMoney(a.cents)}</dd>`)}
       ${(q.surcharges || []).map((sc) => html`<dt>${sc.label}</dt><dd>+${formatMoney(sc.cents)}</dd>`)}
       <dt class="total">Total</dt><dd class="total">${formatMoney(q.totalCents)}</dd>
-    </dl>`;
+    </dl></details>`;
 }
 
 // What can be charged after booking, shown before the customer books (like Curri's accessorial policy).
@@ -323,9 +323,7 @@ export function NewOrderPage() {
                     onChange=${() => setV({ ...v, vehicleType: name })} />
                   <span><strong>${name}</strong>
                     <span class="muted small line">${x.description} · up to ${x.maxLbs.toLocaleString()} lbs</span>
-                    <span class="muted small line">${formatMoney(x.baseCents)} for the first ${x.includedMiles} mi, then ${formatMoney(x.perMileCents)}/mi</span>
                     ${tooHeavyFor(x) && html`<span class="small warn-text">Too heavy for this vehicle</span>`}</span>
-                  <span class="price push">${formatMoney(x.baseCents)}</span>
                 </label>`)}
             </div>
           </div>
@@ -364,7 +362,7 @@ export function NewOrderPage() {
             <${Field} label="Pickup time" hint="Leave empty for as soon as possible.">
               <input type="datetime-local" ...${bind('scheduledAt')} />
             <//>
-            <${Field} label="Total weight (lbs)" hint=${fees ? `Priced by weight: ${fees.weightTiers.map((t) => `up to ${t.upToLbs.toLocaleString()} lbs ${t.cents ? `+${formatMoney(t.cents)}` : 'included'}`).join(', ')}; heavier gets a custom price.` : undefined}>
+            <${Field} label="Total weight (lbs)" hint="Heavier shipments cost a little more; your price updates as you type.">
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
             <//>
             <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" ...${bind('numberOfPieces')} /><//>

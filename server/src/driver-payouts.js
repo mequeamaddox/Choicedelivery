@@ -42,7 +42,7 @@ function nextBatchAt(now = new Date()) {
 async function lockOwed(client, driverId, orderIds = null) {
   const { rows } = await client.query(
     `SELECT id, driver_id, driver_pay_cents, order_number FROM orders
-     WHERE driver_id = $1 AND status = 'completed' AND driver_paid_at IS NULL AND NOT is_demo
+     WHERE driver_id = $1 AND status = 'completed' AND driver_paid_at IS NULL AND NOT is_demo AND driver_pay_cents > 0
        AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
      ORDER BY completed_at FOR UPDATE`, [driverId, orderIds]);
   return rows;
@@ -145,7 +145,7 @@ async function runWeeklyBatch(now = new Date(), { force = false } = {}) {
   if (!rowCount) return { ran: false, alreadyRan: true };
   const { rows: drivers } = await db.query(
     `SELECT DISTINCT u.id FROM orders o JOIN users u ON u.id = o.driver_id
-     WHERE o.status = 'completed' AND o.driver_paid_at IS NULL AND NOT o.is_demo
+     WHERE o.status = 'completed' AND o.driver_paid_at IS NULL AND NOT o.is_demo AND o.driver_pay_cents > 0
        AND u.stripe_account_id IS NOT NULL AND u.stripe_payouts_enabled`);
   const paid = [];
   const failed = [];

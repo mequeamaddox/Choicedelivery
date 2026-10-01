@@ -63,7 +63,7 @@ router.get('/', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
     `SELECT ${ORDER_COLS}, u.name AS driver_name, u.email AS driver_email, u.phone_number AS driver_phone,
             u.stripe_account_id, u.stripe_payouts_enabled, u.stripe_details_submitted
      FROM orders o JOIN users u ON u.id = o.driver_id LEFT JOIN driver_payouts p ON p.id = o.driver_payout_id
-     WHERE o.status = 'completed' AND NOT o.is_demo AND ${paid ? "o.driver_paid_at > now() - interval '60 days'" : 'o.driver_paid_at IS NULL'}
+     WHERE o.status = 'completed' AND NOT o.is_demo AND ${paid ? "o.driver_paid_at > now() - interval '60 days'" : 'o.driver_paid_at IS NULL AND o.driver_pay_cents > 0'}
      ORDER BY u.name, o.completed_at`);
   const drivers = new Map();
   for (const r of rows) {

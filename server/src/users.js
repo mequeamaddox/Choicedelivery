@@ -107,6 +107,7 @@ function publicUser(u, { includeLocation = false } = {}) {
     out.reviewedAt = u.reviewed_at;
     out.reviewNote = u.review_note;
     out.driverProfile = u.driver_profile || {};
+    out.noDriverPay = !!u.no_driver_pay; // owner who drives: no payouts
     out.vehicle = {
       type: u.vehicle_type || '', make: u.vehicle_make || '', model: u.vehicle_model || '',
       year: u.vehicle_year || '', color: u.vehicle_color || '', plate: u.vehicle_plate || '',

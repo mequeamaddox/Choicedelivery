@@ -127,16 +127,19 @@ const DEFAULT_FEES = {
   waitFreeMinutes: 15, // per stop
   waitBlockMinutes: 15,
   waitBlockCents: 1000,
-  // What drivers earn: a share of the order price (at least minCents, never more than the price),
-  // plus a share of extra charges like wait time. Dispatch can set a different amount on any order.
-  driverPay: { percent: 70, minCents: 1500, extrasPercent: 70 },
+  // What drivers earn: a flat amount per job, plus a share of the order's mileage fee (the per-mile
+  // charge past the included miles), plus a share of extra charges like wait time. Never more than the
+  // price. Dispatch can set a different amount on any order.
+  driverPay: { perJobCents: 1000, mileagePercent: 70, extrasPercent: 70 },
 };
 
-// Driver pay for an order price plus its (not waived) extra charges, under the fee settings.
-function driverPayFor(priceCents, extrasCents, fees) {
+// Driver pay for an order: per-job amount + share of its mileage fee (from the price breakdown) +
+// share of its (not waived) extra charges, under the fee settings.
+function driverPayFor(priceCents, extrasCents, fees, breakdown = null) {
   if (priceCents == null) return null;
-  const { percent, minCents, extrasPercent } = fees.driverPay;
-  const trip = Math.min(priceCents, Math.max(minCents, Math.round((priceCents * percent) / 100)));
+  const { perJobCents, mileagePercent, extrasPercent } = fees.driverPay;
+  const mileage = Math.round(((breakdown?.extraMileageCents || 0) * mileagePercent) / 100);
+  const trip = Math.min(priceCents, perJobCents + mileage);
   return trip + Math.round(((extrasCents || 0) * extrasPercent) / 100);
 }
 
@@ -212,8 +215,8 @@ function normalizeFees(saved) {
     waitBlockMinutes: Math.max(1, cleanCents(f.waitBlockMinutes, DEFAULT_FEES.waitBlockMinutes)),
     waitBlockCents: cleanCents(f.waitBlockCents, DEFAULT_FEES.waitBlockCents),
     driverPay: {
-      percent: Math.min(100, cleanCents(f.driverPay?.percent, DEFAULT_FEES.driverPay.percent)),
-      minCents: cleanCents(f.driverPay?.minCents, DEFAULT_FEES.driverPay.minCents),
+      perJobCents: cleanCents(f.driverPay?.perJobCents, DEFAULT_FEES.driverPay.perJobCents),
+      mileagePercent: Math.min(100, cleanCents(f.driverPay?.mileagePercent, DEFAULT_FEES.driverPay.mileagePercent)),
       extrasPercent: Math.min(100, cleanCents(f.driverPay?.extrasPercent, DEFAULT_FEES.driverPay.extrasPercent)),
     },
   };

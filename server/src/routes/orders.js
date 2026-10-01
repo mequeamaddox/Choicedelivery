@@ -486,6 +486,7 @@ router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req
       [req.params.id, driverId]
     );
     await recordEvent(client, req.params.id, req.user.id, driverId ? 'assigned' : 'unassigned', { driverId });
+    await refreshDriverPay(client, req.params.id); // owners who drive aren't paid out
   });
   if (driverId) {
     notifyUser(driverId, 'New job assigned', 'Dispatch assigned you a job', { orderId: req.params.id })
@@ -508,6 +509,7 @@ router.post('/:id/accept', driverOnly, asyncH(async (req, res) => {
     ).catch(() => ({ rows: [] }));
     if (!rows[0]) throw new HttpError(409, 'This job is no longer available');
     await recordEvent(client, req.params.id, req.user.id, 'accepted');
+    await refreshDriverPay(client, req.params.id); // owners who drive aren't paid out
   });
   emailShipper(req.params.id, 'driver_assigned');
   res.json(await getOrderFor(req.user, req.params.id));

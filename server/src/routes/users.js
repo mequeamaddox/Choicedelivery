@@ -6,6 +6,7 @@ const {
   USER_SELECT, publicUser, getUser, createUser, setVehicleType, setVehicle, mergeDriverProfile, driverWorkBlocker, DOC_KINDS,
 } = require('../users');
 const driverEmails = require('../driver-emails');
+const { refreshDriverPay } = require('../orders');
 
 const isImageDataUrl = (v) => typeof v === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v);
 const MAX_DOC_BYTES = 4 * 1024 * 1024;
@@ -173,7 +174,10 @@ router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res)
   // Staff can fix a typo in someone's email (it's how they sign in). Staff accounts' emails: admins only.
   const email = req.body?.email === undefined ? undefined : str(req.body.email).toLowerCase();
   if (email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address');
+  const noDriverPay = typeof req.body?.noDriverPay === 'boolean' ? req.body.noDriverPay : undefined;
+  if (noDriverPay !== undefined && target.role !== 'driver') throw new HttpError(400, 'Only drivers have driver pay');
   if (req.user.role !== 'admin') {
+    if (noDriverPay !== undefined) throw new HttpError(403, 'Only admins can change who gets driver pay');
     if (['admin', 'dispatcher'].includes(target.role) || role !== undefined || organizationId !== undefined) {
       // (covers changing a staff member's email too)
       throw new HttpError(403, 'Only admins can change roles or companies');
@@ -202,6 +206,13 @@ router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res)
     }
     if (vehicleType !== undefined) await setVehicleType(target.id, vehicleType, client);
     await saveDriverDetails(client, target, { driverProfile, vehicle });
+    if (noDriverPay !== undefined) {
+      await client.query('UPDATE users SET no_driver_pay = $2 WHERE id = $1', [target.id, noDriverPay]);
+      // Their orders not yet paid out follow the new setting (custom amounts set by hand are kept).
+      const { rows } = await client.query(
+        "SELECT id FROM orders WHERE driver_id = $1 AND driver_paid_at IS NULL AND status <> 'cancelled'", [target.id]);
+      for (const r of rows) await refreshDriverPay(client, r.id);
+    }
   });
   res.json(publicUser(await getUser(target.id), { includeLocation: true }));
 }));

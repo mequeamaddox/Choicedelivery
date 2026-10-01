@@ -1276,9 +1276,11 @@ test('driver pay: drivers see their pay, never the price; dispatch adjusts it an
   ] }) });
   const order = r.data;
   assert.equal(order.driverPayCents, undefined, 'shippers never see driver pay');
-  const pay = Math.min(order.priceCents, Math.max(1500, Math.round(order.priceCents * 0.7)));
   r = await call('GET', `/orders/${order.id}`, { token: t.admin });
-  assert.equal(r.data.driverPayCents, pay, 'default: 70% of the price, at least $15');
+  const mileageFee = r.data.priceBreakdown.extraMileageCents;
+  assert.ok(mileageFee > 0, 'this route goes past the included miles');
+  const pay = Math.min(r.data.priceCents, 1000 + Math.round(mileageFee * 0.7));
+  assert.equal(r.data.driverPayCents, pay, 'default: $10 a job plus 70% of the mileage fee');
 
   r = await call('GET', '/orders?status=pending', { token: t.d1 });
   const listed = r.data.find((o) => o.id === order.id);
@@ -1333,14 +1335,30 @@ test('driver pay: drivers see their pay, never the price; dispatch adjusts it an
 
   // The owner changes the rate.
   const fees = (await call('GET', '/settings/fees', { token: t.admin })).data.fees;
-  r = await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, driverPay: { percent: 80, minCents: 2000, extrasPercent: 100 } } });
-  assert.deepEqual(r.data.fees.driverPay, { percent: 80, minCents: 2000, extrasPercent: 100 });
+  r = await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, driverPay: { perJobCents: 1200, mileagePercent: 80, extrasPercent: 100 } } });
+  assert.deepEqual(r.data.fees.driverPay, { perJobCents: 1200, mileagePercent: 80, extrasPercent: 100 });
   assert.equal((await call('GET', '/public/pricing')).data.fees.driverPay, undefined, 'the driver rate is not published');
   r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
   r = await call('GET', `/orders/${r.data.id}`, { token: t.admin });
-  assert.equal(r.data.driverPayCents, Math.min(r.data.priceCents, Math.max(2000, Math.round(r.data.priceCents * 0.8))));
+  assert.equal(r.data.driverPayCents, Math.min(r.data.priceCents, 1200 + Math.round(r.data.priceBreakdown.extraMileageCents * 0.8)));
   await call('PUT', '/settings/fees', { token: t.admin, body: fees });
   await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
+
+  // Owners who drive: marked "no payout", their deliveries owe nothing and never show in payouts.
+  const d1 = (await call('GET', '/users/me', { token: t.d1 })).data;
+  assert.equal((await call('PATCH', `/users/${d1.id}`, { token: t.dispatcher, body: { noDriverPay: true } })).status, 403, 'admins only');
+  r = await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: true } });
+  assert.equal(r.data.noDriverPay, true);
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+  const owned = r.data;
+  r = await call('POST', `/orders/${owned.id}/accept`, { token: t.d1 });
+  assert.equal(r.data.driverPayCents, 0, 'no pay once an owner takes it');
+  r = await call('GET', '/payouts', { token: t.admin });
+  assert.equal(r.data.some((d) => d.orders.some((o) => o.id === owned.id)), false);
+  await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: false } });
+  r = await call('GET', `/orders/${owned.id}`, { token: t.admin });
+  assert.ok(r.data.driverPayCents >= 1000, 'back to the standard pay');
+  await call('POST', `/orders/${owned.id}/cancel`, { token: t.admin });
 });
 
 test('drivers set up direct deposit with Stripe and are paid by transfer', async () => {

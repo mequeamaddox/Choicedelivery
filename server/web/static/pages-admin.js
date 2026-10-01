@@ -202,6 +202,18 @@ export function DriverDetailPage({ id }) {
           </section>
         </div>
         <div class="stack">
+          ${getUser()?.role === 'admin' && html`<section class="card stack">
+            <h2>Driver pay</h2>
+            <label class="inline small">
+              <input type="checkbox" checked=${!!u.noDriverPay} onChange=${async (e) => {
+                const on = e.target.checked;
+                if (on && !window.confirm(`Mark ${u.name || 'this driver'} as an owner? Their deliveries won't be paid out (their money already stays in the business).`)) { e.target.checked = false; return; }
+                try { await api(`/users/${u.id}`, { method: 'PATCH', body: { noDriverPay: on } }); reload(); } catch (x) { setActionError(x); }
+              }} />
+              <span><strong>Owner: no payout</strong> · their deliveries owe no driver pay</span>
+            </label>
+            <p class="small muted">${u.noDriverPay ? 'No driver pay on their deliveries.' : 'Paid the standard driver pay (set under Account → Fees).'}</p>
+          </section>`}
           <section class="card">
             <h2>Review</h2>
             ${u.reviewNote && html`<p class="small muted">Last note: ${u.reviewNote}${u.reviewedAt ? ` (${formatDate(u.reviewedAt)})` : ''}</p>`}
@@ -488,22 +500,29 @@ function FeesEditor() {
         <${Field} label="Per how many minutes"><input type="number" min="1" step="1" value=${fees.waitBlockMinutes} onInput=${(e) => set({ waitBlockMinutes: Number(e.target.value) })} /><//>
       </div>
       <h3>Driver pay</h3>
-      <p class="muted small">What drivers earn per order. Drivers only ever see their pay, never what the customer is charged.
-        You can set a different amount on any order.</p>
+      <p class="muted small">What drivers earn per order, the same whatever vehicle they drive. Drivers only ever see their pay,
+        never what the customer is charged. You can set a different amount on any order, and mark owners who drive as "no payout"
+        on their People page.</p>
       <div class="grid-2">
-        <${Field} label="Share of the order price (%)">
-          <input type="number" min="0" max="100" step="1" value=${fees.driverPay.percent}
-            onInput=${(e) => set({ driverPay: { ...fees.driverPay, percent: Number(e.target.value) } })} /><//>
-        <${Field} label="Minimum per order ($)" hint="Never more than the order price.">
-          <input type="number" min="0" step="0.01" value=${dollars(fees.driverPay.minCents)}
-            onInput=${(e) => set({ driverPay: { ...fees.driverPay, minCents: cents(e.target.value) } })} /><//>
+        <${Field} label="Per job ($)">
+          <input type="number" min="0" step="0.01" value=${dollars(fees.driverPay.perJobCents)}
+            onInput=${(e) => set({ driverPay: { ...fees.driverPay, perJobCents: cents(e.target.value) } })} /><//>
+        <${Field} label="Share of the mileage fee (%)" hint="The per-mile charge after the included miles.">
+          <input type="number" min="0" max="100" step="1" value=${fees.driverPay.mileagePercent}
+            onInput=${(e) => set({ driverPay: { ...fees.driverPay, mileagePercent: Number(e.target.value) } })} /><//>
         <${Field} label="Share of extra charges (%)" hint="Wait time, loading help and other charges added after booking.">
           <input type="number" min="0" max="100" step="1" value=${fees.driverPay.extrasPercent}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, extrasPercent: Number(e.target.value) } })} /><//>
       </div>
-      <p class="muted small">Example: a ${formatMoney(4000)} order pays the driver
-        ${formatMoney(Math.min(4000, Math.max(fees.driverPay.minCents, Math.round(4000 * fees.driverPay.percent / 100))))}.
-        Changes apply to new orders.</p>
+      ${(() => {
+        const car = fees.vehicles.Car;
+        const miles = 30;
+        const mileageFee = Math.round(Math.max(0, miles - car.includedMiles) * car.perMileCents);
+        const pay = fees.driverPay.perJobCents + Math.round(mileageFee * fees.driverPay.mileagePercent / 100);
+        return html`<p class="muted small">Example: a ${miles}-mile Car delivery (customer pays ${formatMoney(car.baseCents + mileageFee)})
+          pays the driver ${formatMoney(Math.min(car.baseCents + mileageFee, pay))}. A short trip within ${car.includedMiles} miles pays
+          ${formatMoney(Math.min(car.baseCents, fees.driverPay.perJobCents))}. Changes apply to new orders.</p>`;
+      })()}
       <div class="actions">
         <button class="btn primary">Save fees</button>
         <button type="button" class="btn" onClick=${() => set(loaded.data.defaults)}>Reset to defaults</button>
