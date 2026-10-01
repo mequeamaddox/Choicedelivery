@@ -5,6 +5,7 @@ const db = require('../db');
 const stripe = require('../stripe');
 const { recordEvent, getOrderFor } = require('../orders');
 const { notifyDriversOfOrder } = require('../push');
+const { alertStaffOfBooking } = require('../notify');
 
 const router = express.Router();
 const SYSTEM = { id: null, role: 'dispatcher' };
@@ -48,6 +49,7 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
       if (updated?.status === 'pending') {
         const order = await getOrderFor(SYSTEM, orderId);
         notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+        alertStaffOfBooking(orderId);
       }
     }
     res.json({ received: true });

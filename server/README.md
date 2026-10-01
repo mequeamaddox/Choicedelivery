@@ -18,6 +18,9 @@ and it's set up to deploy on [Railway](https://railway.com) with Postgres on Rai
    | `DISPATCH_API_KEY` | *(optional)* random string that lets your website or order form create orders |
    | `PUBLIC_URL` | `https://app.choicedeliverysc.com` (password-reset links open the web app) |
    | `LEADS_EMAIL` | *(optional)* where website messages go; default `info@choicedeliverysc.com` |
+   | `ORDER_ALERTS_EMAIL` | *(optional)* where "New order" alerts go when a customer's order is booked (after card payment clears); defaults to `LEADS_EMAIL` |
+   | `SUPPORT_EMAIL` | *(optional)* the address drivers are told to email (and that driver emails reply to); default `info@choicedeliverysc.com` |
+   | `SHOW_BUSINESS_PLANS` | *(optional)* `true` shows the monthly business plans on the website and accepts plan requests; hidden otherwise |
    | `RESEND_API_KEY`, `MAIL_FROM`, `MAIL_REPLY_TO` | *(optional)* emails via Resend (shipper order updates, driver applications/approvals/invites, password resets, website messages); without them emails are only written to the logs. Check with Account → Email → Send test email. `MAIL_REPLY_TO` (e.g. `info@choicedeliverysc.com`) is where replies go; `LEADS_EMAIL` is where staff notifications go |
 5. **Give it domains** (*Settings → Networking → Custom Domain*): add `choicedeliverysc.com` and
    `app.choicedeliverysc.com`, then add the CNAME records Railway shows in Cloudflare DNS. `www` is

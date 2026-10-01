@@ -74,7 +74,7 @@ function StatusCard({ user }) {
         </View>
       ) : user.driverStatus === 'applied' ? <Notice tone="green">✓ Your profile is complete. We'll email you once you're approved.</Notice> : null}
       {user.driverStatus !== 'rejected' ? <Button title={c.missing.length || c.expired.length ? 'Finish profile' : 'View profile'} onPress={() => router.push('/profile')} /> : null}
-      <Button title="Call dispatch" variant="secondary" onPress={() => Linking.openURL('tel:8039497034')} />
+      <Muted small>Questions? Email info@choicedeliverysc.com and we'll get back to you.</Muted>
     </Card>
   );
 }

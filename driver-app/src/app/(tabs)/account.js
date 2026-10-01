@@ -48,7 +48,12 @@ export default function Account() {
       <Card>
         <H2>Account</H2>
         <Button title="Change password" variant="secondary" onPress={() => router.push('/password')} />
-        <Button title="Call dispatch (803) 949-7034" variant="secondary" onPress={() => Linking.openURL('tel:8039497034')} />
+        {/* Only working drivers get the dispatch line (for problems on a delivery); applicants use email. */}
+        {user?.driverStatus === 'approved' ? (
+          <Button title="Call dispatch (803) 949-7034" variant="secondary" onPress={() => Linking.openURL('tel:8039497034')} />
+        ) : (
+          <Muted small>Questions about your application? Email info@choicedeliverysc.com.</Muted>
+        )}
         <Muted small>Version {Constants.expoConfig?.version} · {API_URL.replace('https://', '')}</Muted>
       </Card>
       <Button title="Sign out" variant="danger" onPress={confirmSignOut} />

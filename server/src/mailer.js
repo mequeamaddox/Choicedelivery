@@ -33,8 +33,8 @@ function htmlToText(html) {
     .trim();
 }
 
-async function deliver({ to, subject, html }) {
-  if (override) return override({ to, subject, html });
+async function deliver({ to, subject, html, replyTo }) {
+  if (override) return override({ to, subject, html, replyTo });
   if (!process.env.RESEND_API_KEY) {
     console.log(`[mail disabled] To: ${to} | ${subject}\n${html}`);
     return 'not_configured';
@@ -48,7 +48,7 @@ async function deliver({ to, subject, html }) {
     body: JSON.stringify({
       from: process.env.MAIL_FROM || 'Choice Delivery <onboarding@resend.dev>',
       // Where replies go (the From address is send-only), e.g. info@choicedeliverysc.com.
-      ...(process.env.MAIL_REPLY_TO ? { reply_to: process.env.MAIL_REPLY_TO } : {}),
+      ...(replyTo || process.env.MAIL_REPLY_TO ? { reply_to: replyTo || process.env.MAIL_REPLY_TO } : {}),
       to,
       subject,
       html,

@@ -71,12 +71,15 @@ function driverChecklist(u) {
   return { complete: missing.length === 0, missing, expired };
 }
 
+// Where drivers send questions (email, so applicants don't need to phone in).
+const supportEmail = () => process.env.SUPPORT_EMAIL || 'info@choicedeliverysc.com';
+
 // Why this driver can't take work right now, or null if they can.
 function driverWorkBlocker(u) {
   if (u.role !== 'driver') return null;
   if (u.driver_status === 'applied') return "Your application is still being reviewed. We'll email you when you're approved.";
-  if (u.driver_status === 'rejected') return 'Your driver application was not approved. Call (803) 949-7034 with questions.';
-  if (u.driver_status === 'suspended') return 'Your driver account is on hold. Call dispatch at (803) 949-7034.';
+  if (u.driver_status === 'rejected') return `Your driver application was not approved. Questions? Email ${supportEmail()}.`;
+  if (u.driver_status === 'suspended') return `Your driver account is on hold. Questions? Email ${supportEmail()}.`;
   const { expired } = driverChecklist(u);
   if (expired.length) return `${expired.join(' and ')}. Upload the new one under Account → Profile to keep taking jobs.`;
   return null;

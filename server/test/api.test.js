@@ -707,8 +707,9 @@ test('payments: card orders wait for Stripe payment; invoice companies dispatch 
 
 test('shippers get status emails with a tracking link; opt-out and demo respected', async () => {
   const mailer = require('../src/mailer');
-  const sent = [];
-  mailer.setSender(async (m) => { sent.push(m); });
+  const sent = []; // to the shipper
+  const staff = []; // new-order alerts to the owner/dispatch inbox
+  mailer.setSender(async (m) => { (m.to === 'info@choicedeliverysc.com' ? staff : sent).push(m); });
   const settle = () => new Promise((r) => setTimeout(r, 150));
   try {
     const shipperEmail = (await call('GET', '/users/me', { token: t.acme })).data.email;
@@ -719,6 +720,10 @@ test('shippers get status emails with a tracking link; opt-out and demo respecte
     assert.equal(sent[0].to, shipperEmail);
     assert.match(sent[0].subject, /booked/);
     assert.ok(sent[0].html.includes(`#/track/${order.trackingUrlToken}`), 'includes the tracking link');
+    assert.equal(staff.length, 1, 'the owner is alerted about the new order');
+    assert.match(staff[0].subject, new RegExp(`^New order ${order.orderNumber}: \\$\\d+\\.\\d\\d · Acme`));
+    assert.match(staff[0].html, /billed to account/);
+    assert.ok(staff[0].html.includes(`#/orders/${order.id}`), 'links to the order');
 
     await call('POST', `/orders/${order.id}/accept`, { token: t.d1 });
     for (const stop of order.stops) await call('POST', `/orders/${order.id}/stops/${stop.id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } })
@@ -734,6 +739,7 @@ test('shippers get status emails with a tracking link; opt-out and demo respecte
     await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
     await settle();
     assert.equal(sent.length, 0, 'opted-out shippers get no emails');
+    assert.equal(staff.length, 2, "the owner is still alerted when the customer's emails are off");
     await call('PUT', '/users/me', { token: t.acme, body: { emailUpdates: true } });
 
     r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
@@ -744,12 +750,14 @@ test('shippers get status emails with a tracking link; opt-out and demo respecte
     assert.deepEqual(sent.map((m) => m.subject), [`Order ${r.data.orderNumber} cancelled`], 'dispatch cancellations are emailed');
 
     sent.length = 0;
+    staff.length = 0;
     await call('POST', '/demo', { token: t.admin });
     await call('DELETE', '/demo', { token: t.admin });
     r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ organizationId: ids.acmeOrg }) });
     await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
     await settle();
     assert.equal(sent.length, 0, 'no emails for demo data or dispatch-booked orders');
+    assert.equal(staff.length, 0, 'and no new-order alert for them either');
   } finally {
     mailer.setSender(null);
   }
@@ -1112,6 +1120,9 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     assert.equal(r.data.user.checklist.complete, false);
     await settle();
     assert.ok(sent.some((m) => m.to === 'dana@drivers.test' && /got your .* application/.test(m.subject)), 'driver is emailed');
+    const received = sent.find((m) => m.to === 'dana@drivers.test');
+    assert.equal(received.replyTo, 'info@choicedeliverysc.com', 'drivers can reply by email');
+    assert.doesNotMatch(received.html, /949-7034|[Cc]all dispatch/, 'no phone number for applicants');
     assert.ok(sent.some((m) => /New driver application: Dana Wheels/.test(m.subject) && m.html.includes(`#/people/${danaId}`)), 'dispatch is emailed');
 
     // Applied: can sign in and edit the profile, but no jobs, can't go online or be assigned.

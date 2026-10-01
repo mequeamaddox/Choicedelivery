@@ -5,6 +5,7 @@ const { sendMail } = require('./mailer');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const base = () => process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
 const appPage = () => `${base()}/#/driver-app`;
+const support = () => process.env.SUPPORT_EMAIL || 'info@choicedeliverysc.com';
 const firstName = (u) => esc((u.name || '').split(' ')[0] || 'there');
 
 function layout({ greeting, paragraphs, button, footer }) {
@@ -14,11 +15,12 @@ function layout({ greeting, paragraphs, button, footer }) {
     <p>${greeting}</p>
     ${paragraphs.map((p) => `<p>${p}</p>`).join('\n    ')}
     ${button ? `<p><a href="${button.href}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">${button.text}</a></p>` : ''}
-    <p style="color:#6b7280;font-size:12px">${footer || 'Questions? Call dispatch at (803) 949-7034.'}</p>
+    <p style="color:#6b7280;font-size:12px">${footer || `Questions? Just reply to this email or write to ${support()}.`}</p>
   </div></div>`;
 }
 
-const send = (to, subject, html) => sendMail({ to, subject, html })
+// Replies go to the support inbox, so drivers can answer the email instead of calling.
+const send = (to, subject, html) => sendMail({ to, subject, html, replyTo: support() })
   .catch((e) => console.error(`Driver email "${subject}" failed:`, e.message));
 
 module.exports = {
@@ -72,6 +74,6 @@ module.exports = {
       'Choice Delivery set up a driver account for you. Choose your password first (this link works for 7 days), then install the driver app and sign in with your email.',
     ],
     button: { href: `${base()}/#/reset/${token}`, text: 'Choose your password' },
-    footer: `Then get the app: <a href="${appPage()}">${appPage()}</a> · Questions? Call (803) 949-7034.`,
+    footer: `Then get the app: <a href="${appPage()}">${appPage()}</a> · Questions? Reply to this email.`,
   })),
 };

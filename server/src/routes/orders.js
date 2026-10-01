@@ -8,7 +8,7 @@ const {
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
-const { emailShipper } = require('../notify');
+const { emailShipper, alertStaffOfBooking } = require('../notify');
 const { sendMail } = require('../mailer');
 const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
@@ -92,7 +92,10 @@ router.post('/', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (re
     return res.status(201).json(order);
   }
   // Card orders notify drivers once paid (see the Stripe webhook).
-  if (order.paymentStatus !== 'unpaid') notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+  if (order.paymentStatus !== 'unpaid') {
+    notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+    alertStaffOfBooking(order.id);
+  }
   emailShipper(order.id, 'booked');
   res.status(201).json(order);
 }));
@@ -111,7 +114,10 @@ router.post('/:id/book', requireRole('shipper', 'admin', 'dispatcher'), asyncH(a
       priceChanged: true, order,
     });
   }
-  if (order.paymentStatus !== 'unpaid') notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+  if (order.paymentStatus !== 'unpaid') {
+    notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+    alertStaffOfBooking(order.id);
+  }
   emailShipper(order.id, 'booked');
   res.json(order);
 }));
@@ -341,6 +347,7 @@ router.post('/:id/payment', requireRole('admin', 'dispatcher'), asyncH(async (re
   const updated = await getOrderFor(req.user, order.id);
   if (order.paymentStatus === 'unpaid' && status !== 'unpaid' && updated.status === 'pending') {
     notifyDriversOfOrder(updated).catch((e) => console.error('Push notify failed:', e));
+    alertStaffOfBooking(updated.id);
   }
   res.json(updated);
 }));
