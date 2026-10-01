@@ -5,6 +5,7 @@ import {
 import {
   Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
   LiveMap,
+  LegalLinks,
 } from './components.js';
 
 const FILTERS = [
@@ -382,6 +383,7 @@ export function NewOrderPage() {
             </div>
           </section>`}
         ${fees && html`<${ChargesNotice} fees=${fees} />`}
+        <p class="small muted">By booking you agree to our <${LegalLinks} />.</p>
         <div class="form-actions">
           <a class="btn" href="#/orders">Cancel</a>
           ${!needsReview && html`<button type="button" class="btn" disabled=${busy || !!pieceProblem} onClick=${(e) => submit(e, true)}
@@ -399,6 +401,8 @@ const EVENT_LABELS = {
   barcode_scanned: 'Driver scanned the package barcode',
   review_requested: 'Sent for a custom price',
   price_set: 'Price set by dispatch',
+  driver_pay_set: 'Driver pay changed',
+  driver_paid: 'Driver paid out',
   charge_added: 'Additional charge added',
   charge_waived: 'Additional charge removed',
   charges_paid: 'Additional charges paid',
@@ -431,7 +435,10 @@ function DispatchPanel({ order, onChange, setError }) {
   const drivers = useApi('/users?role=driver');
   const [driverId, setDriverId] = useState(order.driver?.id || '');
   const [price, setPrice] = useState(order.priceCents == null ? '' : (order.priceCents / 100).toFixed(2));
+  const [pay, setPay] = useState(order.driverPayCents == null ? '' : (order.driverPayCents / 100).toFixed(2));
+  useEffect(() => { setPay(order.driverPayCents == null ? '' : (order.driverPayCents / 100).toFixed(2)); }, [order.driverPayCents]);
   const closed = ['completed', 'cancelled'].includes(order.status);
+  const setDriverPay = (cents) => async () => onChange(await api(`/orders/${order.id}/driver-pay`, { method: 'PUT', body: { cents } }));
   const active = (drivers.data || []).filter((d) => d.isActive)
     .sort((a, b) => Number(b.isOnline) - Number(a.isOnline) || (a.name || a.email).localeCompare(b.name || b.email));
   return html`
@@ -460,6 +467,16 @@ function DispatchPanel({ order, onChange, setError }) {
           <//>
         </div>
       <//>
+      ${order.status !== 'quote' && order.status !== 'cancelled' && html`
+        <${Field} label="Driver pay (USD)" hint=${order.driverPaidAt ? `Paid out ${formatDate(order.driverPaidAt)}.`
+          : order.driverPayIsCustom ? 'Set by hand. Clear it to use your driver pay rate.' : 'From your driver pay rate. The driver sees only this, not the price.'}>
+          <div class="inline">
+            <input type="number" min="0" step="0.01" value=${pay} onInput=${(e) => setPay(e.target.value)} disabled=${!!order.driverPaidAt} />
+            <${ActionButton} disabled=${!!order.driverPaidAt} onError=${setError}
+              onClick=${setDriverPay(pay === '' ? null : Math.round(Number(pay) * 100))}>Save<//>
+            ${order.driverPayIsCustom && !order.driverPaidAt && html`<${ActionButton} class="btn small" onError=${setError} onClick=${setDriverPay(null)}>Use rate<//>`}
+          </div>
+        <//>`}
     </section>`;
 }
 

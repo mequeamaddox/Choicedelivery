@@ -44,7 +44,8 @@ export async function checkForNewJobs({ force = false } = {}) {
   const where = (o) => {
     const from = o.stops[0]?.address?.split(',')[0] || 'Pickup';
     const to = o.stops[o.stops.length - 1]?.address?.split(',')[0] || 'Drop-off';
-    const extras = [o.distanceMiles != null ? `${o.distanceMiles} mi` : null, o.vehicleType].filter(Boolean).join(' · ');
+    const pay = o.driverPayCents != null ? `$${(o.driverPayCents / 100).toFixed(2)}` : null;
+    const extras = [pay, o.distanceMiles != null ? `${o.distanceMiles} mi` : null, o.vehicleType].filter(Boolean).join(' · ');
     return `${from} → ${to}${extras ? ` · ${extras}` : ''}`;
   };
   const notify = (title, o) => Notifications.scheduleNotificationAsync({

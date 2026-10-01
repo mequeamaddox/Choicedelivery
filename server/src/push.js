@@ -22,6 +22,8 @@ async function notifyDriversOfOrder(order) {
      WHERE role = 'driver' AND is_active AND driver_status = 'approved' AND NOT is_demo AND push_token IS NOT NULL`);
   const online = rows.filter((r) => r.is_online);
   const targets = (online.length ? online : rows).map((r) => r.push_token).filter(isExpoToken);
+  const { rows: [pay] } = await db.query('SELECT driver_pay_cents FROM orders WHERE id = $1', [order.id]);
+  const payText = pay?.driver_pay_cents != null ? `$${(pay.driver_pay_cents / 100).toFixed(2)} · ` : '';
   const pickup = order.stops.find((s) => s.type === 'pickup');
   const dropoff = [...order.stops].reverse().find((s) => s.type === 'dropoff');
   await sendExpo(targets.map((to) => ({
@@ -29,7 +31,7 @@ async function notifyDriversOfOrder(order) {
     sound: 'default',
     channelId: 'jobs', // the driver app's high-priority Android channel
     title: order.serviceLevel === 'rush' ? 'New RUSH job available' : 'New job available',
-    body: `${order.distanceMiles != null ? `${order.distanceMiles} mi · ` : ''}${pickup?.address} → ${dropoff?.address}`,
+    body: `${payText}${order.distanceMiles != null ? `${order.distanceMiles} mi · ` : ''}${pickup?.address} → ${dropoff?.address}`,
     data: { orderId: order.id, requestId: order.id },
   })));
 }

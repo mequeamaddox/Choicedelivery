@@ -3,7 +3,7 @@ const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
   ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
-  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops,
+  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
@@ -372,10 +372,28 @@ router.post('/:id/charges', requireRole('admin', 'dispatcher'), asyncH(async (re
       [order.id, b.kind, str(b.description).slice(0, 300), cents, minutes, stopId, byCard ? 'due' : 'invoice', req.user.id]);
     await recordEvent(client, order.id, req.user.id, 'charge_added', { chargeId: c.id, kind: b.kind, cents, minutes });
     await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [order.id]);
+    await refreshDriverPay(client, order.id);
   });
   const updated = await getOrderFor(req.user, order.id);
   emailShipper(order.id, 'charge_added', { charge: updated.charges[updated.charges.length - 1] });
   res.status(201).json(updated);
+}));
+
+// Dispatch sets what the driver earns for this order. Body: { cents } (null goes back to the
+// owner's driver-pay rate). Works until the pay has been paid out, including on completed orders.
+router.put('/:id/driver-pay', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const order = await getOrderFor(req.user, req.params.id);
+  if (order.driverPaidAt) throw new HttpError(409, 'This pay was already paid out');
+  const raw = req.body?.cents;
+  const cents = raw === null || raw === '' || raw === undefined ? null : Math.round(Number(raw));
+  if (cents != null && (!Number.isFinite(cents) || cents < 0 || cents > 1000000)) throw new HttpError(400, 'Enter a valid amount');
+  await db.withTx(async (client) => {
+    await client.query('UPDATE orders SET driver_pay_is_custom = $2, driver_pay_cents = COALESCE($3, driver_pay_cents), updated_at = now() WHERE id = $1',
+      [order.id, cents != null, cents]);
+    await refreshDriverPay(client, order.id);
+    await recordEvent(client, order.id, req.user.id, 'driver_pay_set', { cents });
+  });
+  res.json(await getOrderFor(req.user, order.id));
 }));
 
 // Dispatch removes a charge that hasn't been paid (kept on record as waived).
@@ -388,6 +406,7 @@ router.post('/:id/charges/:chargeId/waive', requireRole('admin', 'dispatcher'), 
     await client.query("UPDATE order_charges SET status = 'waived' WHERE id = $1", [charge.id]);
     await recordEvent(client, order.id, req.user.id, 'charge_waived', { chargeId: charge.id, cents: charge.cents });
     await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [order.id]);
+    await refreshDriverPay(client, order.id);
   });
   res.json(await getOrderFor(req.user, order.id));
 }));

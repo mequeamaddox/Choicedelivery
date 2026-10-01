@@ -1,5 +1,5 @@
 import { html, useState, useEffect, api, login, signup, driverSignup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink, VEHICLE_TYPES } from './lib.js';
-import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo, LiveMap } from './components.js';
+import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo, LiveMap, LegalLinks } from './components.js';
 
 function useForm(initial) {
   const [values, setValues] = useState(initial);
@@ -83,6 +83,7 @@ export function SignupPage() {
         <${Field} label="Phone"><input type="tel" autocomplete="tel" ...${bind('phoneNumber')} /><//>
         <${Field} label="Work email"><input type="email" required autocomplete="email" ...${bind('email')} /><//>
         <${Field} label="Password" hint="At least 8 characters."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>
+        <p class="small muted">By creating an account you agree to our <${LegalLinks} />.</p>
         <button class="btn primary block" disabled=${busy}>${busy ? 'Creating account…' : 'Create account'}</button>
       </form>
       <p class="auth-links">Already have an account? <a href="#/login">Log in</a></p>
@@ -128,7 +129,7 @@ export function DriverSignupPage() {
         <label class="check-row">
           <input type="checkbox" checked=${agreed} onChange=${(e) => setAgreed(e.target.checked)} />
           <span class="small">I'm 21 or older with a valid driver's license and auto insurance, I agree to work as an independent
-            contractor, and I consent to a background and driving-record check.</span>
+            contractor, I consent to a background and driving-record check, and I agree to the <${LegalLinks} />.</span>
         </label>
         <button class="btn primary block" disabled=${busy || !agreed}>${busy ? 'Sending…' : 'Apply to drive'}</button>
       </form>

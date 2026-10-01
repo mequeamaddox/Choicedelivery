@@ -39,6 +39,8 @@ const LANDING_FILES = {
   '/index.html': 'index.html',
   '/privacy': 'privacy.html',
   '/privacy.html': 'privacy.html',
+  '/terms': 'terms.html',
+  '/terms.html': 'terms.html',
   '/logo.png': 'logo.png',
   '/favicon.png': 'favicon.png',
   '/favicon.ico': 'favicon.png',
@@ -86,6 +88,7 @@ app.use('/track', require('./routes/track'));
 app.use('/public', require('./routes/public'));
 app.use('/leads', require('./routes/leads'));
 app.use('/settings', require('./routes/settings'));
+app.use('/payouts', require('./routes/payouts'));
 app.use('/demo', require('./routes/demo'));
 app.get('/reset-password', resetPage);
 

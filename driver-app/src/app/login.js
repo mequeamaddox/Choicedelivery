@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { Link } from 'expo-router';
+import LegalLinks from '../components/LegalLinks';
 import { useAuth } from '../lib/auth';
 import { colors } from '../lib/theme';
 import { Button, ErrorBox, Field, H1, Muted } from '../components/ui';
@@ -36,6 +37,7 @@ export default function Login() {
           <Muted style={{ textAlign: 'center' }}>New to Choice Delivery?</Muted>
           <Link href="/apply" asChild><Button title="Apply to drive" variant="secondary" /></Link>
         </View>
+        <LegalLinks />
       </ScrollView>
     </KeyboardAvoidingView>
   );

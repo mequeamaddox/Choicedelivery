@@ -510,6 +510,11 @@ test('landing page is served on www; the app on other hosts', async () => {
   assert.match(r.body, /Your Choice, Our Priority/);
   r = await get('choicedeliverysc.com', '/privacy');
   assert.match(r.body, /Privacy Policy/);
+  assert.match(r.body, /Deleting your account/);
+  r = await get('choicedeliverysc.com', '/terms');
+  assert.equal(r.status, 200);
+  assert.match(r.body, /Terms &amp; Conditions/);
+  assert.match(r.body, /75 lbs/);
   r = await get('choicedeliverysc.com', '/logo.png');
   assert.match(r.headers['content-type'], /image\/png/);
   r = await get('www.choicedeliverysc.com', '/privacy.html');
@@ -1215,4 +1220,78 @@ test('website tracking box: order number + delivery ZIP finds the tracking link'
   r = await call('POST', '/public/track-lookup', { body: { orderNumber: 'CD-999999', zip: '29072' } });
   assert.equal(r.status, 404);
   await call('POST', `/orders/${order.id}/cancel`, { token: t.admin });
+});
+
+test('driver pay: drivers see their pay, never the price; dispatch adjusts it and marks it paid', async () => {
+  let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ stops: [
+    { type: 'pickup', address: '1 Main St', location: { lat: 34, lng: -81 } },
+    { type: 'dropoff', address: '9 Far Rd', location: { lat: 34.2, lng: -81 } },
+  ] }) });
+  const order = r.data;
+  assert.equal(order.driverPayCents, undefined, 'shippers never see driver pay');
+  const pay = Math.min(order.priceCents, Math.max(1500, Math.round(order.priceCents * 0.7)));
+  r = await call('GET', `/orders/${order.id}`, { token: t.admin });
+  assert.equal(r.data.driverPayCents, pay, 'default: 70% of the price, at least $15');
+
+  r = await call('GET', '/orders?status=pending', { token: t.d1 });
+  const listed = r.data.find((o) => o.id === order.id);
+  assert.equal(listed.driverPayCents, pay);
+  for (const k of ['priceCents', 'priceBreakdown', 'paidCents', 'paymentStatus', 'balanceDueCents']) {
+    assert.equal(k in listed, false, `drivers don't get ${k}`);
+  }
+  // Dispatch sets a different amount, and wait time adds to it.
+  r = await call('PUT', `/orders/${order.id}/driver-pay`, { token: t.d1, body: { cents: 99999 } });
+  assert.equal(r.status, 403);
+  r = await call('PUT', `/orders/${order.id}/driver-pay`, { token: t.dispatcher, body: { cents: 3000 } });
+  assert.equal(r.data.driverPayCents, 3000);
+  assert.equal(r.data.driverPayIsCustom, true);
+  r = await call('PUT', `/orders/${order.id}/driver-pay`, { token: t.dispatcher, body: { cents: null } });
+  assert.equal(r.data.driverPayCents, pay, 'cleared: back to the rate');
+
+  r = await call('POST', `/orders/${order.id}/accept`, { token: t.d1 });
+  for (const st of r.data.stops) {
+    const location = st.type === 'pickup' ? AT_PICKUP : { lat: 34.2, lng: -81 };
+    await call('POST', `/orders/${order.id}/stops/${st.id}/arrive`, { token: t.d1, body: { location } });
+    r = await call('POST', `/orders/${order.id}/stops/${st.id}/complete`, { token: t.d1,
+      body: { signature: 'data:s', photo: 'data:p', location } });
+  }
+  assert.equal(r.data.status, 'completed');
+  r = await call('POST', `/orders/${order.id}/charges`, { token: t.dispatcher, body: { kind: 'wait_time', cents: 1000 } });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.driverPayCents, pay + 700, 'drivers get 70% of extra charges');
+  r = await call('GET', `/orders/${order.id}`, { token: t.d1 });
+  assert.equal(r.data.charges[0].cents, undefined, 'drivers see the charge reason, not the amount');
+  assert.equal(r.data.events.find((e) => e.type === 'charge_added').data.cents, undefined);
+
+  r = await call('GET', '/payouts/me', { token: t.d1 });
+  assert.ok(r.data.owedCents >= pay + 700);
+  const owedBefore = r.data.owedCents;
+  r = await call('GET', '/payouts', { token: t.d1 });
+  assert.equal(r.status, 403);
+  r = await call('GET', '/payouts', { token: t.admin });
+  const mine = r.data.find((d) => d.driver.id === ids.d1 || d.orders.some((o) => o.id === order.id));
+  assert.ok(mine.orders.some((o) => o.id === order.id));
+  assert.equal(mine.totalCents, owedBefore);
+  r = await call('POST', '/payouts/mark-paid', { token: t.admin, body: { orderIds: [order.id] } });
+  assert.deepEqual(r.data, { paidOrders: 1, totalCents: pay + 700 });
+  r = await call('POST', '/payouts/mark-paid', { token: t.admin, body: { orderIds: [order.id] } });
+  assert.equal(r.data.paidOrders, 0, 'paying twice does nothing');
+  r = await call('GET', `/orders/${order.id}`, { token: t.acme });
+  assert.equal(r.data.events.some((e) => e.type.startsWith('driver_pa')), false, 'customers do not see driver pay events');
+  r = await call('GET', '/payouts/me', { token: t.d1 });
+  assert.equal(r.data.owedCents, owedBefore - pay - 700);
+  assert.ok(r.data.paidLast60DaysCents >= pay + 700);
+  r = await call('PUT', `/orders/${order.id}/driver-pay`, { token: t.dispatcher, body: { cents: 1 } });
+  assert.equal(r.status, 409, 'paid-out pay is locked');
+
+  // The owner changes the rate.
+  const fees = (await call('GET', '/settings/fees', { token: t.admin })).data.fees;
+  r = await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, driverPay: { percent: 80, minCents: 2000, extrasPercent: 100 } } });
+  assert.deepEqual(r.data.fees.driverPay, { percent: 80, minCents: 2000, extrasPercent: 100 });
+  assert.equal((await call('GET', '/public/pricing')).data.fees.driverPay, undefined, 'the driver rate is not published');
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+  r = await call('GET', `/orders/${r.data.id}`, { token: t.admin });
+  assert.equal(r.data.driverPayCents, Math.min(r.data.priceCents, Math.max(2000, Math.round(r.data.priceCents * 0.8))));
+  await call('PUT', '/settings/fees', { token: t.admin, body: fees });
+  await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
 });

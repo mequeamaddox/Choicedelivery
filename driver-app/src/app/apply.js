@@ -6,6 +6,7 @@ import { useVehicleTypes } from '../lib/vehicles';
 import { colors } from '../lib/theme';
 import { Button, Card, ErrorBox, Field, H2, Muted } from '../components/ui';
 import Choice from '../components/Choice';
+import LegalLinks from '../components/LegalLinks';
 
 export default function Apply() {
   const { signUp } = useAuth();
@@ -67,9 +68,10 @@ export default function Apply() {
           </View>
           <Text style={{ flex: 1, color: colors.text, fontSize: 14, lineHeight: 20 }}>
             I'm 21 or older with a valid driver's license and auto insurance, I agree to work as an independent contractor,
-            and I consent to a background and driving-record check.
+            I consent to a background and driving-record check, and I agree to the Terms & Conditions and Privacy Policy.
           </Text>
         </Pressable>
+        <LegalLinks />
         <Button title="Apply to drive" big onPress={submit} loading={busy} disabled={!agreed} />
       </ScrollView>
     </KeyboardAvoidingView>

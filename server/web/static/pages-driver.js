@@ -1,7 +1,7 @@
 // Driver portal: works in any phone browser at app.choicedeliverysc.com, no app install needed.
 import {
   html, useState, useEffect, useRef, api, navigate, useApi, getUser, formatDate, timeAgo, mapsLink, STATUS, ACTIVE_STATUSES,
-  SERVICE_LEVEL_LABELS,
+  SERVICE_LEVEL_LABELS, formatMoney,
 } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, StatusBadge, RouteSummary, ActionButton, StopTimeline } from './components.js';
 
@@ -67,6 +67,7 @@ function JobCard({ o, action }) {
     <article class="job-card" onClick=${() => navigate(`/driver/job/${o.id}`)}>
       <div class="job-head">
         <strong>${o.orderNumber}</strong>
+        ${o.driverPayCents != null && html`<span class="pay">${formatMoney(o.driverPayCents)}</span>`}
         ${o.serviceLevel === 'rush' && html`<span class="badge amber">Rush</span>`}
         <${StatusBadge} status=${o.status} />
       </div>
@@ -130,13 +131,20 @@ function DriverJobsList() {
 
 export function DriverHistoryPage() {
   const done = useApi('/orders?mine=true&status=completed&limit=100');
+  const earnings = useApi('/payouts/me');
+  const e = earnings.data;
   return html`
     <${Layout}>
-      <${PageHeader} title="History" subtitle="Your completed deliveries." />
+      <${PageHeader} title="History" subtitle="Your completed deliveries and earnings." />
+      ${e && html`<div class="stat-row">
+        <div class="stat"><span class="muted small">Owed to you</span><strong>${formatMoney(e.owedCents)}</strong></div>
+        <div class="stat"><span class="muted small">Last 7 days</span><strong>${formatMoney(e.last7DaysCents)}</strong></div>
+        <div class="stat"><span class="muted small">Paid, last 60 days</span><strong>${formatMoney(e.paidLast60DaysCents)}</strong></div>
+      </div>`}
       <${Alert} error=${done.error} />
       ${done.loading ? html`<${Spinner} />` : !done.data?.length ? html`<${Empty} title="No completed jobs yet" />` : html`
         <div class="job-list">${done.data.map((o) => html`<${JobCard} key=${o.id} o=${o}
-          action=${html`<div class="muted small">Delivered ${formatDate(o.completedAt)}</div>`} />`)}</div>`}
+          action=${html`<div class="muted small">Delivered ${formatDate(o.completedAt)} · ${o.driverPaidAt ? `paid ${formatDate(o.driverPaidAt)}` : 'not paid out yet'}</div>`} />`)}</div>`}
     <//>`;
 }
 
@@ -270,6 +278,7 @@ export function DriverJobPage({ id }) {
       <${PageHeader} title=${html`${order.orderNumber} <${StatusBadge} status=${order.status} />`}
         subtitle=${`${SERVICE_LEVEL_LABELS[order.serviceLevel] || ''}${order.vehicleType ? ` · ${order.vehicleType}` : ''}${order.distanceMiles != null ? ` · about ${order.distanceMiles} mi` : ''}`} />
       <${Alert} error=${error} />
+      ${order.driverPayCents != null && html`<p class="card pay-card">Your pay: <strong>${formatMoney(order.driverPayCents)}</strong>${order.driverPaidAt ? html` <span class="badge green">Paid</span>` : ''}</p>`}
       ${order.description && html`<p class="card small"><strong>Load:</strong> ${order.description}${order.weight ? ` · ${order.weight}` : ''}${order.numberOfPieces ? ` · ${order.numberOfPieces} pcs` : ''}</p>`}
 
       ${!mine && order.status === 'pending' && html`

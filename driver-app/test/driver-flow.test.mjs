@@ -74,6 +74,8 @@ test('a driver goes online, accepts a job, works both stops and sees it in histo
   assert.deepEqual(open.map((o) => o.id).sort(), [order.id, second.id].sort());
   const detail = await d.api.job(order.id);
   assert.deepEqual(detail.addOns, ['loading_help'], 'drivers see booked extras');
+  assert.ok(detail.driverPayCents > 0, 'drivers see their pay');
+  assert.equal(detail.priceCents, undefined, "and not the customer's price");
   assert.equal(detail.maxPieceLbs, 10);
 
   let job = await d.api.accept(order.id);
@@ -110,6 +112,8 @@ test('a driver goes online, accepts a job, works both stops and sees it in histo
   assert.equal(job.status, 'completed');
   assert.equal(nextStop(job), null);
   assert.deepEqual((await d.api.history()).map((o) => o.id), [order.id]);
+  const earned = await d.api.earnings();
+  assert.equal(earned.owedCents, detail.driverPayCents, 'the delivery is owed until dispatch pays it out');
 
   // Scanning an open job's barcode just finds it; the driver still accepts and confirms the pickup.
   job = await d.api.scan('PKG-888');

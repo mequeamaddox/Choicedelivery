@@ -36,7 +36,7 @@ router.get('/pricing', asyncH(async (req, res) => {
     serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, sv]) => ({ id, ...sv, feeCents: id === 'rush' ? fees.rushCents : 0 })),
     businessPlans: Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })),
     overageCents: OVERAGE_CENTS,
-    fees,
+    fees: { ...fees, driverPay: undefined }, // what drivers earn is internal
     chargeKinds: CHARGE_KINDS,
   });
 }));

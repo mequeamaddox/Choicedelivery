@@ -19,6 +19,7 @@ export function Layout({ children }) {
       { href: '/leads', label: 'Leads', icon: 'inbox', tab: true },
       { href: '/people', label: 'People', icon: 'users', tab: true },
       { href: '/companies', label: 'Companies', icon: 'building' },
+      { href: '/payouts', label: 'Driver pay', icon: 'list' },
     ] : []),
     ...(user?.role === 'shipper' ? [{ href: '/team', label: 'Team', icon: 'users', tab: true }] : []),
     { href: '/account', label: 'Account', icon: 'user', tab: true },
@@ -283,4 +284,9 @@ export function LiveMap({ stops, driver }) {
   useEffect(draw, [JSON.stringify(located.map((s) => [s.location, s.status])), driverLoc?.lat, driverLoc?.lng]);
   if (!located.length && !driverLoc) return null;
   return html`<div class="live-map" ref=${el} role="img" aria-label="Map of the route and the driver's location"></div>`;
+}
+
+// The website's Terms & Conditions and Privacy Policy (served on the main domain).
+export function LegalLinks() {
+  return html`<a href="https://choicedeliverysc.com/terms" target="_blank" rel="noopener">Terms & Conditions</a> and <a href="https://choicedeliverysc.com/privacy" target="_blank" rel="noopener">Privacy Policy</a>`;
 }

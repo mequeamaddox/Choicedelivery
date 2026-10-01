@@ -1,6 +1,6 @@
 import { Pressable, Text, View } from 'react-native';
 import { colors } from '../lib/theme';
-import { formatDate } from '../lib/api';
+import { formatDate, formatMoney } from '../lib/api';
 import { Badge, Card, Muted } from './ui';
 
 const short = (address) => (address || '').split(',').slice(0, 2).join(',');
@@ -21,7 +21,12 @@ export default function JobCard({ order, onPress, footer }) {
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 17, fontWeight: '800', color: colors.text }}>{order.orderNumber}</Text>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
+          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+            {order.driverPayCents != null ? (
+              <Text style={{ fontSize: 17, fontWeight: '800', color: colors.teal }} accessibilityLabel={`Pays ${formatMoney(order.driverPayCents)}`}>
+                {formatMoney(order.driverPayCents)}
+              </Text>
+            ) : null}
             {order.serviceLevel === 'rush' ? <Badge label="RUSH" tone="red" /> : null}
             <Badge status={order.status} />
           </View>

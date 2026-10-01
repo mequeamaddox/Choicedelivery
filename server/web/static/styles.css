@@ -350,3 +350,16 @@ h3 { margin: .25rem 0 0; font-size: 1rem; }
 .email-log li { display: flex; gap: .5rem; align-items: flex-start; font-size: .92rem; }
 .block { display: block; }
 .badge.red { background: var(--red-bg); color: var(--red); }
+
+/* Driver pay */
+.row-between { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
+.row-between h2 { margin: 0; }
+.payout-total { display: flex; align-items: center; gap: .75rem; }
+.payout-total strong { font-size: 1.35rem; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+.job-head .pay { font-weight: 700; color: var(--primary); }
+.pay-card strong { font-size: 1.2rem; color: var(--primary); }
+.stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; display: flex; flex-direction: column; gap: .2rem; }
+.stat strong { font-size: 1.25rem; }
+@media (max-width: 520px) { .stat-row { grid-template-columns: 1fr; } }

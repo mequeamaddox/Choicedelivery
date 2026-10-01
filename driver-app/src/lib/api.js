@@ -57,6 +57,8 @@ export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch
     // Open jobs any driver can take (the server already hides unpaid and demo orders from drivers).
     openJobs: async () => (await request('/orders?status=pending')).filter((o) => !o.driver),
     history: () => request('/orders?mine=true&status=completed&limit=100'),
+    // { owedCents, last7DaysCents, paidLast60DaysCents, orders }
+    earnings: () => request('/payouts/me'),
     job: (id) => request(`/orders/${encodeURIComponent(id)}`),
     accept: (id) => request(`/orders/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
     // location: { lat, lng, accuracy?, mocked? } from the phone; the driver must be at the stop.

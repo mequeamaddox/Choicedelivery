@@ -127,7 +127,18 @@ const DEFAULT_FEES = {
   waitFreeMinutes: 15, // per stop
   waitBlockMinutes: 15,
   waitBlockCents: 1000,
+  // What drivers earn: a share of the order price (at least minCents, never more than the price),
+  // plus a share of extra charges like wait time. Dispatch can set a different amount on any order.
+  driverPay: { percent: 70, minCents: 1500, extrasPercent: 70 },
 };
+
+// Driver pay for an order price plus its (not waived) extra charges, under the fee settings.
+function driverPayFor(priceCents, extrasCents, fees) {
+  if (priceCents == null) return null;
+  const { percent, minCents, extrasPercent } = fees.driverPay;
+  const trip = Math.min(priceCents, Math.max(minCents, Math.round((priceCents * percent) / 100)));
+  return trip + Math.round(((extrasCents || 0) * extrasPercent) / 100);
+}
 
 // Charges added after booking (by dispatch), with the reason shown to the customer.
 const CHARGE_KINDS = {
@@ -200,6 +211,11 @@ function normalizeFees(saved) {
     waitFreeMinutes: cleanCents(f.waitFreeMinutes, DEFAULT_FEES.waitFreeMinutes),
     waitBlockMinutes: Math.max(1, cleanCents(f.waitBlockMinutes, DEFAULT_FEES.waitBlockMinutes)),
     waitBlockCents: cleanCents(f.waitBlockCents, DEFAULT_FEES.waitBlockCents),
+    driverPay: {
+      percent: Math.min(100, cleanCents(f.driverPay?.percent, DEFAULT_FEES.driverPay.percent)),
+      minCents: cleanCents(f.driverPay?.minCents, DEFAULT_FEES.driverPay.minCents),
+      extrasPercent: Math.min(100, cleanCents(f.driverPay?.extrasPercent, DEFAULT_FEES.driverPay.extrasPercent)),
+    },
   };
 }
 
@@ -387,5 +403,5 @@ module.exports = {
   TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HOLIDAYS, HIGH_DEMAND_OPEN_ORDERS,
   holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, DEFAULT_FEES, CHARGE_KINDS,
-  normalizeFees, getFees, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
+  normalizeFees, getFees, driverPayFor, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
 };

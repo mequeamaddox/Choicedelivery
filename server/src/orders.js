@@ -6,7 +6,7 @@ const stripe = require('./stripe');
 const { locate, haversineMiles } = require('./geocode');
 const {
   isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
-  pieceWeightProblem,
+  pieceWeightProblem, driverPayFor,
 } = require('./pricing');
 
 function parsePieceLbs(value) {
@@ -221,6 +221,19 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
        price_cents = CASE WHEN price_is_custom THEN price_cents ELSE $4 END WHERE id = $1`,
     [orderId, breakdown.distanceMiles, JSON.stringify(breakdown), breakdown.totalCents]
   );
+  await refreshDriverPay(client, orderId);
+}
+
+// Recomputes the driver's pay from the price and extra charges (unless dispatch set it by hand).
+// Called whenever either changes. Pay that was already paid out is left alone.
+async function refreshDriverPay(client, orderId) {
+  const { rows: [o] } = await client.query(
+    `SELECT price_cents, driver_pay_is_custom, driver_paid_at,
+       (SELECT COALESCE(sum(cents), 0) FROM order_charges c WHERE c.order_id = o.id AND c.status <> 'waived')::int AS extras
+     FROM orders o WHERE id = $1`, [orderId]);
+  if (!o || o.driver_pay_is_custom || o.driver_paid_at) return;
+  await client.query('UPDATE orders SET driver_pay_cents = $2 WHERE id = $1',
+    [orderId, driverPayFor(o.price_cents, o.extras, await getFees(client))]);
 }
 
 // SQL fragment + params limiting which orders a user can see.
@@ -336,7 +349,32 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
   // Quotes aren't trackable until they're booked.
   if (user && (isStaff(user) || user.role === 'shipper') && o.status !== 'quote') out.trackingUrlToken = o.public_token;
   if (charges) out.charges = charges.map(serializeCharge);
-  if (events) out.events = events.map((e) => ({ type: e.type, data: e.data, actorId: e.actor_id, at: e.created_at }));
+  if (events) {
+    // Driver pay is between dispatch and the driver; customers don't see it in the timeline.
+    const shown = user && user.role === 'shipper' ? events.filter((e) => !STAFF_DRIVER_EVENTS.includes(e.type)) : events;
+    out.events = shown.map((e) => ({ type: e.type, data: e.data, actorId: e.actor_id, at: e.created_at }));
+  }
+  if (user && isStaff(user)) {
+    Object.assign(out, { driverPayCents: o.driver_pay_cents, driverPayIsCustom: o.driver_pay_is_custom, driverPaidAt: o.driver_paid_at });
+  }
+  return user?.role === 'driver' ? forDriver(out, o) : out;
+}
+
+const STAFF_DRIVER_EVENTS = ['driver_pay_set', 'driver_paid'];
+
+// Drivers see what they earn, never what the customer pays.
+const PRICE_FIELDS = ['priceBreakdown', 'priceIsCustom', 'priceCents', 'currency', 'paidCents', 'paidAt', 'paymentMethod',
+  'refundedCents', 'extraChargesCents', 'balanceDueCents', 'paymentStatus'];
+function forDriver(out, o) {
+  for (const k of PRICE_FIELDS) delete out[k];
+  out.driverPayCents = o.driver_pay_cents;
+  out.driverPaidAt = o.driver_paid_at;
+  if (out.charges) out.charges = out.charges.map(({ cents, ...c }) => c);
+  if (out.events) {
+    out.events = out.events.map((e) => ({
+      ...e, data: e.data && Object.fromEntries(Object.entries(e.data).filter(([k]) => !/cents/i.test(k))),
+    }));
+  }
   return out;
 }
 
@@ -487,5 +525,5 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
 
 module.exports = {
   ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
-  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops,
+  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 };

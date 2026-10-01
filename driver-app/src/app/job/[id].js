@@ -6,7 +6,7 @@ import { pickPhoto } from '../../lib/photos';
 import { currentLocation } from '../../lib/here';
 import { api } from '../../lib/client';
 import { useAuth } from '../../lib/auth';
-import { formatDate, mapsUrl, minutesSince, nextStop } from '../../lib/api';
+import { formatDate, formatMoney, mapsUrl, minutesSince, nextStop } from '../../lib/api';
 import { useLoader } from '../../lib/useLoader';
 import { colors } from '../../lib/theme';
 import { Badge, Button, Card, ErrorBox, H2, Loading, Muted, Notice, Row, styles } from '../../components/ui';
@@ -133,6 +133,9 @@ export default function Job() {
       <ErrorBox error={error} />
 
       <Card>
+        {order.driverPayCents != null ? (
+          <Row label="Your pay" value={`${formatMoney(order.driverPayCents)}${order.driverPaidAt ? ' · paid' : ''}`} />
+        ) : null}
         <Row label="Vehicle" value={order.vehicleType} />
         <Row label="Load" value={shipment} />
         <Row label="Distance" value={order.distanceMiles != null ? `about ${order.distanceMiles} mi` : null} />

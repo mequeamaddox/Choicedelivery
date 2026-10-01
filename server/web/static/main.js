@@ -2,7 +2,7 @@ import { html, render, useState, useEffect, useRoute, match, navigate, getUser, 
 import { Spinner } from './components.js';
 import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage, DriverSignupPage, DriverAppPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
-import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDetailPage } from './pages-admin.js';
+import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDetailPage, PayoutsPage } from './pages-admin.js';
 import { DriverJobsPage, DriverJobPage, DriverHistoryPage } from './pages-driver.js';
 
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
@@ -59,6 +59,7 @@ function App() {
   if (person && isStaff(getUser())) return html`<${DriverDetailPage} key=${person.id} id=${person.id} />`;
   if (path === '/leads' && isStaff(getUser())) return html`<${LeadsPage} />`;
   if (path === '/companies' && isStaff(getUser())) return html`<${CompaniesPage} />`;
+  if (path === '/payouts' && isStaff(getUser())) return html`<${PayoutsPage} />`;
   navigate('/orders');
   return null;
 }

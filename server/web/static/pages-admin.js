@@ -1,4 +1,4 @@
-import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS, VEHICLE_TYPES, navigate } from './lib.js';
+import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS, VEHICLE_TYPES, navigate, formatMoney } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton, DemoBadge } from './components.js';
 
 function AddAccountForm({ roles, companies, fixedCompanyId, onCreated, submitPath }) {
@@ -482,6 +482,23 @@ function FeesEditor() {
         <${Field} label="Then charge ($)"><input type="number" min="0" step="0.01" value=${dollars(fees.waitBlockCents)} onInput=${(e) => set({ waitBlockCents: cents(e.target.value) })} /><//>
         <${Field} label="Per how many minutes"><input type="number" min="1" step="1" value=${fees.waitBlockMinutes} onInput=${(e) => set({ waitBlockMinutes: Number(e.target.value) })} /><//>
       </div>
+      <h3>Driver pay</h3>
+      <p class="muted small">What drivers earn per order. Drivers only ever see their pay, never what the customer is charged.
+        You can set a different amount on any order.</p>
+      <div class="grid-2">
+        <${Field} label="Share of the order price (%)">
+          <input type="number" min="0" max="100" step="1" value=${fees.driverPay.percent}
+            onInput=${(e) => set({ driverPay: { ...fees.driverPay, percent: Number(e.target.value) } })} /><//>
+        <${Field} label="Minimum per order ($)" hint="Never more than the order price.">
+          <input type="number" min="0" step="0.01" value=${dollars(fees.driverPay.minCents)}
+            onInput=${(e) => set({ driverPay: { ...fees.driverPay, minCents: cents(e.target.value) } })} /><//>
+        <${Field} label="Share of extra charges (%)" hint="Wait time, loading help and other charges added after booking.">
+          <input type="number" min="0" max="100" step="1" value=${fees.driverPay.extrasPercent}
+            onInput=${(e) => set({ driverPay: { ...fees.driverPay, extrasPercent: Number(e.target.value) } })} /><//>
+      </div>
+      <p class="muted small">Example: a ${formatMoney(4000)} order pays the driver
+        ${formatMoney(Math.min(4000, Math.max(fees.driverPay.minCents, Math.round(4000 * fees.driverPay.percent / 100))))}.
+        Changes apply to new orders.</p>
       <div class="actions">
         <button class="btn primary">Save fees</button>
         <button type="button" class="btn" onClick=${() => set(loaded.data.defaults)}>Reset to defaults</button>
@@ -590,5 +607,60 @@ export function LeadsPage() {
               </div>
             </article>`)}
         </div>`}
+    <//>`;
+}
+
+// ---------- Driver pay ----------
+// What each driver is owed for completed deliveries. You send the money yourself (Cash App, Zelle,
+// check, payroll), then mark it paid here so both of you have the record.
+export function PayoutsPage() {
+  const [tab, setTab] = useState('unpaid');
+  const list = useApi(`/payouts?status=${tab}`);
+  const [msg, setMsg] = useState({});
+  const markPaid = async (d, orders) => {
+    const total = orders.reduce((n, o) => n + o.driverPayCents, 0);
+    if (!window.confirm(`Mark ${formatMoney(total)} as paid to ${d.driver.name || d.driver.email}? Do this after you've sent the money.`)) return;
+    try {
+      const r = await api('/payouts/mark-paid', { method: 'POST', body: { orderIds: orders.map((o) => o.id) } });
+      setMsg({ ok: `Marked ${formatMoney(r.totalCents)} paid to ${d.driver.name || d.driver.email} (${r.paidOrders} order${r.paidOrders === 1 ? '' : 's'}).` });
+      list.reload();
+    } catch (err) { setMsg({ error: err }); }
+  };
+  const short = (a) => (a || '').split(',')[0];
+  return html`
+    <${Layout}>
+      <${PageHeader} title="Driver pay" subtitle="What drivers have earned on completed deliveries. Send the money, then mark it paid." />
+      <div class="tabs" role="tablist">
+        <button class=${`tab ${tab === 'unpaid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'unpaid'} onClick=${() => { setTab('unpaid'); setMsg({}); }}>Owed</button>
+        <button class=${`tab ${tab === 'paid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'paid'} onClick=${() => { setTab('paid'); setMsg({}); }}>Paid (last 60 days)</button>
+      </div>
+      <${Alert} error=${msg.error || list.error} /><${Alert} tone="success">${msg.ok}<//>
+      ${list.loading && !list.data ? html`<${Spinner} />`
+        : !list.data?.length ? html`<${Empty} title=${tab === 'unpaid' ? 'Nobody is owed anything right now' : 'No payouts in the last 60 days'} />`
+        : list.data.map((d) => html`
+          <section class="card">
+            <div class="row-between">
+              <div>
+                <h2><a href=${`#/people/${d.driver.id}`}>${d.driver.name || d.driver.email}</a></h2>
+                <div class="muted small">${[d.driver.phoneNumber, d.driver.email].filter(Boolean).join(' · ')}</div>
+              </div>
+              <div class="payout-total">
+                <strong>${formatMoney(d.totalCents)}</strong>
+                ${tab === 'unpaid' && html`<button class="btn primary" onClick=${() => markPaid(d, d.orders)}>Mark paid</button>`}
+              </div>
+            </div>
+            <table class="table compact">
+              <thead><tr><th>Order</th><th>Delivered</th><th>Route</th><th class="num">Pay</th>${tab === 'paid' && html`<th>Paid</th>`}</tr></thead>
+              <tbody>
+                ${d.orders.map((o) => html`<tr>
+                  <td data-label="Order"><a href=${`#/orders/${o.id}`}>${o.orderNumber}</a></td>
+                  <td data-label="Delivered" class="small">${formatDate(o.completedAt)}</td>
+                  <td data-label="Route" class="small">${short(o.pickup)} → ${short(o.dropoff)}</td>
+                  <td data-label="Pay" class="num">${formatMoney(o.driverPayCents)}</td>
+                  ${tab === 'paid' && html`<td data-label="Paid" class="small">${formatDate(o.driverPaidAt)}</td>`}
+                </tr>`)}
+              </tbody>
+            </table>
+          </section>`)}
     <//>`;
 }

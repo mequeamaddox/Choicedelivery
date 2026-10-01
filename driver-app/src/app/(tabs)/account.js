@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth';
 import { API_URL } from '../../lib/client';
 import { colors } from '../../lib/theme';
 import { Badge, Button, Card, H2, Muted, Notice, Row } from '../../components/ui';
+import LegalLinks from '../../components/LegalLinks';
 
 const STATUS = { applied: ['Application in review', 'amber'], approved: ['Approved driver', 'green'],
   rejected: ['Not approved', 'gray'], suspended: ['On hold', 'red'] };
@@ -51,6 +52,7 @@ export default function Account() {
         <Muted small>Version {Constants.expoConfig?.version} · {API_URL.replace('https://', '')}</Muted>
       </Card>
       <Button title="Sign out" variant="danger" onPress={confirmSignOut} />
+      <LegalLinks />
     </ScrollView>
   );
 }
