@@ -234,6 +234,23 @@ export function DriverDetailPage({ id }) {
     <//>`;
 }
 
+// Owner: is email (Resend) set up, and a test send.
+function EmailStatus() {
+  const cfg = useApi('/settings/email');
+  const [msg, setMsg] = useState({});
+  if (!cfg.data) return null;
+  return html`
+    <section class="card stack">
+      <h2>Email</h2>
+      ${cfg.data.configured
+        ? html`<p><span class="badge green">Connected</span> <span class="small muted">Sending as ${cfg.data.from}</span></p>`
+        : html`<p class="muted">Not connected. Add <code>RESEND_API_KEY</code> (and <code>MAIL_FROM</code>) in Railway → Variables. Until then emails are only written to the server log.</p>`}
+      <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
+      ${cfg.data.configured && html`<div><${ActionButton} class="btn" onError=${(e) => setMsg({ error: e })}
+        onClick=${async () => { setMsg({}); const r = await api('/settings/email/test', { method: 'POST' }); setMsg({ ok: r.message }); }}>Send test email<//></div>`}
+    </section>`;
+}
+
 // Owner: where the "Get the driver app" page and driver emails send people.
 function DriverAppLink() {
   const current = useApi('/public/driver-app');
@@ -514,7 +531,7 @@ export function AccountPage() {
           <div><button class="btn primary">Change password</button></div>
         </form>
       </div>
-      ${me.role === 'admin' && html`<div class="account-extra stack"><${PaymentsStatus} /><${DriverAppLink} /><${FeesEditor} /></div>`}
+      ${me.role === 'admin' && html`<div class="account-extra stack"><${PaymentsStatus} /><${EmailStatus} /><${DriverAppLink} /><${FeesEditor} /></div>`}
     <//>`;
 }
 

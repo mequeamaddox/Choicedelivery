@@ -24,6 +24,27 @@ router.put('/bad-weather', asyncH(async (req, res) => {
   res.json({ bad_weather: req.body.enabled });
 }));
 
+// Email (Resend) status and a test send to the signed-in owner, so setup can be checked from the Account page.
+router.get('/email', requireRole('admin'), asyncH(async (req, res) => {
+  res.json({ configured: !!process.env.RESEND_API_KEY, from: process.env.MAIL_FROM || 'Choice Delivery <onboarding@resend.dev>' });
+}));
+
+router.post('/email/test', requireRole('admin'), asyncH(async (req, res) => {
+  if (!process.env.RESEND_API_KEY) throw new HttpError(409, 'RESEND_API_KEY is not set in Railway yet');
+  const { rows: [me] } = await db.query('SELECT email FROM users WHERE id = $1', [req.user.id]);
+  try {
+    await require('../mailer').sendMail({
+      to: me.email,
+      subject: 'Choice Delivery test email',
+      html: '<p>Email is working. Shippers and drivers will now get their Choice Delivery emails.</p>',
+    });
+  } catch (e) {
+    // Resend explains what's wrong (e.g. the domain isn't verified yet), so pass that along.
+    throw new HttpError(502, e.message.replace(/^Email send failed: /, 'Resend said: '));
+  }
+  res.json({ message: `Sent to ${me.email}. Check your inbox (and spam folder).` });
+}));
+
 // The driver app's install link (e.g. the latest EAS build or Play Store page). Owner only.
 router.put('/driver-app', requireRole('admin'), asyncH(async (req, res) => {
   const url = String(req.body?.url || '').trim();

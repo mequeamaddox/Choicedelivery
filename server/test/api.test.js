@@ -1126,3 +1126,26 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     mailer.setSender(null);
   }
 });
+
+test('owner can check email setup and send a test email', async () => {
+  const mailer = require('../src/mailer');
+  const sent = [];
+  let r = await call('GET', '/settings/email', { token: t.admin });
+  assert.equal(r.data.configured, false);
+  assert.equal((await call('POST', '/settings/email/test', { token: t.admin })).status, 409);
+  assert.equal((await call('GET', '/settings/email', { token: t.dispatcher })).status, 403);
+  process.env.RESEND_API_KEY = 're_test';
+  mailer.setSender(async (m) => { sent.push(m); });
+  try {
+    r = await call('POST', '/settings/email/test', { token: t.admin });
+    assert.equal(r.status, 200);
+    assert.equal(sent[0].to, 'admin@test.com');
+    mailer.setSender(async () => { throw new Error('Email send failed: 403 {"message":"The choicedeliverysc.com domain is not verified"}'); });
+    r = await call('POST', '/settings/email/test', { token: t.admin });
+    assert.equal(r.status, 502);
+    assert.match(r.data.message, /Resend said: .*not verified/);
+  } finally {
+    delete process.env.RESEND_API_KEY;
+    mailer.setSender(null);
+  }
+});
