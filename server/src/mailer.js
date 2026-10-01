@@ -16,6 +16,8 @@ async function sendMail({ to, subject, html }) {
     },
     body: JSON.stringify({
       from: process.env.MAIL_FROM || 'Choice Delivery <onboarding@resend.dev>',
+      // Where replies go (the From address is send-only), e.g. info@choicedeliverysc.com.
+      ...(process.env.MAIL_REPLY_TO ? { reply_to: process.env.MAIL_REPLY_TO } : {}),
       to,
       subject,
       html,
