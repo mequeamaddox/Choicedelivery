@@ -17,24 +17,15 @@ const FILTERS = [
   { key: 'all', label: 'All', statuses: [] },
 ];
 
-// Admin-only: fill the system with sample companies, drivers, orders and leads, or remove them.
+// Admin-only: shown only while sample ("Demo") data is still in the system, to remove it.
 function DemoDataButton({ onChange }) {
   const status = useApi('/demo');
-  const loaded = status.data?.loaded;
-  const toggle = async () => {
-    if (loaded) await api('/demo', { method: 'DELETE' });
-    else await api('/demo', { method: 'POST' });
-    await status.reload();
-    onChange();
-  };
-  if (!status.data) return null;
+  if (!status.data?.loaded) return null;
   return html`
     <${ActionButton} class="btn"
-      confirmText=${loaded
-        ? 'Remove all demo data? Only records marked "Demo" are deleted; your real data is not touched.'
-        : 'Load demo data? This adds sample companies, drivers, orders and leads, all marked "Demo". Real drivers never see demo orders, and you can remove it all with one click.'}
-      onClick=${toggle}>
-      ${loaded ? 'Remove demo data' : 'Load demo data'}
+      confirmText='Remove all demo data? Only records marked "Demo" are deleted; your real data is not touched.'
+      onClick=${async () => { await api('/demo', { method: 'DELETE' }); await status.reload(); onChange(); }}>
+      Remove demo data
     <//>`;
 }
 
