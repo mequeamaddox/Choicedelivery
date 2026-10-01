@@ -79,7 +79,10 @@
       ]
     ],
     "extra": {
-      "apiUrl": "https://app.choicedeliverysc.com"
+      "apiUrl": "https://app.choicedeliverysc.com",
+      "eas": {
+        "projectId": "455a933b-8b61-40ec-a9df-c1caa9417b05"
+      }
     }
   }
 }

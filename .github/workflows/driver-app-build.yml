@@ -51,11 +51,18 @@ jobs:
       - name: Test the app's API client against the server
         run: npm test
 
-      # Creates the Expo project on the first run (or links the existing one), without prompts.
+      # Links the Expo project whose id is in app.json (extra.eas.projectId), and makes the app's slug and
+      # owner match that project. Without an id it creates the project on the first run.
       - name: Link Expo project
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx --yes eas-cli@latest init --non-interactive --force
+        run: |
+          ID=$(node -p "require('./app.json').expo.extra?.eas?.projectId || ''")
+          if [ -n "$ID" ]; then
+            npx --yes eas-cli@latest init --id "$ID" --non-interactive --force
+          else
+            npx --yes eas-cli@latest init --non-interactive --force
+          fi
 
       - name: Build
         env:
