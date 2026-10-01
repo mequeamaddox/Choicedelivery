@@ -43,6 +43,8 @@ const t = {}; // tokens
 const ids = {};
 
 before(async () => {
+  // No real address lookups in tests: typed addresses without a location stay unlocated.
+  require('../src/geocode').setFetch(async () => ({ ok: true, json: async () => [] }));
   await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await db.migrate();
   server = app.listen(0);
@@ -451,9 +453,27 @@ test('address suggestions and distance-aware quotes', async () => {
     dropoffLocation: { lat: 25.76, lng: -80.19 } } });
   assert.equal(r.data.outOfArea, true, 'Miami is beyond 200 miles');
 
+  // Typed addresses (not picked from the suggestions) are looked up on the order too, so it's priced
+  // the same as the quote the customer saw.
+  const typed = { serviceLevel: 'standard', vehicleType: 'Car', weightLbs: 20 };
+  const shown = (await call('POST', '/public/quote', { body: { ...typed, pickupAddress: 'columbia', dropoffAddress: 'charleston' } })).data;
+  const typedOrder = orderBody({ vehicleType: 'Car', stops: [
+    { type: 'pickup', address: 'columbia' }, { type: 'dropoff', address: 'charleston' }] });
+  r = await call('POST', '/orders', { token: t.acme, body: { ...typedOrder, expectedCents: shown.totalCents } });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.equal(r.data.priceCents, shown.totalCents, 'order price matches the quote');
+  assert.deepEqual(r.data.stops[1].location, { lat: 32.7765, lng: -79.9311 });
+  // If the price shown no longer matches, it's saved as a quote with the new price instead of booked.
+  r = await call('POST', '/orders', { token: t.acme, body: { ...typedOrder, expectedCents: shown.totalCents - 100 } });
+  assert.equal(r.status, 409);
+  assert.equal(r.data.priceChanged, true);
+  assert.equal(r.data.order.status, 'quote');
+  assert.equal(r.data.order.priceCents, shown.totalCents);
+
   geocode.setFetch(async () => ({ ok: false, status: 503 }));
   r = await call('GET', '/public/geocode?q=somewhere%20new');
   assert.equal(r.status, 502, 'lookup outages degrade gracefully');
+  geocode.setFetch(async () => ({ ok: true, json: async () => [] }));
 });
 
 test('landing page is served on www; the app on other hosts', async () => {

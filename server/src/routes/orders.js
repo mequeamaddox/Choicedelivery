@@ -3,7 +3,7 @@ const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
   ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
-  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
+  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
@@ -14,6 +14,7 @@ const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
 
 const router = express.Router();
+const money = (c) => `$${(c / 100).toFixed(2)}`;
 router.use(requireAuth);
 
 // Tells dispatch (LEADS_EMAIL) that an order is waiting for a manual price.
@@ -79,6 +80,13 @@ router.post('/', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (re
     notifyStaffOfReview(order);
     return res.status(201).json(order);
   }
+  if (order.status === 'quote' && req.body?.saveAsQuote !== true) {
+    return res.status(409).json({
+      message: `The price is now ${money(order.priceCents)} (you were shown ${money(Number(req.body.expectedCents))}). `
+        + "We saved it as a quote; review it and book when you're ready.",
+      priceChanged: true, order,
+    });
+  }
   if (order.status === 'quote') {
     emailShipper(order.id, 'quote_saved');
     return res.status(201).json(order);
@@ -98,7 +106,6 @@ router.post('/:id/book', requireRole('shipper', 'admin', 'dispatcher'), asyncH(a
   const result = await db.withTx((client) => bookQuote(client, req.user, current.id, { expectedCents }));
   const order = await getOrderFor(req.user, current.id);
   if (!result.booked) {
-    const money = (c) => `$${(c / 100).toFixed(2)}`;
     return res.status(409).json({
       message: `The price is now ${money(result.priceCents)} (it was ${money(expectedCents)}) because of the time of day, demand or weather. Review it and book again.`,
       priceChanged: true, order,
@@ -195,7 +202,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
     // Stops can be replaced only before any of them has been started.
     if (b.stops !== undefined) {
       if (current.stops.some((s) => s.status !== 'pending')) throw new HttpError(409, 'Stops can no longer be changed');
-      const stops = normalizeStops(b.stops);
+      const stops = await locateStops(normalizeStops(b.stops));
       await client.query('DELETE FROM stops WHERE order_id = $1', [current.id]);
       await insertStops(client, current.id, stops);
     }

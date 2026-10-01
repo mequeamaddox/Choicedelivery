@@ -258,6 +258,8 @@ export function NewOrderPage() {
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
         saveAsQuote,
+        // The price on screen; if the server's differs, the order is held as a quote instead of booked.
+        expectedCents: quote && !quote.needsReview ? quote.totalCents : undefined,
       };
       if (staff) {
         if (v.organizationId) body.organizationId = v.organizationId;
@@ -270,6 +272,11 @@ export function NewOrderPage() {
       }
       navigate(`/orders/${order.id}`);
     } catch (err) {
+      if (err.data?.priceChanged) {
+        priceChangedNotice = { id: err.data.order.id, message: err.message };
+        navigate(`/orders/${err.data.order.id}`);
+        return;
+      }
       setError(err);
       window.scrollTo(0, 0);
     } finally {
@@ -597,11 +604,18 @@ function ChargesPanel({ order, onChange, setError }) {
 
 // A saved quote: book it (card customers then pay) or delete it. The price is rechecked on booking;
 // if it changed, the server updates the quote and asks the customer to confirm the new price.
+// Set by the new-order form when the price changed before booking; shown once on that quote.
+let priceChangedNotice = null;
+
 function QuotePanel({ order, onChange, setError }) {
   const user = getUser();
   const payments = useApi('/payments/config');
   const payByCard = user.role === 'shipper' && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useState(() => {
+    const n = priceChangedNotice?.id === order.id ? priceChangedNotice.message : null;
+    priceChangedNotice = null;
+    return n;
+  });
   const book = async () => {
     setNotice(null);
     try {

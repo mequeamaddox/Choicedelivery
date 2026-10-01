@@ -3,6 +3,7 @@ const db = require('./db');
 const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
 const stripe = require('./stripe');
+const { locate } = require('./geocode');
 const {
   isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
   pieceWeightProblem,
@@ -65,6 +66,13 @@ function normalizeStops(stops) {
   return out;
 }
 
+// Fills in map locations for typed addresses that weren't picked from the suggestions, the same
+// way the quote does, so the order is priced for the distance the customer was quoted.
+async function locateStops(stops) {
+  await Promise.all(stops.map(async (s) => { if (!s.location) s.location = await locate(s.address); }));
+  return stops;
+}
+
 async function insertStops(client, orderId, stops) {
   for (let i = 0; i < stops.length; i++) {
     const s = stops[i];
@@ -121,7 +129,7 @@ async function createOrder(client, actor, body) {
   }
   const orderId = rows[0].id;
   await assertPieceWeights(client, orderId);
-  await insertStops(client, orderId, stops);
+  await insertStops(client, orderId, await locateStops(stops));
   await repriceOrder(client, orderId, { fresh: true });
   // Too heavy, over capacity, etc.: held as a quote until dispatch prices it by hand.
   const { rows: [priced] } = await client.query('SELECT price_breakdown, price_is_custom FROM orders WHERE id = $1', [orderId]);
@@ -129,6 +137,15 @@ async function createOrder(client, actor, body) {
     await client.query(
       "UPDATE orders SET status = 'quote', booked_at = NULL, review_status = 'needed' WHERE id = $1", [orderId]);
     await recordEvent(client, orderId, actor.id, 'review_requested', { reasons: priced.price_breakdown.reviewReasons });
+    return orderId;
+  }
+  // The customer was shown a different price (e.g. busy time started while they filled the form):
+  // keep it as a quote with the new price instead of booking, so nobody pays an amount they didn't see.
+  const { rows: [{ price_cents: cents }] } = await client.query('SELECT price_cents FROM orders WHERE id = $1', [orderId]);
+  if (!isQuote && body.expectedCents != null && priceCents == null && Number(body.expectedCents) !== cents) {
+    await client.query("UPDATE orders SET status = 'quote', booked_at = NULL WHERE id = $1", [orderId]);
+    await recordEvent(client, orderId, actor.id, 'quoted');
+    await recordEvent(client, orderId, actor.id, 'repriced', { fromCents: Number(body.expectedCents), toCents: cents });
     return orderId;
   }
   await recordEvent(client, orderId, actor.id, isQuote ? 'quoted' : 'created');
@@ -422,5 +439,5 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
 
 module.exports = {
   ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
-  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, insertStops,
+  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops,
 };

@@ -9,7 +9,7 @@ const {
   CHARGE_KINDS, pieceWeightProblem,
 } = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
-const { searchAddresses, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
+const { searchAddresses, locate, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
 
 const router = express.Router();
 const limitWrites = rateLimit({ windowMs: 10 * 60 * 1000, max: 8 });
@@ -85,12 +85,6 @@ router.get('/geocode', rateLimit({ windowMs: 60 * 1000, max: 40 }), asyncH(async
   }
 }));
 
-async function locate(address, given) {
-  const loc = parseLocation(given);
-  if (loc) return loc;
-  if (!str(address)) return null;
-  try { return (await searchAddresses(address))[0]?.location || null; } catch { return null; }
-}
 
 // Instant quote using the same formula orders are priced with.
 // Body: { stops: [{address, location?}, ...] } or { pickupAddress, dropoffAddress, pickupLocation?, dropoffLocation? },

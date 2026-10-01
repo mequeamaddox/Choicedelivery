@@ -1,6 +1,8 @@
 // Address search via OpenStreetMap Nominatim (free, no key), limited to the SC/NC/GA service area.
 // Requests go through this server so we can send a proper User-Agent, cache results and stay within
 // Nominatim's usage policy of at most one request per second.
+const { parseLocation } = require('./util');
+
 const USER_AGENT = 'ChoiceDelivery/1.0 (https://www.choicedeliverysc.com; info@choicedeliverysc.com)';
 const STATES = { 'South Carolina': 'SC', 'North Carolina': 'NC', Georgia: 'GA' };
 const HOME_BASE = { lat: 34.0007, lng: -81.0348 }; // Columbia, SC
@@ -68,6 +70,16 @@ async function searchAddresses(query) {
   return results;
 }
 
+// A stop's map location: the one picked from the suggestions, else the best match for the typed
+// address (null when it can't be found). Quotes and orders both use this so they price the same.
+async function locate(address, given) {
+  const loc = parseLocation(given);
+  if (loc) return loc;
+  const q = String(address || '').trim();
+  if (!q) return null;
+  try { return (await searchAddresses(q))[0]?.location || null; } catch { return null; }
+}
+
 // Straight-line distance in miles.
 function haversineMiles(a, b) {
   const R = 3958.8;
@@ -78,4 +90,4 @@ function haversineMiles(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-module.exports = { setFetch, searchAddresses, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES };
+module.exports = { setFetch, searchAddresses, locate, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES };
