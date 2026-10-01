@@ -53,7 +53,8 @@ function LoginForm() {
   const [v, bind] = useForm({ email: '', password: '' });
   const { onSubmit, error, busy } = useSubmit(async () => {
     await login(v.email, v.password);
-    navigate('/orders');
+    // No navigate here: once signed in, the app sends them on from the login page (back to where they
+    // were headed, or their orders).
   });
   return html`
     <${AuthShell} title="Log in" subtitle="For shippers, drivers and dispatch.">

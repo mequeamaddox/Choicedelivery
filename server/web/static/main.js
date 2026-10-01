@@ -4,6 +4,7 @@ import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage, DriverSignupPa
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
 import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDetailPage, PayoutsPage } from './pages-admin.js';
 import { DriverJobsPage, DriverJobPage, DriverHistoryPage, PayoutMethodPage } from './pages-driver.js';
+import { ShippingFormPage, ShippingLabelPage } from './pages-shipping.js';
 
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
 
@@ -33,6 +34,8 @@ function App() {
   if (!user) {
     const Page = PUBLIC[path];
     if (Page) return html`<${Page} />`;
+    // Come back here after logging in (e.g. the website footer's "Shipping form" link).
+    if (path && path !== '/') { try { sessionStorage.setItem('afterLogin', path); } catch { /* private mode */ } }
     navigate('/login');
     return null;
   }
@@ -47,14 +50,21 @@ function App() {
     return null;
   }
 
+  // "Drive with us" from the footer: the driver application, even while signed in as a shipper.
+  if (path === '/drive') return html`<${DriverSignupPage} />`;
   if (PUBLIC[path] || path === '/') {
-    navigate('/orders');
+    let next = null;
+    try { next = sessionStorage.getItem('afterLogin'); sessionStorage.removeItem('afterLogin'); } catch { /* private mode */ }
+    navigate(next && !PUBLIC[next] ? next : '/orders');
     return null;
   }
 
   const order = match('/orders/:id', path);
   if (path === '/orders') return html`<${OrdersPage} />`;
-  if (path === '/orders/new') return html`<${NewOrderPage} />`;
+  if (path.split('?')[0] === '/orders/new') return html`<${NewOrderPage} key=${path} />`;
+  if (path === '/shipping-form') return html`<${ShippingFormPage} />`;
+  const label = match('/shipping-forms/:code', path);
+  if (label) return html`<${ShippingLabelPage} key=${label.code} code=${label.code} />`;
   if (order) return html`<${OrderPage} key=${order.id} id=${order.id} />`;
   if (path === '/account') return html`<${AccountPage} />`;
   if (path === '/team' && user.role === 'shipper') return html`<${TeamPage} />`;

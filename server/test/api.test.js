@@ -1602,3 +1602,32 @@ test("staff can fix a typo in a driver's email", async () => {
   r = await call('PATCH', `/users/${admin.id}`, { token: t.dispatcher, body: { email: 'x@y.co' } });
   assert.equal(r.status, 403, "dispatchers can't change staff emails");
 });
+
+test('shipping forms get a barcode code, stay within the company, and prefill a booking', async () => {
+  const body = {
+    shipper: { name: 'Sam Carter', company: 'Acme', address: '1200 Assembly St, Columbia, SC 29201', phone: '803-555-0100' },
+    recipient: { name: 'Jane Doe', address: '455 Harbison Blvd, Columbia, SC 29212' },
+    pieces: '2', weightLbs: '12.5', description: 'Documents', reference: 'PO-77',
+  };
+  let r = await call('POST', '/shipping-forms', { token: t.acme, body: { ...body, recipient: { name: 'No address' } } });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/shipping-forms', { token: t.acme, body });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const form = r.data;
+  assert.match(form.code, /^CDS\d{8}$/);
+  assert.equal(form.pieces, 2);
+  assert.equal(form.weightLbs, 12.5);
+  const second = (await call('POST', '/shipping-forms', { token: t.acme, body })).data;
+  assert.notEqual(second.code, form.code, 'every form gets its own barcode');
+  assert.equal((await call('GET', `/shipping-forms/${form.code.toLowerCase()}`, { token: t.acme })).data.id, form.id);
+  assert.ok((await call('GET', '/shipping-forms', { token: t.acme })).data.some((f) => f.code === form.code));
+  assert.ok((await call('GET', '/shipping-forms', { token: t.admin })).data.some((f) => f.code === form.code), 'staff see all');
+  assert.equal((await call('POST', '/shipping-forms', { token: t.d1, body })).status, 403, 'not for drivers');
+
+  // Booked with the form's code as the reference: the form shows the order, and the driver's scan finds it.
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ trackingNumber: form.code }) });
+  assert.ok(r.data.id || r.data.order?.id, JSON.stringify(r.data));
+  const orderId = r.data.id || r.data.order.id;
+  r = await call('GET', `/shipping-forms/${form.code}`, { token: t.acme });
+  assert.equal(r.data.orders[0].id, orderId);
+});

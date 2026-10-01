@@ -1,6 +1,6 @@
 import {
   html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
-  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout,
+  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath,
 } from './lib.js';
 import {
   Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
@@ -221,6 +221,22 @@ export function NewOrderPage() {
   });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  // "Book a delivery for this shipment" from a shipping form: fill in its details, and use its code
+  // as the reference number so the driver app's barcode scan finds this job.
+  const fromForm = new URLSearchParams(currentPath().split('?')[1] || '').get('form');
+  const [formCode, setFormCode] = useState(null);
+  useEffect(() => {
+    if (!fromForm) return;
+    api(`/shipping-forms/${encodeURIComponent(fromForm)}`).then((f) => {
+      const stop = (type, p) => ({ ...blankStop(type), address: p.address, contactName: [p.name, p.company].filter(Boolean).join(', '),
+        contactPhone: p.phone || '', instructions: type === 'dropoff' ? (f.instructions || '') : '' });
+      setStops([stop('pickup', f.shipper), stop('dropoff', f.recipient)]);
+      setV((cur) => ({ ...cur, trackingNumber: f.code, numberOfPieces: f.pieces ? String(f.pieces) : '',
+        weightLbs: f.weightLbs != null ? String(Math.ceil(f.weightLbs)) : '',
+        description: [f.description, f.reference && `Ref ${f.reference}`].filter(Boolean).join(' · ') }));
+      setFormCode(f.code);
+    }).catch(setError);
+  }, [fromForm]);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
   const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType);
   const fees = pricing.data?.fees;
@@ -288,6 +304,7 @@ export function NewOrderPage() {
   return html`
     <${Layout}>
       <${PageHeader} title="New order" subtitle="Drivers are notified as soon as you book." />
+      ${formCode && html`<${Alert} tone="success">Filled in from shipping form ${formCode}. Its barcode is this order's reference number. Check the addresses, then book.<//>`}
       <form class="form-layout" onSubmit=${submit}>
         <${Alert} error=${error} />
         <section class="card">

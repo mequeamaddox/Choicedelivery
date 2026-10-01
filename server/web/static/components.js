@@ -43,13 +43,27 @@ export function Layout({ children }) {
         </nav>
       </div>
     </header>
-    <main class="page with-tabbar">${children}</main>
+    <main class="page with-tabbar">${children}<${SiteFooter} role=${user?.role} /></main>
     <nav class="tabbar" aria-label="Main">
       ${links.filter((l) => l.tab).map((l) => html`
         <a href=${`#${l.href}`} class=${active(l.href) ? 'active' : ''} aria-current=${active(l.href) ? 'page' : undefined}>
           <${Icon} name=${l.icon} /><span>${l.label}</span>
         </a>`)}
     </nav>`;
+}
+
+// Footer on every signed-in page: legal pages, driving for us and the shipping form.
+export function SiteFooter({ role }) {
+  const notDriver = role && role !== 'driver';
+  return html`<footer class="site-footer no-print">
+    <nav aria-label="Footer">
+      <a href="https://choicedeliverysc.com/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+      <a href="https://choicedeliverysc.com/terms" target="_blank" rel="noopener">Terms & Conditions</a>
+      ${notDriver && html`<a href="#/drive">Drive with us</a>`}
+      ${notDriver && html`<a href="#/shipping-form">Shipping form</a>`}
+    </nav>
+    <p>© ${new Date().getFullYear()} Choice Delivery SC · Columbia, SC · <a href="tel:8039497034">(803) 949-7034</a></p>
+  </footer>`;
 }
 
 export function AuthShell({ title, subtitle, children }) {
