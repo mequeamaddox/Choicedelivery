@@ -42,6 +42,8 @@ const stripeStatus = (u, flags = { payoutsEnabled: u.stripe_payouts_enabled, det
 });
 
 const connectError = (e) => {
+  // Stripe's exact reason goes to the server log (Railway) so the setup step it wants can be found.
+  console.error('Stripe Connect onboarding failed:', e.message);
   if (/signed up for Connect|platform profile|Connect/i.test(e.message)) {
     return new HttpError(503, 'Direct deposit isn\'t switched on in Stripe yet. Ask Choice Delivery to finish setting up Stripe Connect.');
   }
