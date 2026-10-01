@@ -266,18 +266,16 @@ const SERVICE_LEVELS = {
   rush: { label: 'Rush delivery', description: '2 hours or less', feeCents: RUSH_FEE_CENTS },
 };
 
-// Business plans as advertised on choicedeliverysc.com (chosen over the original app's code, which
-// had 10/8/8/6 included deliveries with $40/$30/$35/$25 overages).
-// Monthly business plans: included deliveries are standard service within PLAN_LOCAL_MILES of
-// Columbia; extra deliveries cost OVERAGE_CENTS, rush PLAN_RUSH_CENTS more. Shown on the website only
-// when SHOW_BUSINESS_PLANS=true (hidden for now).
+// Monthly business plans: each included delivery is standard service covering the first
+// PLAN_LOCAL_MILES (miles beyond are per-mile); extra deliveries cost OVERAGE_CENTS, rush
+// PLAN_RUSH_CENTS more. Shown on the website only when SHOW_BUSINESS_PLANS=true (hidden for now).
 const BUSINESS_PLANS = {
   starter: { name: 'Starter Plan', monthlyCents: 23000, includedDeliveries: 10 },
   pro: { name: 'Pro Plan', monthlyCents: 52500, includedDeliveries: 25 },
   business: { name: 'Business Plan', monthlyCents: 95000, includedDeliveries: 50 },
 };
 const OVERAGE_CENTS = 2200;
-const PLAN_LOCAL_MILES = 15;
+const PLAN_LOCAL_MILES = 10; // miles covered by each included delivery, like the base price
 const PLAN_RUSH_CENTS = 3500;
 const businessPlansEnabled = () => String(process.env.SHOW_BUSINESS_PLANS || '').toLowerCase() === 'true';
 // Names of plans offered before, so older plan requests still read correctly.
