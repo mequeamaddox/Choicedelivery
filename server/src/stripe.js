@@ -132,7 +132,9 @@ const createDriverAccount = ({ userId, email }) => stripeRequest('POST', '/accou
   capabilities: { transfers: { requested: true } },
   business_profile: { mcc: '4215', product_description: 'Independent delivery driver for Choice Delivery SC' },
   metadata: { user_id: userId },
-}, { idempotencyKey: `driver-account-${userId}` });
+// Keyed per minute: a double tap creates one account, but a retry later (say, after Connect was switched
+// on) isn't answered with Stripe's saved reply to the earlier failed attempt, which it keeps for 24 hours.
+}, { idempotencyKey: `driver-account-${userId}-${Math.floor(Date.now() / 60000)}` });
 
 const getAccount = (accountId) => stripeRequest('GET', `/accounts/${encodeURIComponent(accountId)}`);
 
