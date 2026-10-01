@@ -59,8 +59,11 @@ export function createApi({ baseUrl, getToken, onUnauthorized, fetchImpl = fetch
     history: () => request('/orders?mine=true&status=completed&limit=100'),
     job: (id) => request(`/orders/${encodeURIComponent(id)}`),
     accept: (id) => request(`/orders/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
-    arrive: (id, stopId) => request(`/orders/${encodeURIComponent(id)}/stops/${encodeURIComponent(stopId)}/arrive`, { method: 'POST' }),
-    // proof: { signature?, photo?, printedName? } (signature/photo are data URLs)
+    // location: { lat, lng, accuracy?, mocked? } from the phone; the driver must be at the stop.
+    arrive: (id, stopId, location) => request(`/orders/${encodeURIComponent(id)}/stops/${encodeURIComponent(stopId)}/arrive`,
+      { method: 'POST', body: { location } }),
+    // proof: { signature?, photo?, printedName?, location } (signature/photo are data URLs).
+    // Drop-offs need both a photo and a signature; pickups need at least one.
     complete: (id, stopId, proof) => request(
       `/orders/${encodeURIComponent(id)}/stops/${encodeURIComponent(stopId)}/complete`,
       { method: 'POST', body: proof, timeoutMs: 60000 }),

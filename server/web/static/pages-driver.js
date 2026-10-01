@@ -23,6 +23,18 @@ function stopSharing() {
   watchId = null;
 }
 
+// The phone's position right now, sent with "I've arrived" and "Delivered" so the server can check
+// the driver is at the stop's address.
+function hereNow() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error("This browser can't share your location. Use the Choice Delivery Driver app.")); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => reject(new Error("We need your location to confirm you're at the stop. Allow location for this site and try again.")),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+  });
+}
+
 function OnlineToggle() {
   const me = useApi('/users/me');
   const [online, setOnline] = useState(null);
@@ -212,17 +224,20 @@ function CompleteStopForm({ order, stop, onDone }) {
   const isPickup = stop.type === 'pickup';
   const submit = async (e) => {
     e.preventDefault();
-    if (!signature && !photo) { setError(new Error('Add a signature or a photo as proof.')); return; }
+    if (isPickup && !signature && !photo) { setError(new Error('Add a signature or a photo as proof.')); return; }
+    if (!isPickup && (!signature || !photo)) { setError(new Error("Take a delivery photo and get the receiver's signature.")); return; }
     setBusy(true); setError(null);
     try {
+      const location = await hereNow();
       onDone(await api(`/orders/${order.id}/stops/${stop.id}/complete`, {
-        method: 'POST', body: { signature: signature || undefined, photo: photo || undefined, printedName: name || undefined },
+        method: 'POST', body: { signature: signature || undefined, photo: photo || undefined, printedName: name || undefined, location },
       }));
     } catch (err) { setError(err); } finally { setBusy(false); }
   };
   return html`
     <form class="stack" onSubmit=${submit}>
       <h3>${isPickup ? 'Confirm pickup' : 'Confirm delivery'}</h3>
+      <p class="muted small">${isPickup ? 'Add a signature or a photo.' : "A delivery photo and the receiver's signature are both required."}</p>
       <${Alert} error=${error} />
       <label class="field"><span class="field-label">${isPickup ? 'Name of person handing off' : 'Name of person receiving'}</span>
         <input value=${name} onInput=${(e) => setName(e.target.value)} autocomplete="off" /></label>
@@ -274,10 +289,10 @@ export function DriverJobPage({ id }) {
           </div>
           ${next.status === 'pending' && html`
             <${ActionButton} class="btn block big" onError=${setError}
-              onClick=${async () => setOverride(await api(`/orders/${order.id}/stops/${next.id}/arrive`, { method: 'POST' }))}>
+              onClick=${async () => setOverride(await api(`/orders/${order.id}/stops/${next.id}/arrive`, { method: 'POST', body: { location: await hereNow() } }))}>
               I've arrived
             <//>`}
-          <${CompleteStopForm} key=${next.id} order=${order} stop=${next} onDone=${setOverride} />
+          ${next.status !== 'pending' && html`<${CompleteStopForm} key=${next.id} order=${order} stop=${next} onDone=${setOverride} />`}
         </section>`}
 
       ${order.status === 'completed' && html`<div class="card done-card"><h2>Delivered 🎉</h2><p>Nice work. <a href="#/driver">Back to jobs</a></p></div>`}

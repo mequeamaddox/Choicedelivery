@@ -110,6 +110,8 @@ export function PageHeader({ title, subtitle, actions }) {
 }
 
 // Vertical route: pickups and drop-offs in order, with progress and proof.
+const feetOrMiles = (m) => (m >= 1609 ? `${(m / 1609.34).toFixed(1)} mi` : `${Math.round(m * 3.281)} ft`);
+
 export function StopTimeline({ stops, showProof = false }) {
   return html`
     <ol class="route">
@@ -127,6 +129,7 @@ export function StopTimeline({ stops, showProof = false }) {
             ${s.instructions && html`<div class="small muted">“${s.instructions}”</div>`}
             ${showProof && (s.signature || s.photo || s.printedName || s.barcode) && html`
               <div class="proof">
+                ${s.completedDistanceM != null && html`<div class="small">Driver's phone was ${feetOrMiles(s.completedDistanceM)} from the address when completed</div>`}
                 ${s.printedName && html`<div class="small">Signed by <strong>${s.printedName}</strong></div>`}
                 ${s.barcode && html`<div class="small">Scanned barcode <code>${s.barcode}</code></div>`}
                 <div class="proof-images">

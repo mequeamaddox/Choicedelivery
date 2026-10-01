@@ -39,6 +39,7 @@ const orderBody = (extra = {}) => ({
   ...extra,
 });
 
+const AT_PICKUP = { lat: 34, lng: -81, accuracy: 10 }; // where orderBody's pickup is
 const t = {}; // tokens
 const ids = {};
 
@@ -145,13 +146,26 @@ test('full delivery flow with shipper visibility and tracking', async () => {
   r = await call('POST', `/orders/${order.id}/stops/${dropoff.id}/arrive`, { token: t[winner] });
   assert.equal(r.status, 409, 'stops must go in order');
 
+  // The driver's phone has to be at the address (the pickup is at 34, -81).
+  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/complete`, { token: t[winner], body: { signature: 'data:x', location: AT_PICKUP } });
+  assert.equal(r.status, 409, 'arrive before completing');
   r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/arrive`, { token: t[winner] });
+  assert.equal(r.status, 400, 'location is required');
+  assert.match(r.data.message, /location/);
+  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/arrive`, { token: t[winner], body: { location: { lat: 34.1, lng: -81 } } });
+  assert.equal(r.status, 409, 'too far from the pickup');
+  assert.match(r.data.message, /about 6\.\d miles from this pickup/);
+  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/arrive`, { token: t[winner], body: { location: { ...AT_PICKUP, mocked: true } } });
+  assert.equal(r.status, 403, 'fake GPS is refused');
+  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/arrive`, { token: t[winner], body: { location: { lat: 34.003, lng: -81, accuracy: 20 } } });
   assert.equal(r.data.status, 'at_pickup');
+  assert.equal(r.data.stops[0].arrivedDistanceM, 334);
 
-  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/complete`, { token: t[winner], body: {} });
+  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/complete`, { token: t[winner], body: { location: AT_PICKUP } });
   assert.equal(r.status, 400, 'proof is required');
-  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/complete`, { token: t[winner], body: { signature: 'data:image/png;base64,AA' } });
+  r = await call('POST', `/orders/${order.id}/stops/${pickup.id}/complete`, { token: t[winner], body: { signature: 'data:image/png;base64,AA', location: AT_PICKUP } });
   assert.equal(r.data.status, 'in_transit');
+  assert.equal(r.data.stops[0].completedDistanceM, 0);
 
   await call('PUT', '/users/me/location', { token: t[winner], body: { lat: 34.01, lng: -81.02 } });
   r = await call('GET', `/orders/${order.id}`, { token: t.acme });
@@ -165,11 +179,16 @@ test('full delivery flow with shipper visibility and tracking', async () => {
   r = await call('POST', `/orders/${order.id}/cancel`, { token: t.acme });
   assert.equal(r.status, 409, 'shippers cannot cancel once underway');
 
+  await call('POST', `/orders/${order.id}/stops/${dropoff.id}/arrive`, { token: t[winner] }); // fresh shared location
   r = await call('POST', `/orders/${order.id}/stops/${dropoff.id}/complete`, { token: t[winner], body: { photo: 'data:image/jpeg;base64,AA', printedName: 'Jane' } });
+  assert.equal(r.status, 400, 'a delivery needs a photo and a signature');
+  assert.match(r.data.message, /photo and the receiver's signature/);
+  r = await call('POST', `/orders/${order.id}/stops/${dropoff.id}/complete`, { token: t[winner], body: { photo: 'data:image/jpeg;base64,AA', signature: 'data:s', printedName: 'Jane' } });
   assert.equal(r.data.status, 'completed');
+  assert.equal(r.data.stops[1].completedDistanceM, null, "the drop-off address isn't on the map, so there's no distance");
   assert.ok(r.data.completedAt);
   assert.deepEqual(r.data.events.map((e) => e.type),
-    ['created', 'accepted', 'stop_arrived', 'stop_completed', 'stop_completed', 'completed']);
+    ['created', 'accepted', 'stop_arrived', 'stop_completed', 'stop_arrived', 'stop_completed', 'completed']);
 
   r = await call('GET', '/orders?mine=true&status=completed', { token: t[winner] });
   assert.equal(r.data.length, 1);
@@ -215,10 +234,11 @@ test('barcode scan is an optional check: it finds the job and records the barcod
   assert.equal(r.data.scan.stopId, pickup.id, 'recorded on the next pickup');
   assert.equal(r.data.status, 'accepted', 'and the pickup is not completed');
   assert.equal(r.data.stops[0].barcode, 'SCAN-9');
-  r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { barcode: 'SCAN-9' } });
+  await call('POST', `/orders/${id}/stops/${pickup.id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
+  r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { barcode: 'SCAN-9', location: AT_PICKUP } });
   assert.equal(r.status, 400, 'a barcode alone is not proof of pickup');
   assert.match(r.data.message, /signature or photo/);
-  r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x' } });
+  r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
   assert.equal(r.data.status, 'in_transit');
   assert.equal(r.data.stops[0].barcode, 'SCAN-9', 'the scanned barcode is kept with the proof');
   r = await call('POST', '/orders/scan', { token: t.d2, body: { barcode: 'SCAN-9' } });
@@ -663,8 +683,9 @@ test('shippers get status emails with a tracking link; opt-out and demo respecte
     assert.ok(sent[0].html.includes(`#/track/${order.trackingUrlToken}`), 'includes the tracking link');
 
     await call('POST', `/orders/${order.id}/accept`, { token: t.d1 });
-    await call('POST', `/orders/${order.id}/stops/${order.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:x' } });
-    await call('POST', `/orders/${order.id}/stops/${order.stops[1].id}/complete`, { token: t.d1, body: { photo: 'data:y', printedName: 'Jane <Q>' } });
+    for (const stop of order.stops) await call('POST', `/orders/${order.id}/stops/${stop.id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } })
+      .then(() => call('POST', `/orders/${order.id}/stops/${stop.id}/complete`, { token: t.d1,
+        body: { signature: 'data:x', photo: 'data:y', printedName: stop.type === 'dropoff' ? 'Jane <Q>' : undefined, location: AT_PICKUP } }));
     await settle();
     assert.deepEqual(sent.map((m) => m.subject.split(/[:\s]/)[0]), ['Order', 'A', 'Picked', 'Delivered']);
     assert.ok(sent[3].html.includes('Jane &lt;Q&gt;'), 'names are escaped');

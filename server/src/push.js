@@ -29,7 +29,7 @@ async function notifyDriversOfOrder(order) {
     sound: 'default',
     channelId: 'jobs', // the driver app's high-priority Android channel
     title: order.serviceLevel === 'rush' ? 'New RUSH job available' : 'New job available',
-    body: `${pickup?.address} → ${dropoff?.address}`,
+    body: `${order.distanceMiles != null ? `${order.distanceMiles} mi · ` : ''}${pickup?.address} → ${dropoff?.address}`,
     data: { orderId: order.id, requestId: order.id },
   })));
 }

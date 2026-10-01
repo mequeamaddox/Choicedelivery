@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Image, Linking, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { pickPhoto } from '../../lib/photos';
+import { currentLocation } from '../../lib/here';
 import { api } from '../../lib/client';
 import { useAuth } from '../../lib/auth';
 import { formatDate, mapsUrl, minutesSince, nextStop } from '../../lib/api';
@@ -40,17 +41,20 @@ function ProofForm({ order, stop, onDone }) {
     try { const p = await pickPhoto(); if (p) setPhoto(p); } catch (e) { setError(e); }
   };
   const submit = async () => {
-    if (!signature && !photo) { setError(new Error('Add a signature or a photo as proof.')); return; }
+    if (pickup && !signature && !photo) { setError(new Error('Add a signature or a photo as proof.')); return; }
+    if (!pickup && (!signature || !photo)) { setError(new Error('Take a delivery photo and get the receiver\'s signature.')); return; }
     setBusy(true); setError(null);
     try {
+      const location = await currentLocation();
       onDone(await api.complete(order.id, stop.id, {
-        signature: signature || undefined, photo: photo || undefined, printedName: name.trim() || undefined,
+        signature: signature || undefined, photo: photo || undefined, printedName: name.trim() || undefined, location,
       }));
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
   return (
     <View style={{ gap: 10 }}>
       <H2>{pickup ? 'Confirm pickup' : 'Confirm delivery'}</H2>
+      <Muted small>{pickup ? 'Add a signature or a photo.' : 'A delivery photo and the receiver\'s signature are both required.'}</Muted>
       <ErrorBox error={error} />
       <Text style={styles.label}>{pickup ? 'Name of person handing it off' : 'Name of person receiving'}</Text>
       <TextInput value={name} onChangeText={setName} style={styles.input} autoCapitalize="words" placeholder="Printed name"
@@ -158,7 +162,7 @@ export default function Job() {
             ) : null}
           </View>
           {next.status === 'pending' ? (
-            <Button title="I've arrived" big loading={busy} onPress={() => act(() => api.arrive(order.id, next.id))} />
+            <Button title="I've arrived" big loading={busy} onPress={() => act(async () => api.arrive(order.id, next.id, await currentLocation()))} />
           ) : <WaitTimer stop={next} freeMinutes={freeMinutes} />}
           {next.type === 'pickup' && next.barcode ? (
             <Notice tone="green">✓ Package barcode {next.barcode} matches this job.</Notice>

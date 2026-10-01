@@ -85,20 +85,28 @@ test('a driver goes online, accepts a job, works both stops and sees it in histo
 
   const pickup = nextStop(job);
   await assert.rejects(d.api.complete(order.id, job.stops[1].id, { signature: 'data:x' }), (e) => e.status === 409, 'stops go in order');
-  job = await d.api.arrive(order.id, pickup.id);
+  const atPickup = { lat: 34.0016, lng: -81.0351, accuracy: 12 };
+  await assert.rejects(d.api.arrive(order.id, pickup.id, { lat: 33.9946, lng: -81.0489 }),
+    (e) => e.status === 409 && /from this pickup/.test(e.message), 'must be at the pickup');
+  job = await d.api.arrive(order.id, pickup.id, atPickup);
   assert.equal(job.status, 'at_pickup');
   await assert.rejects(d.api.complete(order.id, pickup.id, {}), (e) => /signature or photo/.test(e.message));
   // The optional barcode check records the barcode but doesn't pick anything up.
   job = await d.api.scan('PKG-777');
   assert.equal(job.scan.stopId, pickup.id);
   assert.equal(job.status, 'at_pickup');
-  job = await d.api.complete(order.id, pickup.id, { signature: 'data:image/png;base64,AAAA', printedName: 'Front desk' });
+  job = await d.api.complete(order.id, pickup.id, { signature: 'data:image/png;base64,AAAA', printedName: 'Front desk', location: atPickup });
   assert.equal(job.status, 'in_transit');
   job = await d.api.addNote(order.id, 'Traffic on Assembly, 10 min out');
   assert.equal(job.notes.at(-1).note, 'Traffic on Assembly, 10 min out');
   const drop = nextStop(job);
-  job = await d.api.arrive(order.id, drop.id);
-  job = await d.api.complete(order.id, drop.id, { photo: 'data:image/jpeg;base64,BBBB', printedName: 'Jane' });
+  const atDrop = { lat: 33.9947, lng: -81.0488, accuracy: 8 };
+  job = await d.api.arrive(order.id, drop.id, atDrop);
+  await assert.rejects(d.api.complete(order.id, drop.id, { photo: 'data:image/jpeg;base64,BBBB', location: atDrop }),
+    (e) => /photo and the receiver's signature/.test(e.message), 'deliveries need a photo and a signature');
+  job = await d.api.complete(order.id, drop.id,
+    { photo: 'data:image/jpeg;base64,BBBB', signature: 'data:image/png;base64,CCCC', printedName: 'Jane', location: atDrop });
+  assert.ok(job.stops[1].completedDistanceM < 30);
   assert.equal(job.status, 'completed');
   assert.equal(nextStop(job), null);
   assert.deepEqual((await d.api.history()).map((o) => o.id), [order.id]);

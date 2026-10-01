@@ -3,7 +3,7 @@ const db = require('./db');
 const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
 const stripe = require('./stripe');
-const { locate } = require('./geocode');
+const { locate, haversineMiles } = require('./geocode');
 const {
   isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
   pieceWeightProblem,
@@ -269,6 +269,9 @@ function serializeStop(s, { proof }) {
     printedName: s.printed_name,
     hasSignature: !!s.signature,
     hasPhoto: !!s.photo,
+    // How far the driver's phone was from the address (meters); null if the address wasn't on the map.
+    arrivedDistanceM: s.arrived_distance_m,
+    completedDistanceM: s.completed_distance_m,
   };
   if (proof) Object.assign(out, { signature: s.signature, photo: s.photo, barcode: s.barcode });
   return out;
@@ -405,32 +408,77 @@ function nextStop(stops) {
   return stops.find((s) => s.status !== 'completed');
 }
 
-async function arriveAtStop(client, driver, orderId, stopId) {
+// How close (meters) the driver's phone must be to a stop's address to arrive at or complete it,
+// plus up to MAX_ACCURACY_ALLOWANCE_M for the phone's reported GPS accuracy.
+const STOP_RADIUS_M = Number(process.env.STOP_RADIUS_METERS) || 500;
+const MAX_ACCURACY_ALLOWANCE_M = 150;
+const LAST_LOCATION_MAX_AGE_MS = 2 * 60 * 1000;
+
+// Checks the driver is at the stop. Uses the location the app sent with the request, else the
+// driver's last shared location if it's fresh. Returns { location, distanceM } (distanceM is null
+// when the stop's address couldn't be put on the map, so there's nothing to compare against).
+async function verifyAtStop(client, driverId, stop, sent) {
+  if (sent?.mocked) throw new HttpError(403, 'Your phone is using a fake (mock) location. Turn it off to continue.');
+  let location = parseLocation(sent);
+  let accuracy = Number(sent?.accuracy);
+  if (!location) {
+    const { rows: [u] } = await client.query('SELECT last_location, location_updated_at FROM users WHERE id = $1', [driverId]);
+    if (u?.last_location && Date.now() - new Date(u.location_updated_at).getTime() < LAST_LOCATION_MAX_AGE_MS) {
+      location = parseLocation(u.last_location);
+      accuracy = NaN;
+    }
+  }
+  if (!location) {
+    throw new HttpError(400, "We need your phone's location to confirm you're at this stop. Turn on location for Choice Delivery and try again.");
+  }
+  const target = parseLocation(stop.location);
+  if (!target) return { location, distanceM: null };
+  const distanceM = Math.round(haversineMiles(location, target) * 1609.34);
+  const allowance = Number.isFinite(accuracy) && accuracy > 0 ? Math.min(accuracy, MAX_ACCURACY_ALLOWANCE_M) : 0;
+  if (distanceM > STOP_RADIUS_M + allowance) {
+    const away = distanceM >= 1609 ? `${(distanceM / 1609.34).toFixed(1)} miles` : `${Math.round(distanceM * 3.281)} feet`;
+    throw new HttpError(409, `You're about ${away} from this ${stop.type === 'pickup' ? 'pickup' : 'drop-off'}. `
+      + "Get to the address first. If you're there and still see this, call dispatch at (803) 949-7034.");
+  }
+  return { location, distanceM };
+}
+
+async function arriveAtStop(client, driver, orderId, stopId, { location } = {}) {
   const { order, stops } = await lockDriverOrder(client, driver.id, orderId);
   const stop = nextStop(stops);
   if (!stop || stop.id !== stopId) throw new HttpError(409, 'Stops must be completed in order; this is not the next stop');
   if (stop.status === 'pending') {
+    const at = await verifyAtStop(client, driver.id, stop, location);
     stop.status = 'arrived';
-    await client.query("UPDATE stops SET status = 'arrived', arrived_at = now() WHERE id = $1", [stop.id]);
-    await recordEvent(client, order.id, driver.id, 'stop_arrived', { stopId: stop.id, type: stop.type });
+    await client.query(
+      "UPDATE stops SET status = 'arrived', arrived_at = now(), arrived_location = $2, arrived_distance_m = $3 WHERE id = $1",
+      [stop.id, JSON.stringify(at.location), at.distanceM]);
+    await recordEvent(client, order.id, driver.id, 'stop_arrived', { stopId: stop.id, type: stop.type, distanceM: at.distanceM });
   }
   return applyDerivedStatus(client, order, stops);
 }
 
-async function completeStop(client, driver, orderId, stopId, { signature, photo, printedName, barcode }) {
+async function completeStop(client, driver, orderId, stopId, { signature, photo, printedName, barcode, location }) {
   const { order, stops } = await lockDriverOrder(client, driver.id, orderId);
   const stop = nextStop(stops);
   if (!stop || stop.id !== stopId) throw new HttpError(409, 'Stops must be completed in order; this is not the next stop');
   // A scanned barcode is extra proof only; not every shipment has one, so it never replaces these.
-  if (!signature && !photo) throw new HttpError(400, 'A signature or photo is required');
+  if (stop.type === 'dropoff') {
+    if (!photo || !signature) throw new HttpError(400, 'A delivery photo and the receiver\'s signature are both required');
+  } else if (!signature && !photo) throw new HttpError(400, 'A signature or photo is required');
+  if (stop.status === 'pending') throw new HttpError(409, "Tap \"I've arrived\" at this stop first");
+  const at = await verifyAtStop(client, driver.id, stop, location);
   stop.status = 'completed';
   await client.query(
     `UPDATE stops SET status = 'completed', arrived_at = COALESCE(arrived_at, now()), completed_at = now(),
-       signature = $2, photo = $3, printed_name = $4, barcode = COALESCE($5, barcode) WHERE id = $1`,
-    [stop.id, signature || null, photo || null, str(printedName) || null, barcode || null]
+       signature = $2, photo = $3, printed_name = $4, barcode = COALESCE($5, barcode),
+       completed_location = $6, completed_distance_m = $7 WHERE id = $1`,
+    [stop.id, signature || null, photo || null, str(printedName) || null, barcode || null,
+      JSON.stringify(at.location), at.distanceM]
   );
   await recordEvent(client, order.id, driver.id, 'stop_completed', {
     stopId: stop.id, type: stop.type, printedName: str(printedName) || undefined, barcode: barcode || undefined,
+    distanceM: at.distanceM,
   });
   const status = await applyDerivedStatus(client, order, stops);
   if (status === 'completed') await recordEvent(client, order.id, driver.id, 'completed');

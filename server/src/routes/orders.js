@@ -452,15 +452,18 @@ router.post('/:id/accept', driverOnly, asyncH(async (req, res) => {
 }));
 
 router.post('/:id/stops/:stopId/arrive', driverOnly, asyncH(async (req, res) => {
-  await db.withTx((client) => arriveAtStop(client, req.user, req.params.id, req.params.stopId));
+  await db.withTx((client) => arriveAtStop(client, req.user, req.params.id, req.params.stopId,
+    { location: req.body?.location }));
   res.json(await getOrderFor(req.user, req.params.id));
 }));
 
-// Body: { signature?, photo?, printedName? } — at least one of signature/photo.
+// Arrive and complete both take { location: { lat, lng, accuracy?, mocked? } } from the phone; the driver
+// must be near the stop's address. Complete body: { signature?, photo?, printedName?, location }:
+// drop-offs need a photo and a signature, pickups at least one of them.
 router.post('/:id/stops/:stopId/complete', driverOnly, asyncH(async (req, res) => {
-  const { signature, photo, printedName } = req.body || {};
+  const { signature, photo, printedName, location } = req.body || {};
   await db.withTx((client) => completeStop(client, req.user, req.params.id, req.params.stopId,
-    { signature, photo, printedName }));
+    { signature, photo, printedName, location }));
   const updated = await getOrderFor(req.user, req.params.id);
   const stop = updated.stops.find((s) => s.id === req.params.stopId);
   if (updated.status === 'completed') emailShipper(updated.id, 'delivered', { printedName: str(printedName) });
