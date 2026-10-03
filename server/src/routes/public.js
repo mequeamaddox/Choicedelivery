@@ -31,9 +31,9 @@ router.get('/pricing', asyncH(async (req, res) => {
     baseFeeCents: car.baseCents,
     baseMiles: car.includedMiles,
     perMileCents: car.perMileCents,
-    rushFeeCents: fees.rushCents,
+    rushFeeCents: fees.rush.baseCents, // the local rush fee; farther trips cost more (see the quote)
     vehicleTypes: Object.entries(fees.vehicles).filter(([, v]) => v.enabled).map(([k]) => k),
-    serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, sv]) => ({ id, ...sv, feeCents: id === 'rush' ? fees.rushCents : 0 })),
+    serviceLevels: Object.entries(SERVICE_LEVELS).map(([id, sv]) => ({ id, ...sv, feeCents: id === 'rush' ? fees.rush.baseCents : 0, feeFrom: id === 'rush' })),
     // Business plans are hidden until SHOW_BUSINESS_PLANS=true.
     businessPlans: businessPlansEnabled() ? Object.entries(BUSINESS_PLANS).map(([id, p]) => ({ id, ...p })) : [],
     overageCents: OVERAGE_CENTS,

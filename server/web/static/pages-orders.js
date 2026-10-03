@@ -325,7 +325,8 @@ export function NewOrderPage() {
                   onChange=${() => setV({ ...v, serviceLevel: l.id })} />
                 <span><strong>${l.id === 'rush' ? 'Rush delivery' : 'Standard delivery'}</strong>
                   <span class="muted small">${l.id === 'rush' ? `Picked up right away and driven straight there. ${rushTimeText(quote?.distanceMiles)}.` : 'Delivered today'}</span></span>
-                ${l.feeCents ? html`<span class="price push">+${formatMoney(l.feeCents)}</span>` : ''}
+                ${l.feeCents ? html`<span class="price push">${l.id === 'rush' && quote?.serviceLevel === 'rush' && quote.rushFeeCents
+                  ? `+${formatMoney(quote.rushFeeCents)}` : `${l.feeFrom ? 'from ' : ''}+${formatMoney(l.feeCents)}`}</span>` : ''}
               </label>`)}
           </div>
           <div class="field">

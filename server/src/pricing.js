@@ -3,7 +3,8 @@
 //
 //   By vehicle, each base covering the first 10 miles:
 //     Car $25 then $1.50/mile · Minivan $35 then $2.00/mile · Pickup Truck $45 then $2.50/mile
-//   + $50 rush (picked up right away; about 2 hours within 50 miles)
+//   + rush (picked up right away; about 2 hours within 50 miles): $25 + 35% of the distance charges
+//     (extra miles and travel to pickup), $100 at most
 //   + surcharges: weekend $15, holiday $25 (instead of the weekend charge, not on top of it),
 //     and from the original app: high demand (3+ open orders) $15, bad weather $15 (switched on by
 //     dispatch); lunch rush (11:30am-1:30pm) $5 exists but is off
@@ -18,7 +19,7 @@ const TIME_ZONE = 'America/New_York';
 const BASE_FEE_CENTS = 2500;
 const BASE_MILES = 10;
 const PER_MILE_CENTS = 150;
-const RUSH_FEE_CENTS = 5000;
+const RUSH_FEE_CENTS = 2500; // the rush fee on a local trip
 
 const SURCHARGES = {
   holiday: { label: 'Holiday service', cents: 2500 },
@@ -113,7 +114,9 @@ const DEFAULT_FEES = {
     'Cargo Van': { description: 'Larger loads that must stay dry', baseCents: 4000, includedMiles: 10, perMileCents: 225, maxLbs: 1000, enabled: false },
     'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', baseCents: 4500, includedMiles: 10, perMileCents: 250, maxLbs: 1000, enabled: true },
   },
-  rushCents: RUSH_FEE_CENTS,
+  // Rush: a flat amount, plus a share of the distance charges (extra miles + travel to pickup) so far
+  // trips cost more to rush than local ones, never more than capCents.
+  rush: { baseCents: RUSH_FEE_CENTS, percent: 35, capCents: 10000 },
   // Long trips: miles past afterMiles cost percent more than the vehicle's per-mile rate (covers the
   // driver's empty drive back and a day tied up on one job).
   longDistance: { afterMiles: 100, percent: 50 },
@@ -137,21 +140,22 @@ const DEFAULT_FEES = {
   waitBlockMinutes: 15,
   waitBlockCents: 1000,
   // What drivers earn: a flat amount per job, plus a share of the order's mileage fee (the per-mile
-  // charge past the included miles), plus a share of extra charges like wait time. Never more than the
-  // price. Dispatch can set a different amount on any order.
-  driverPay: { perJobCents: 1000, mileagePercent: 70, extrasPercent: 70 },
+  // charge past the included miles), plus a share of extra charges like wait time, plus a share of the
+  // rush fee. Never more than the price. Dispatch can set a different amount on any order.
+  driverPay: { perJobCents: 1000, mileagePercent: 70, extrasPercent: 70, rushPercent: 50 },
 };
 
 // Driver pay for an order: per-job amount + share of its mileage fee (from the price breakdown) +
 // share of its (not waived) extra charges, under the fee settings.
 function driverPayFor(priceCents, extrasCents, fees, breakdown = null) {
   if (priceCents == null) return null;
-  const { perJobCents, mileagePercent, extrasPercent } = fees.driverPay;
+  const { perJobCents, mileagePercent, extrasPercent, rushPercent = 0 } = fees.driverPay;
   const mileage = Math.round((((breakdown?.extraMileageCents || 0) + (breakdown?.travelCents || 0)) * mileagePercent) / 100);
   const trip = Math.min(priceCents, perJobCents + mileage);
   // Extras the driver does the work for: booked up front (loading help, inside delivery) or added later.
   const bookedExtras = (breakdown?.addOns || []).reduce((sum, a) => sum + (a.cents || 0), 0);
-  return trip + Math.round((((extrasCents || 0) + bookedExtras) * extrasPercent) / 100);
+  const rush = Math.round(((breakdown?.rushFeeCents || 0) * rushPercent) / 100);
+  return trip + rush + Math.round((((extrasCents || 0) + bookedExtras) * extrasPercent) / 100);
 }
 
 // Charges added after booking (by dispatch), with the reason shown to the customer.
@@ -215,7 +219,15 @@ function normalizeFees(saved) {
     version: DEFAULT_FEES.version,
     weightTiers,
     vehicles,
-    rushCents: cleanCents(current ? f.rushCents : undefined, DEFAULT_FEES.rushCents),
+    // The old flat rushCents setting is replaced by this (base + share of distance, capped).
+    rush: (() => {
+      const baseCents = cleanCents(f.rush?.baseCents, DEFAULT_FEES.rush.baseCents);
+      return {
+        baseCents,
+        percent: Math.min(500, cleanCents(f.rush?.percent, DEFAULT_FEES.rush.percent)),
+        capCents: Math.max(baseCents, cleanCents(f.rush?.capCents, DEFAULT_FEES.rush.capCents)),
+      };
+    })(),
     pickupTravel: {
       freeMiles: cleanCents(f.pickupTravel?.freeMiles, DEFAULT_FEES.pickupTravel.freeMiles),
       approvalMiles: Math.max(1, cleanCents(f.pickupTravel?.approvalMiles, DEFAULT_FEES.pickupTravel.approvalMiles)),
@@ -238,6 +250,7 @@ function normalizeFees(saved) {
       perJobCents: cleanCents(f.driverPay?.perJobCents, DEFAULT_FEES.driverPay.perJobCents),
       mileagePercent: Math.min(100, cleanCents(f.driverPay?.mileagePercent, DEFAULT_FEES.driverPay.mileagePercent)),
       extrasPercent: Math.min(100, cleanCents(f.driverPay?.extrasPercent, DEFAULT_FEES.driverPay.extrasPercent)),
+      rushPercent: Math.min(100, cleanCents(f.driverPay?.rushPercent, DEFAULT_FEES.driverPay.rushPercent)),
     },
   };
 }
@@ -282,6 +295,12 @@ function waitCharge(minutes, fees = DEFAULT_FEES) {
   const billable = Math.max(0, Math.round(minutes) - fees.waitFreeMinutes);
   const blocks = Math.ceil(billable / fees.waitBlockMinutes);
   return { minutes: Math.round(minutes), billableMinutes: billable, cents: blocks * fees.waitBlockCents };
+}
+
+// Rush fee: the flat amount plus a share of the distance charges, capped.
+function rushFeeFor(distanceCents, fees = DEFAULT_FEES) {
+  const r = fees.rush || DEFAULT_FEES.rush;
+  return Math.min(r.capCents, r.baseCents + Math.round((distanceCents * r.percent) / 100));
 }
 
 const SERVICE_LEVELS = {
@@ -357,13 +376,13 @@ function calculatePrice({
   const longPerMileCents = Math.round(rates.perMileCents * (1 + long.percent / 100));
   const longMileageCents = Math.round(longMiles * longPerMileCents);
   const extraMileageCents = Math.round((extraMiles - longMiles) * rates.perMileCents) + longMileageCents;
-  const rushFeeCents = level === 'rush' ? fees.rushCents : 0;
   // Getting from Columbia to a far-away pickup.
   const travel = fees.pickupTravel || DEFAULT_FEES.pickupTravel;
   const travelMiles = pickupTravelMiles == null ? null : Math.round(Number(pickupTravelMiles) * 10) / 10;
   const travelChargedMiles = travelMiles == null ? 0 : Math.max(0, Math.round((travelMiles - travel.freeMiles) * 10) / 10);
   const travelCents = Math.round(travelChargedMiles * rates.perMileCents);
   const needsApproval = travelMiles != null && travelMiles > travel.approvalMiles;
+  const rushFeeCents = level === 'rush' ? rushFeeFor(extraMileageCents + travelCents, fees) : 0;
 
   const { weekday, hour, date } = localTime(at instanceof Date ? at : new Date(at));
   const holiday = holidayName(date, fees);
@@ -480,5 +499,5 @@ module.exports = {
   holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES,
   businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS,
-  normalizeFees, getFees, driverPayFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
+  normalizeFees, getFees, driverPayFor, rushFeeFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
 };

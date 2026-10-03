@@ -332,8 +332,8 @@ test('rate card: vehicle base covers 10 miles, then per mile; rush, weekend, hol
   assert.equal(price({ vehicleType: 'Pickup Truck', distanceMiles: 3 }).totalCents, 4500);
   assert.equal(price({ vehicleType: 'Cargo Van', distanceMiles: 3 }).needsReview, true, 'Cargo Van is off by default');
   assert.equal(price({ vehicleType: 'Van', distanceMiles: 12 }).totalCents, 2800, 'unknown types get Car rates');
-  assert.equal(price({ distanceMiles: 12, serviceLevel: 'rush' }).totalCents, 7800, 'rush adds $50');
-  assert.equal(price({ distanceMiles: 12, serviceLevel: 'same_day' }).rushFeeCents, 5000, 'old name still works');
+  assert.equal(price({ distanceMiles: 12, serviceLevel: 'rush' }).totalCents, 5405, 'rush adds $25 + 35% of the $3 mileage');
+  assert.equal(price({ distanceMiles: 12, serviceLevel: 'same_day' }).rushFeeCents, 2605, 'old name still works');
   assert.equal(price({ distanceMiles: null }).distanceConfirmed, false);
   assert.equal(price({ distanceMiles: 3, at: wedLunch }).surcharges.length, 0, 'lunch rush is off by default');
   assert.equal(price({ distanceMiles: 3, at: saturday }).totalCents, 4000, 'weekend +$15');
@@ -361,7 +361,7 @@ test('rate card: vehicle base covers 10 miles, then per mile; rush, weekend, hol
   assert.equal(normalizeFees({ vehicles: { Car: { feeCents: 0, perMileCents: 999 } } }).vehicles.Car.perMileCents, 150);
 
   const all = calculatePrice({ distanceMiles: 12, serviceLevel: 'rush', at: saturday, openOrders: 5, badWeather: true, vehicleType: 'Car' });
-  assert.equal(all.totalCents, 2500 + 300 + 5000 + 1500 + 1500 + 1500);
+  assert.equal(all.totalCents, 2500 + 300 + 2605 + 1500 + 1500 + 1500);
 });
 
 test('orders are priced on the server by distance; dispatch can override', async () => {
@@ -389,7 +389,7 @@ test('orders are priced on the server by distance; dispatch can override', async
   assert.ok(r.data.surcharges.some((x) => x.key === 'weather'), 'quotes include weather while on');
 
   r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { serviceLevel: 'rush' } });
-  assert.equal(r.data.priceBreakdown.rushFeeCents, 5000, 'switching to rush reprices');
+  assert.equal(r.data.priceBreakdown.rushFeeCents, require('../src/pricing').rushFeeFor(r.data.priceBreakdown.extraMileageCents + r.data.priceBreakdown.travelCents), 'switching to rush reprices');
   assert.ok(!r.data.priceBreakdown.surcharges.some((x) => x.key === 'weather'), 'booking-time conditions are kept');
   assert.equal(r.data.priceCents, r.data.priceBreakdown.totalCents);
   await call('PUT', '/settings/bad-weather', { token: t.dispatcher, body: { enabled: false } });
@@ -477,7 +477,9 @@ test('address suggestions and distance-aware quotes', async () => {
     scheduledAt: '2026-09-30T14:00:00Z' } });
   assert.ok(r.data.distanceMiles > 100 && r.data.distanceMiles < 160, `distance ${r.data.distanceMiles}`);
   const demand = r.data.surcharges.reduce((sum, x) => sum + x.cents, 0);
-  assert.equal(r.data.totalCents, 2500 + 90 * 150 + Math.round(Math.round((r.data.distanceMiles - 100) * 10) / 10 * 225) + 5000 + demand);
+  const mileage = 90 * 150 + Math.round(Math.round((r.data.distanceMiles - 100) * 10) / 10 * 225);
+  assert.equal(r.data.rushFeeCents, Math.min(10000, 2500 + Math.round(mileage * 0.35)));
+  assert.equal(r.data.totalCents, 2500 + mileage + r.data.rushFeeCents + demand);
   assert.equal(r.data.priceCents, r.data.totalCents);
   assert.equal(r.data.outOfArea, false);
   r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'x',
@@ -1400,7 +1402,7 @@ test('driver pay: drivers see their pay, never the price; dispatch adjusts it an
   // The owner changes the rate.
   const fees = (await call('GET', '/settings/fees', { token: t.admin })).data.fees;
   r = await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, driverPay: { perJobCents: 1200, mileagePercent: 80, extrasPercent: 100 } } });
-  assert.deepEqual(r.data.fees.driverPay, { perJobCents: 1200, mileagePercent: 80, extrasPercent: 100 });
+  assert.deepEqual(r.data.fees.driverPay, { perJobCents: 1200, mileagePercent: 80, extrasPercent: 100, rushPercent: 50 });
   assert.equal((await call('GET', '/public/pricing')).data.fees.driverPay, undefined, 'the driver rate is not published');
   r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
   r = await call('GET', `/orders/${r.data.id}`, { token: t.admin });
@@ -1895,4 +1897,19 @@ test('drivers get their extras share of loading help booked up front', () => {
   assert.equal(q.totalCents, 2500 + 2500);
   assert.equal(driverPayFor(q.totalCents, 0, fees, q), 1000 + 1250, '$10 + 50% of the $25 loading help');
   assert.equal(driverPayFor(q.totalCents, 1000, fees, q), 1000 + 1250 + 500, 'plus 50% of a $10 charge added later');
+});
+
+test('rush fee: flat locally, grows with distance, capped; drivers get half', () => {
+  const { calculatePrice, driverPayFor, normalizeFees } = require('../src/pricing');
+  const fees = normalizeFees({});
+  const rush = (o) => calculatePrice({ serviceLevel: 'rush', fees, ...o }).rushFeeCents;
+  assert.equal(rush({ distanceMiles: 3 }), 2500, 'local: $25');
+  assert.equal(rush({ distanceMiles: 30 }), 2500 + Math.round(20 * 150 * 0.35), 'plus 35% of the mileage');
+  assert.equal(rush({ distanceMiles: 10, pickupTravelMiles: 45 }), 2500 + Math.round(20 * 150 * 0.35), 'travel to pickup counts');
+  assert.equal(rush({ distanceMiles: 200 }), 10000, 'never more than $100');
+  assert.equal(calculatePrice({ distanceMiles: 200, fees }).rushFeeCents, 0, 'standard has no rush fee');
+  assert.equal(normalizeFees({ rushCents: 5000 }).rush.baseCents, 2500, 'old flat setting is replaced');
+  assert.equal(normalizeFees({ rush: { baseCents: 3000, capCents: 1000 } }).rush.capCents, 3000, 'cap is at least the base');
+  const q = calculatePrice({ distanceMiles: 3, serviceLevel: 'rush', fees });
+  assert.equal(driverPayFor(q.totalCents, 0, fees, q), 1000 + 1250, '$10 a job + half the rush fee');
 });

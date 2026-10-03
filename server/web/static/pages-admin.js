@@ -485,10 +485,25 @@ function FeesEditor() {
       </div>
       <h3>Rush & surcharges</h3>
       <div class="grid-2">
-        <${Field} label="Rush / expedited ($)" hint="Picked up right away. About 2 hours within 50 miles; longer trips take as long as the drive.">
-          <input type="number" min="0" step="0.01" value=${dollars(fees.rushCents)} onInput=${(e) => set({ rushCents: cents(e.target.value) })} />
-        <//>
+        <${Field} label="Rush: local fee ($)" hint="Picked up right away. About 2 hours within 50 miles; longer trips take as long as the drive.">
+          <input type="number" min="0" step="0.01" value=${dollars(fees.rush.baseCents)}
+            onInput=${(e) => set({ rush: { ...fees.rush, baseCents: cents(e.target.value) } })} /><//>
+        <${Field} label="Rush: plus share of distance charges (%)" hint="Of the extra miles and travel to pickup, so far trips cost more to rush.">
+          <input type="number" min="0" max="500" step="1" value=${fees.rush.percent}
+            onInput=${(e) => set({ rush: { ...fees.rush, percent: Number(e.target.value) } })} /><//>
+        <${Field} label="Rush: most it can be ($)">
+          <input type="number" min="0" step="0.01" value=${dollars(fees.rush.capCents)}
+            onInput=${(e) => set({ rush: { ...fees.rush, capCents: cents(e.target.value) } })} /><//>
       </div>
+      ${(() => {
+        const car = fees.vehicles.Car;
+        const ex = (miles) => {
+          const fee = Math.round(Math.max(0, miles - car.includedMiles) * car.perMileCents);
+          return formatMoney(Math.min(Math.max(fees.rush.capCents, fees.rush.baseCents), fees.rush.baseCents + Math.round(fee * fees.rush.percent / 100)));
+        };
+        return html`<p class="muted small">Car rush fee examples: 3 mi ${ex(3)} · 30 mi ${ex(30)} · 60 mi ${ex(60)}
+          (long-distance miles and travel to pickup add a little more).</p>`;
+      })()}
       ${Object.entries(SURCHARGE_LABELS).map(([k, label]) => html`
         <div class="inline surcharge-row">
           <label class="inline-check"><input type="checkbox" checked=${fees.surcharges[k].enabled}
@@ -543,6 +558,9 @@ function FeesEditor() {
         <${Field} label="Share of extras (%)" hint="Wait time, return trips, failed attempts and other added charges (and loading help, when offered).">
           <input type="number" min="0" max="100" step="1" value=${fees.driverPay.extrasPercent}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, extrasPercent: Number(e.target.value) } })} /><//>
+        <${Field} label="Share of the rush fee (%)">
+          <input type="number" min="0" max="100" step="1" value=${fees.driverPay.rushPercent}
+            onInput=${(e) => set({ driverPay: { ...fees.driverPay, rushPercent: Number(e.target.value) } })} /><//>
       </div>
       ${(() => {
         const car = fees.vehicles.Car;
