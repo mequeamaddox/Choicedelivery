@@ -745,6 +745,9 @@ export function OrderPage({ id }) {
           ${link && html`
             <a class="btn primary" href=${link} target="_blank" rel="noopener">${ACTIVE_STATUSES.includes(order.status) ? 'Track driver' : 'Tracking page'}</a>
             <button class="btn" onClick=${shareLink}>${copied ? 'Link copied ✓' : 'Share link'}</button>`}
+          ${!isQuote && order.status !== 'cancelled' && html`<${ActionButton} class="btn" onError=${setError}
+            onClick=${async () => navigate(`/shipping-forms/${(await api(`/shipping-forms/from-order/${order.id}`, { method: 'POST' })).code}`)}>
+            Print shipping label<//>`}
           ${canCancel && html`<${ActionButton} class="btn danger" onError=${setError}
             confirmText="Cancel this order? The driver (if any) will be notified."
             onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel order<//>`}

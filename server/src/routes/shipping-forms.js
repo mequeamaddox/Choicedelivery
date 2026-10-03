@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const { asyncH, HttpError, str } = require('../util');
+const { getOrderFor } = require('../orders');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -37,7 +38,7 @@ function scope(user, params) {
 }
 const SELECT = `SELECT f.*, u.name AS created_by_name,
   (SELECT coalesce(json_agg(json_build_object('id', o.id, 'orderNumber', o.order_number, 'status', o.status) ORDER BY o.created_at), '[]')
-     FROM orders o WHERE o.tracking_number = f.code AND (f.organization_id IS NULL OR o.organization_id = f.organization_id)) AS orders
+     FROM orders o WHERE o.id = f.order_id OR (o.tracking_number = f.code AND (f.organization_id IS NULL OR o.organization_id = f.organization_id))) AS orders
   FROM shipping_forms f LEFT JOIN users u ON u.id = f.created_by`;
 
 router.post('/', requireRole('admin', 'dispatcher', 'shipper'), asyncH(async (req, res) => {
@@ -59,6 +60,42 @@ router.post('/', requireRole('admin', 'dispatcher', 'shipper'), asyncH(async (re
       return res.status(201).json(serialize(f));
     } catch (e) {
       if (e.code === '23505' && attempt < 5) continue; // code already used: pick another
+      throw e;
+    }
+  }
+}));
+
+// A shipping form for an order already booked: filled in from the order (first pickup = shipper,
+// last drop-off = recipient). One per order; asking again returns the same form. The driver app's
+// barcode scan finds the order from the form's code.
+router.post('/from-order/:orderId', requireRole('admin', 'dispatcher', 'shipper'), asyncH(async (req, res) => {
+  const order = await getOrderFor(req.user, req.params.orderId).catch(() => null);
+  if (!order || order.status === 'quote') throw new HttpError(404, 'Order not found');
+  const existing = await db.query(`${SELECT} WHERE f.order_id = $1`, [order.id]);
+  if (existing.rows[0]) return res.json(serialize(existing.rows[0]));
+  const pickup = order.stops.find((s) => s.type === 'pickup') || order.stops[0];
+  const dropoff = [...order.stops].reverse().find((s) => s.type === 'dropoff') || order.stops[order.stops.length - 1];
+  const party = (s, company) => ({ name: clip(s.contactName, 120), company: clip(company, 120), address: clip(s.address, 300),
+    phone: clip(s.contactPhone, 40), email: '' });
+  const pieces = Number.parseInt(order.numberOfPieces, 10);
+  const weight = Number.parseFloat(String(order.weight || '').replace(/,/g, ''));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { rows: [row] } = await db.query(
+        `INSERT INTO shipping_forms (code, created_by, organization_id, shipper, recipient, pieces, weight_lbs, description, reference, instructions, order_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+        [newCode(), req.user.id, order.organization?.id || null, JSON.stringify(party(pickup, order.organization?.name)),
+          JSON.stringify(party(dropoff, '')), pieces > 0 ? pieces : null, weight > 0 ? weight : null,
+          clip(order.description, 500) || null, clip(order.trackingNumber || order.orderNumber, 80) || null,
+          clip(dropoff.instructions, 1000) || null, order.id]);
+      const { rows: [f] } = await db.query(`${SELECT} WHERE f.id = $1`, [row.id]);
+      return res.status(201).json(serialize(f));
+    } catch (e) {
+      if (e.code === '23505' && /order/.test(e.constraint || '')) {
+        const again = await db.query(`${SELECT} WHERE f.order_id = $1`, [order.id]);
+        return res.json(serialize(again.rows[0]));
+      }
+      if (e.code === '23505' && attempt < 5) continue;
       throw e;
     }
   }

@@ -419,25 +419,29 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .ship-party { border: 1px solid var(--border); }
 fieldset.card { margin: 0; min-width: 0; }
 .label-actions { margin-bottom: 1rem; flex-wrap: wrap; }
-.ship-label { background: #fff; color: #000; border: 2px solid #000; border-radius: 6px; max-width: 4in; padding: .2in; margin: 0 auto 1.5rem;
-  font-size: 12pt; line-height: 1.3; }
-.label-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: .1in; margin-bottom: .12in; }
-.label-head .logo img { height: 34px; width: auto; }
-.label-code { font-weight: 800; font-size: 13pt; letter-spacing: .03em; }
-.label-parties { display: flex; flex-direction: column; gap: .12in; }
-.label-party { border-bottom: 1px solid #000; padding-bottom: .1in; }
-.label-tag { display: block; font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #333; }
-.label-strong { font-weight: 800; font-size: 13pt; }
-.label-meta { display: flex; gap: .3in; margin: .1in 0; font-weight: 700; }
-.label-desc { margin: .05in 0; font-size: 10pt; }
-.label-barcode { margin-top: .12in; height: .9in; }
+.ship-label { background: #fff; color: #000; border: 2px solid #000; border-radius: 6px; max-width: 7.5in; padding: .35in; margin: 0 auto 1.5rem;
+  font-size: 13pt; line-height: 1.35; }
+.label-head { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #000; padding-bottom: .15in; margin-bottom: .2in; }
+.label-head .logo img { height: 48px; width: auto; }
+.label-code { font-weight: 800; font-size: 18pt; letter-spacing: .03em; }
+.label-parties { display: grid; grid-template-columns: 1fr 1fr; gap: .3in; }
+.label-party { border-bottom: 1px solid #000; padding-bottom: .15in; }
+.label-parties .label-party:last-child .label-strong { font-size: 17pt; }
+.label-tag { display: block; font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #333; }
+.label-strong { font-weight: 800; font-size: 14pt; }
+.label-meta { display: flex; gap: .5in; margin: .2in 0 .1in; font-weight: 700; font-size: 14pt; }
+.label-desc { margin: .08in 0; font-size: 12pt; }
+.label-barcode { margin: .3in auto 0; height: 1.3in; max-width: 6in; }
 .label-barcode svg { width: 100%; height: 100%; display: block; }
-.label-code-text { text-align: center; font-family: ui-monospace, Menlo, monospace; font-size: 12pt; letter-spacing: .15em; margin-top: .04in; }
-.label-foot { border-top: 1px solid #000; margin-top: .1in; padding-top: .06in; font-size: 8pt; text-align: center; }
+.label-code-text { text-align: center; font-family: ui-monospace, Menlo, monospace; font-size: 16pt; letter-spacing: .2em; margin-top: .06in; }
+.label-order { text-align: center; font-weight: 700; margin-top: .08in; }
+.label-foot { border-top: 1px solid #000; margin-top: .2in; padding-top: .08in; font-size: 9pt; text-align: center; }
+@media (max-width: 640px) { .label-parties { grid-template-columns: 1fr; } .ship-label { padding: .2in; font-size: 11pt; } }
 
 @media print {
   .topbar, .tabbar, .no-print, .site-footer { display: none !important; }
   body, .page { background: #fff !important; padding: 0 !important; margin: 0 !important; }
-  .ship-label { margin: 0; border-radius: 0; box-shadow: none; }
-  @page { size: 4in 6in; margin: 0.15in; }
+  .ship-label { margin: 0 auto; border-radius: 0; box-shadow: none; max-width: none; width: 100%; }
+  .label-parties { grid-template-columns: 1fr 1fr; }
+  @page { size: letter; margin: 0.5in; }
 }

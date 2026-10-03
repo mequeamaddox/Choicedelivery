@@ -140,7 +140,9 @@ router.post('/scan', driverOnly, asyncH(async (req, res) => {
   const params = [barcode];
   const where = visibilityFilter(req.user, params);
   const { rows } = await db.query(
-    `SELECT o.id, o.driver_id FROM orders o WHERE o.tracking_number = $1 AND o.status <> 'cancelled' AND ${where}`, params);
+    `SELECT o.id, o.driver_id FROM orders o
+     WHERE (o.tracking_number = $1 OR o.id = (SELECT order_id FROM shipping_forms WHERE code = upper($1)))
+       AND o.status <> 'cancelled' AND ${where}`, params);
   if (!rows[0]) throw new HttpError(404, 'No job of yours or open job matches that barcode');
   const { id } = rows[0];
   let matchedStop = null;

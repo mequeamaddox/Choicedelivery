@@ -1660,6 +1660,26 @@ test('shipping forms get a barcode code, stay within the company, and prefill a 
   const orderId = r.data.id || r.data.order.id;
   r = await call('GET', `/shipping-forms/${form.code}`, { token: t.acme });
   assert.equal(r.data.orders[0].id, orderId);
+
+  // A label for an order already booked: filled in from the order, one per order, and scannable.
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '3', weight: '40 lbs' }) });
+  const booked = r.data.id ? r.data : r.data.order;
+  r = await call('POST', `/shipping-forms/from-order/${booked.id}`, { token: t.acme });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const label = r.data;
+  assert.match(label.code, /^CDS\d{8}$/);
+  assert.equal(label.pieces, 3);
+  assert.equal(label.weightLbs, 40);
+  assert.equal(label.shipper.address, booked.stops[0].address);
+  assert.equal(label.recipient.address, booked.stops.at(-1).address);
+  assert.equal(label.orders[0].id, booked.id);
+  r = await call('POST', `/shipping-forms/from-order/${booked.id}`, { token: t.acme });
+  assert.equal(r.data.code, label.code, 'the same label again, not a new one');
+  assert.equal((await call('POST', `/shipping-forms/from-order/${booked.id}`, { token: t.d1 })).status, 403);
+  r = await call('POST', '/orders/scan', { token: t.d1, body: { barcode: label.code } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.id, booked.id, "the driver's scan finds the order from the label");
+  await call('POST', `/orders/${booked.id}/cancel`, { token: t.admin });
 });
 
 test("rush only promises about 2 hours on local trips", () => {
@@ -1676,14 +1696,15 @@ test("rush only promises about 2 hours on local trips", () => {
 test('miles past 100 cost 50% more per mile, and drivers share it', () => {
   const { calculatePrice, driverPayFor, normalizeFees } = require('../src/pricing');
   const fees = normalizeFees({});
-  const near = calculatePrice({ distanceMiles: 80, vehicleType: 'Car', fees });
+  const WEEKDAY = new Date('2026-10-07T15:00:00Z'); // a Wednesday morning: no weekend/holiday surcharge
+  const near = calculatePrice({ distanceMiles: 80, vehicleType: 'Car', fees, at: WEEKDAY });
   assert.equal(near.longMileageCents, 0);
   assert.equal(near.totalCents, 2500 + 70 * 150);
-  const far = calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees });
+  const far = calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees, at: WEEKDAY });
   assert.equal(far.longMiles, 100);
   assert.equal(far.longPerMileCents, 225);
   assert.equal(far.totalCents, 2500 + 90 * 150 + 100 * 225, '200 miles by car: $385');
   assert.equal(driverPayFor(far.totalCents, 0, fees, far), 1000 + Math.round((90 * 150 + 100 * 225) * 0.7));
   const custom = normalizeFees({ longDistance: { afterMiles: 150, percent: 20 } });
-  assert.equal(calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees: custom }).longMileageCents, 50 * 180);
+  assert.equal(calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees: custom, at: WEEKDAY }).longMileageCents, 50 * 180);
 });

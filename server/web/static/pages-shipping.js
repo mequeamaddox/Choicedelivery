@@ -87,9 +87,10 @@ export function ShippingLabelPage({ code }) {
   const order = f.orders[0];
   return html`<${Layout}>
     <a class="back no-print" href="#/shipping-form">← Shipping forms</a>
-    <div class="no-print"><${PageHeader} title=${`Shipping form ${f.code}`} subtitle=${`Saved ${formatDate(f.createdAt)}${f.createdBy ? ` by ${f.createdBy}` : ''}`} /></div>
+    <div class="no-print"><${PageHeader} title=${`Shipping label ${f.code}`} subtitle=${`Saved ${formatDate(f.createdAt)}${f.createdBy ? ` by ${f.createdBy}` : ''}`} /></div>
     <div class="inline no-print label-actions">
       <button class="btn primary" onClick=${() => window.print()}>Print label</button>
+      <span class="small muted">Prints on regular letter paper (8.5 × 11). Tape it to the package so the barcode is flat and visible.</span>
       ${order ? html`<a class="btn" href=${`#/orders/${order.id}`}>View order ${order.orderNumber}</a>`
         : html`<a class="btn" href=${`#/orders/new?form=${f.code}`}>Book a delivery for this shipment</a>`}
     </div>
@@ -103,9 +104,10 @@ export function ShippingLabelPage({ code }) {
       </div>
       ${f.description && html`<p class="label-desc">${f.description}</p>`}
       ${f.instructions && html`<p class="label-desc"><strong>Instructions:</strong> ${f.instructions}</p>`}
-      <div class="label-barcode" dangerouslySetInnerHTML=${{ __html: code128Svg(f.code, { height: 70 }) }}></div>
+      <div class="label-barcode" dangerouslySetInnerHTML=${{ __html: code128Svg(f.code, { height: 80 }) }}></div>
       <div class="label-code-text">${f.code}</div>
-      <footer class="label-foot">Choice Delivery SC · (803) 949-7034 · choicedeliverysc.com</footer>
+      ${order && html`<div class="label-order">Order ${order.orderNumber}</div>`}
+      <footer class="label-foot">Choice Delivery SC · choicedeliverysc.com</footer>
     </article>
   <//>`;
 }
