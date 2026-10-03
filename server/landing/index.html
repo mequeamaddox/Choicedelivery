@@ -288,7 +288,7 @@
                     </div>
                     <h3 class="text-2xl font-bold mb-4">Standard Delivery</h3>
                     <p class="text-gray-600 mb-6">
-                        Reliable same-day delivery across SC, NC and GA. The first 10 miles are included in the base price; longer trips add a per-mile rate.
+                        Same-day delivery from Columbia and the Midlands to anywhere in South Carolina, plus nearby North Carolina and Georgia. Priced by your route.
                     </p>
                     <a href="#quote" class="text-choice-teal font-bold text-xl hover:underline">Get your price &rarr;</a>
                 </div>
@@ -337,7 +337,7 @@
                 <div>
                     <h2 class="text-4xl font-bold mb-6">Serving the Southeast</h2>
                     <p class="text-xl text-gray-600 mb-8">
-                        We deliver throughout a 200-mile radius from Columbia, SC, covering major cities and towns across South Carolina, North Carolina, and Georgia.
+                        We're based in Columbia, SC. We pick up across Columbia and the Midlands and deliver to cities and towns throughout South Carolina, plus nearby North Carolina and Georgia.
                     </p>
                     
                     <div class="grid grid-cols-2 gap-6">
@@ -380,8 +380,8 @@
                             <a href="tel:8039497034" class="font-semibold text-choice-teal hover:underline">(803) 949-7034</a>
                         </div>
                         <div class="flex items-center justify-between">
-                            <span class="text-gray-600">Coverage Area</span>
-                            <span class="font-semibold">200 Mile Radius</span>
+                            <span class="text-gray-600">Pickups</span>
+                            <span class="font-semibold">Columbia &amp; the Midlands</span>
                         </div>
                         <div class="flex items-center justify-between">
                             <span class="text-gray-600">Vehicle Options</span>
@@ -542,7 +542,7 @@
                             <div>
                                 <h4 class="font-semibold text-lg">Service Area</h4>
                                 <p class="text-lg">Columbia, SC</p>
-                                <p class="text-gray-600 text-sm">200-mile radius coverage</p>
+                                <p class="text-gray-600 text-sm">Pickups across Columbia &amp; the Midlands</p>
                             </div>
                         </div>
                     </div>
@@ -787,10 +787,10 @@
                 });
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
                 document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price' : `Estimated: ${money(q.totalCents)}`;
-                const lines = [[`${q.vehicleType || 'Car'} delivery, first ${q.baseMiles} miles`, money(q.baseFeeCents)]];
+                const lines = [[`${q.vehicleType || 'Car'} delivery`, money(q.baseFeeCents)]];
                 const shortMileage = q.extraMileageCents - (q.longMileageCents || 0);
-                if (shortMileage > 0) lines.push([`Extra distance (${Math.round((q.extraMiles - (q.longMiles || 0)) * 10) / 10} more miles)`, '+' + money(shortMileage)]);
-                if (q.longMileageCents > 0) lines.push([`Long distance (${q.longMiles} miles past ${q.longDistanceAfterMiles})`, '+' + money(q.longMileageCents)]);
+                if (shortMileage > 0) lines.push(['Distance', '+' + money(shortMileage)]);
+                if (q.longMileageCents > 0) lines.push(['Long distance', '+' + money(q.longMileageCents)]);
                 if (q.rushFeeCents > 0) lines.push(['Rush delivery', '+' + money(q.rushFeeCents)]);
                 if (q.weightFeeCents > 0) lines.push([`Weight (${q.weightTier})`, '+' + money(q.weightFeeCents)]);
                 (q.surcharges || []).forEach((sc) => lines.push([sc.label, '+' + money(sc.cents)]));
