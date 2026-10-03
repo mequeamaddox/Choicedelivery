@@ -50,6 +50,7 @@ const LANDING_FILES = {
   '/logo-square.png': 'logo-square.png', // for ads and listings
   '/logo-wide.png': 'logo-wide.png',
   '/logo-landscape.png': 'logo-landscape.png',
+  '/flyer.jpg': 'flyer.jpg',
   '/logos': 'logos.html', // logo downloads (not in the sitemap; noindex)
   '/favicon.png': 'favicon.png',
   '/favicon.ico': 'favicon.png',
