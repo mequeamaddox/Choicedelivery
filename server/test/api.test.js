@@ -1106,7 +1106,7 @@ test('orders the formula cannot price are held for a manual price, then booked',
     assert.equal(r.data.reviewStatus, 'done');
     assert.equal(r.data.priceCents, 21000);
     await settle();
-    assert.ok(sent.some((m) => /Your price is ready/.test(m.subject) && /\$210\.00/.test(m.subject)));
+    assert.ok(sent.some((m) => /^Approved: /.test(m.subject) && /\$210\.00/.test(m.subject)));
     r = await call('POST', `/orders/${o.id}/book`, { token: t.acme, body: { expectedCents: 21000 } });
     assert.equal(r.status, 200);
     assert.equal(r.data.status, 'pending');
@@ -1817,4 +1817,60 @@ test('each driver is alerted about a job once; owners every time, even after bei
     await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: false } });
     await db.query("UPDATE users SET push_token = NULL WHERE push_token LIKE 'ExponentPushToken[%'");
   }
+});
+
+test('pickups away from Columbia: travel is charged, and far ones need approval', async () => {
+  const { calculatePrice, pickupTravelMilesFor, normalizeFees, driverPayFor } = require('../src/pricing');
+  const fees = normalizeFees({});
+  const at = new Date('2026-10-07T15:00:00Z'); // a Wednesday: no weekend/holiday surcharge
+  const near = { lat: 34.0, lng: -81.03 };
+  const lexington = { lat: 34.0, lng: -81.5 };
+  const charleston = { lat: 32.78, lng: -79.93 };
+  // In town: no travel charge.
+  let q = calculatePrice({ distanceMiles: 5, pickupTravelMiles: pickupTravelMilesFor([near]), vehicleType: 'Car', fees, at });
+  assert.equal(q.travelCents, 0);
+  assert.equal(q.needsApproval, false);
+  // About 32 miles out: the miles past 25 are charged at the Car rate; no approval needed.
+  const lexMiles = pickupTravelMilesFor([lexington]);
+  assert.ok(lexMiles > 25 && lexMiles < 60, `lexington ${lexMiles}`);
+  q = calculatePrice({ distanceMiles: 5, pickupTravelMiles: lexMiles, vehicleType: 'Car', fees, at });
+  assert.equal(q.travelCents, Math.round(Math.round((lexMiles - 25) * 10) / 10 * 150));
+  assert.equal(q.totalCents, 2500 + q.travelCents);
+  assert.equal(q.needsApproval, false);
+  assert.equal(driverPayFor(q.totalCents, 0, fees, q), 1000 + Math.round(q.travelCents * 0.7), 'drivers share the drive out');
+  // Charleston: quoted, but needs approval.
+  q = calculatePrice({ distanceMiles: 5, pickupTravelMiles: pickupTravelMilesFor([charleston]), vehicleType: 'Car', fees, at });
+  assert.equal(q.needsApproval, true);
+  assert.match(q.approvalReason, /miles from Columbia/);
+  assert.ok(q.totalCents > 2500);
+
+  // A customer booking a far pickup: held for approval with the quoted price; dispatch approves it.
+  const far = orderBody({ stops: [
+    { type: 'pickup', address: '1 Meeting St, Charleston, SC', location: charleston },
+    { type: 'dropoff', address: '2 King St, Charleston, SC', location: { lat: 32.79, lng: -79.94 } },
+  ] });
+  let r = await call('POST', '/public/quote', { body: { stops: far.stops, vehicleType: 'Car' } });
+  assert.equal(r.data.needsApproval, true);
+  assert.match(r.data.note, /confirm this job/);
+  r = await call('POST', '/orders', { token: t.acme, body: far });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const held = r.data;
+  assert.equal(held.status, 'quote');
+  assert.equal(held.reviewStatus, 'needed');
+  assert.ok(held.priceCents > 2500, 'the customer still sees a price');
+  r = await call('GET', '/orders?status=pending', { token: t.d1 });
+  assert.ok(!r.data.some((o) => o.id === held.id), 'drivers do not see it before approval');
+  r = await call('POST', `/orders/${held.id}/book`, { token: t.acme, body: { expectedCents: held.priceCents } });
+  assert.equal(r.status, 409, 'cannot be booked before approval');
+  r = await call('PATCH', `/orders/${held.id}`, { token: t.dispatcher, body: { priceCents: held.priceCents } });
+  assert.equal(r.data.reviewStatus, 'done', 'approved');
+  r = await call('POST', `/orders/${held.id}/book`, { token: t.acme, body: { expectedCents: held.priceCents } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.notEqual(r.data.status, 'quote');
+  await call('POST', `/orders/${held.id}/cancel`, { token: t.admin });
+
+  // Dispatch's own bookings for far pickups go straight through.
+  r = await call('POST', '/orders', { token: t.dispatcher, body: far });
+  assert.equal(r.data.status, 'pending');
+  await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
 });

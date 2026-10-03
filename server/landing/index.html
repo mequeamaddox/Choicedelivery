@@ -786,11 +786,13 @@
                     vehicleType: document.getElementById('quote-vehicle').value
                 });
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
-                document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price' : `Estimated: ${money(q.totalCents)}`;
+                document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price'
+                    : q.needsApproval ? `Estimated: ${money(q.totalCents)} (needs our approval)` : `Estimated: ${money(q.totalCents)}`;
                 const lines = [[`${q.vehicleType || 'Car'} delivery`, money(q.baseFeeCents)]];
                 const shortMileage = q.extraMileageCents - (q.longMileageCents || 0);
                 if (shortMileage > 0) lines.push(['Distance', '+' + money(shortMileage)]);
                 if (q.longMileageCents > 0) lines.push(['Long distance', '+' + money(q.longMileageCents)]);
+                if (q.travelCents > 0) lines.push(['Travel to pickup', '+' + money(q.travelCents)]);
                 if (q.rushFeeCents > 0) lines.push(['Rush delivery', '+' + money(q.rushFeeCents)]);
                 if (q.weightFeeCents > 0) lines.push([`Weight (${q.weightTier})`, '+' + money(q.weightFeeCents)]);
                 (q.surcharges || []).forEach((sc) => lines.push([sc.label, '+' + money(sc.cents)]));

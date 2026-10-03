@@ -117,6 +117,9 @@ const DEFAULT_FEES = {
   // Long trips: miles past afterMiles cost percent more than the vehicle's per-mile rate (covers the
   // driver's empty drive back and a day tied up on one job).
   longDistance: { afterMiles: 100, percent: 50 },
+  // We're based in Columbia: a pickup more than freeMiles away adds the drive out to it (at the vehicle's
+  // per-mile rate), and one more than approvalMiles away is quoted but has to be approved by dispatch.
+  pickupTravel: { freeMiles: 25, approvalMiles: 60 },
   // Lunch rush is off by the owner's choice (it can be switched back on).
   surcharges: Object.fromEntries(Object.entries(SURCHARGES).map(([k, sc]) => [k, { cents: sc.cents, enabled: k !== 'lunch' }])),
   holidays: Object.fromEntries(Object.entries(HOLIDAYS).map(([k, h]) => [k, h.on])),
@@ -141,7 +144,7 @@ const DEFAULT_FEES = {
 function driverPayFor(priceCents, extrasCents, fees, breakdown = null) {
   if (priceCents == null) return null;
   const { perJobCents, mileagePercent, extrasPercent } = fees.driverPay;
-  const mileage = Math.round(((breakdown?.extraMileageCents || 0) * mileagePercent) / 100);
+  const mileage = Math.round((((breakdown?.extraMileageCents || 0) + (breakdown?.travelCents || 0)) * mileagePercent) / 100);
   const trip = Math.min(priceCents, perJobCents + mileage);
   return trip + Math.round(((extrasCents || 0) * extrasPercent) / 100);
 }
@@ -208,6 +211,10 @@ function normalizeFees(saved) {
     weightTiers,
     vehicles,
     rushCents: cleanCents(current ? f.rushCents : undefined, DEFAULT_FEES.rushCents),
+    pickupTravel: {
+      freeMiles: cleanCents(f.pickupTravel?.freeMiles, DEFAULT_FEES.pickupTravel.freeMiles),
+      approvalMiles: Math.max(1, cleanCents(f.pickupTravel?.approvalMiles, DEFAULT_FEES.pickupTravel.approvalMiles)),
+    },
     longDistance: {
       afterMiles: Math.max(1, cleanCents(f.longDistance?.afterMiles, DEFAULT_FEES.longDistance.afterMiles)),
       percent: Math.min(500, cleanCents(f.longDistance?.percent, DEFAULT_FEES.longDistance.percent)),
@@ -329,7 +336,7 @@ function localTime(at) {
 // needsReview (with reviewReasons) means the formula can't price it: dispatch sets the price by hand.
 function calculatePrice({
   distanceMiles, serviceLevel = 'standard', at = new Date(), openOrders = 0, badWeather = false,
-  vehicleType = null, weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES,
+  vehicleType = null, weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES, pickupTravelMiles = null,
 }) {
   const level = normalizeServiceLevel(serviceLevel);
   const vehicle = fees.vehicles?.[vehicleType] || null; // unknown/legacy types: Car rates, no capacity check
@@ -343,6 +350,12 @@ function calculatePrice({
   const longMileageCents = Math.round(longMiles * longPerMileCents);
   const extraMileageCents = Math.round((extraMiles - longMiles) * rates.perMileCents) + longMileageCents;
   const rushFeeCents = level === 'rush' ? fees.rushCents : 0;
+  // Getting from Columbia to a far-away pickup.
+  const travel = fees.pickupTravel || DEFAULT_FEES.pickupTravel;
+  const travelMiles = pickupTravelMiles == null ? null : Math.round(Number(pickupTravelMiles) * 10) / 10;
+  const travelChargedMiles = travelMiles == null ? 0 : Math.max(0, Math.round((travelMiles - travel.freeMiles) * 10) / 10);
+  const travelCents = Math.round(travelChargedMiles * rates.perMileCents);
+  const needsApproval = travelMiles != null && travelMiles > travel.approvalMiles;
 
   const { weekday, hour, date } = localTime(at instanceof Date ? at : new Date(at));
   const holiday = holidayName(date, fees);
@@ -390,6 +403,11 @@ function calculatePrice({
     perMileCents: rates.perMileCents,
     vehicleType: vehicle ? vehicleType : null,
     extraMileageCents, // all miles past the included ones, long-distance ones included
+    pickupTravelMiles: travelMiles,
+    travelCents,
+    // Quoted, but dispatch has to approve the job before it's booked (pickup far from Columbia).
+    needsApproval,
+    approvalReason: needsApproval ? `The pickup is about ${Math.round(travelMiles)} miles from Columbia` : null,
     longDistanceAfterMiles: long.afterMiles,
     longMiles,
     longPerMileCents,
@@ -407,9 +425,16 @@ function calculatePrice({
     needsReview: reviewReasons.length > 0,
     reviewReasons,
     context: { at: new Date(at).toISOString(), openOrders, badWeather: !!badWeather },
-    totalCents: rates.baseCents + extraMileageCents + rushFeeCents + surchargeCents + weightFeeCents
+    totalCents: rates.baseCents + extraMileageCents + travelCents + rushFeeCents + surchargeCents + weightFeeCents
       + extraStopsCents + addOnCents,
   };
+}
+
+// Road miles from our Columbia base to the first pickup (same approximation as routes).
+const COLUMBIA = { lat: 34.0007, lng: -81.0348 };
+function pickupTravelMilesFor(locations) {
+  const first = locations?.[0];
+  return first ? routeMiles([COLUMBIA, first]) : null;
 }
 
 // Approximate road miles along a route: straight-line distance x 1.2.
@@ -443,5 +468,5 @@ module.exports = {
   holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES,
   businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS,
-  normalizeFees, getFees, driverPayFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pricingContext, localTime,
+  normalizeFees, getFees, driverPayFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
 };

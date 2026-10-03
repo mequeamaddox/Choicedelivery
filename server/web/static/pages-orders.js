@@ -134,6 +134,7 @@ export function PriceBreakdown({ q }) {
       <dt>${q.vehicleType || 'Car'} delivery</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
       ${q.extraMileageCents - (q.longMileageCents || 0) > 0 && html`<dt>Distance</dt><dd>+${formatMoney(q.extraMileageCents - (q.longMileageCents || 0))}</dd>`}
       ${q.longMileageCents > 0 && html`<dt>Long distance</dt><dd>+${formatMoney(q.longMileageCents)}</dd>`}
+      ${q.travelCents > 0 && html`<dt>Travel to pickup</dt><dd>+${formatMoney(q.travelCents)}</dd>`}
       ${q.rushFeeCents > 0 && html`<dt>Rush delivery</dt><dd>+${formatMoney(q.rushFeeCents)}</dd>`}
       ${q.weightFeeCents > 0 && html`<dt>Weight (${q.weightTier})</dt><dd>+${formatMoney(q.weightFeeCents)}</dd>`}
       ${q.extraStopsCents > 0 && html`<dt>Extra stops (${q.extraStops})</dt><dd>+${formatMoney(q.extraStopsCents)}</dd>`}
@@ -236,6 +237,8 @@ export function NewOrderPage() {
   const lbs = v.weightLbs === '' ? null : Number(v.weightLbs);
   const tooHeavyFor = (x) => lbs != null && lbs > x.maxLbs;
   const needsReview = quote?.needsReview;
+  // Pickup far from Columbia: priced, but dispatch approves it first (dispatch's own bookings skip that).
+  const needsApproval = !needsReview && quote?.needsApproval && !staff;
   // Same rule as the server: no single piece over the limit, and the total must fit the piece count.
   const pieceLimit = fees?.maxPieceLbs;
   const piecesN = Number.parseInt(v.numberOfPieces, 10);
@@ -354,7 +357,9 @@ export function NewOrderPage() {
             : needsReview ? html`<div class="alert warn" role="status"><strong>We'll price this one by hand:</strong>
                 ${' '}${quote.reviewReasons.join('. ')}. ${vehicles.some(([, x]) => !tooHeavyFor(x)) && lbs != null && lbs <= Math.max(...vehicles.map(([, x]) => x.maxLbs))
                   ? 'Pick a bigger vehicle above, or send it for review.' : 'Send it to us and we\'ll email you a price, usually within a business hour. Nothing is charged until you accept it.'}</div>`
-            : quote ? html`<${PriceBreakdown} q=${quote} />
+            : quote ? html`${needsApproval && html`<div class="alert warn" role="status"><strong>Needs our approval:</strong>
+                ${' '}${quote.approvalReason}, so we confirm this job before it's booked (usually within a business hour).
+                Nothing is charged until it's approved.</div>`}<${PriceBreakdown} q=${quote} />
               <p class="muted small">${quote.note}</p>`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
@@ -409,7 +414,7 @@ export function NewOrderPage() {
           <a class="btn" href="#/orders">Cancel</a>
           ${!needsReview && html`<button type="button" class="btn" disabled=${busy || !!pieceProblem} onClick=${(e) => submit(e, true)}
             title="Keep this price and book it later from Orders → Quotes">Save quote</button>`}
-          <button class="btn primary" disabled=${busy || !!pieceProblem}>${busy ? 'Sending…' : needsReview ? 'Request a price' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
+          <button class="btn primary" disabled=${busy || !!pieceProblem}>${busy ? 'Sending…' : needsReview ? 'Request a price' : needsApproval ? 'Request approval' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
         </div>
       </form>
     <//>`;
@@ -718,6 +723,22 @@ function QuotePanel({ order, onChange, setError }) {
       throw err;
     }
   };
+  const approval = !order.priceBreakdown?.needsReview && order.priceBreakdown?.needsApproval && !order.priceIsCustom;
+  if (order.reviewStatus === 'needed' && approval) {
+    return html`
+      <section class="card">
+        <h2>Approval request <span class="badge amber">Needs approval</span></h2>
+        <dl class="facts"><dt>Quoted price</dt><dd><strong>${formatMoney(order.priceCents)}</strong></dd></dl>
+        <p class="small"><strong>Why:</strong> ${order.priceBreakdown.approvalReason}.</p>
+        ${isStaff(user)
+          ? html`<${ActionButton} class="btn primary block" onError=${setError}
+              onClick=${async () => onChange(await api(`/orders/${order.id}`, { method: 'PATCH', body: { priceCents: order.priceCents } }))}>
+              Approve at ${formatMoney(order.priceCents)}<//>
+            <p class="small muted">The customer is emailed and can then book${payByCard ? ' and pay' : ''}. To approve at a different
+              price, set it under <strong>Dispatch → Price</strong> instead. To turn it down, delete the request.</p>`
+          : html`<p class="small muted">We'll email you once it's approved, usually within a business hour. Nothing is booked or charged until then.</p>`}
+      </section>`;
+  }
   if (order.reviewStatus === 'needed') {
     const reasons = order.priceBreakdown?.reviewReasons || [];
     return html`

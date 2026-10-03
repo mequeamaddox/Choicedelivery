@@ -15,7 +15,14 @@ const MESSAGES = {
       rechecked when you book, since time of day, demand and weather can change it.`,
     quote: true,
   }),
-  review_requested: (o) => ({
+  review_requested: (o) => (!o.price_breakdown?.needsReview && o.price_breakdown?.needsApproval ? {
+    subject: `We're confirming your delivery ${o.order_number}`,
+    line: `Thanks! ${esc(o.price_breakdown.approvalReason)}, so we confirm jobs like this before booking. Your quote is
+      <strong>${money(o.price_cents)}</strong>. We'll email you once it's approved, usually within a business hour. Nothing is
+      booked or charged until then.`,
+    quote: true,
+    button: 'View request',
+  } : {
     subject: `We're pricing your delivery ${o.order_number}`,
     line: `Thanks! This shipment needs a custom price (${esc((o.price_breakdown?.reviewReasons || []).join('; ').toLowerCase())}).
       We'll review it and email you the price, usually within a business hour. Nothing is booked or charged until you accept it.`,
@@ -23,8 +30,8 @@ const MESSAGES = {
     button: 'View request',
   }),
   price_ready: (o) => ({
-    subject: `Your price is ready: ${o.order_number} ${money(o.price_cents)}`,
-    line: `We reviewed your delivery request. The price is <strong>${money(o.price_cents)}</strong>.
+    subject: `Approved: ${o.order_number} ${money(o.price_cents)}`,
+    line: `We reviewed your delivery request and it's approved. The price is <strong>${money(o.price_cents)}</strong>.
       Open it to book${o.payment_status === 'unpaid' ? ' and pay' : ''}.`,
     quote: true,
     button: 'View & book',

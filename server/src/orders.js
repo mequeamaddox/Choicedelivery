@@ -5,7 +5,7 @@ const { isStaff } = require('./auth');
 const stripe = require('./stripe');
 const { locate, haversineMiles } = require('./geocode');
 const {
-  isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
+  isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
   pieceWeightProblem, driverPayFor,
 } = require('./pricing');
 
@@ -136,12 +136,15 @@ async function createOrder(client, actor, body) {
   await assertPieceWeights(client, orderId);
   await insertStops(client, orderId, await locateStops(stops));
   await repriceOrder(client, orderId, { fresh: true });
-  // Too heavy, over capacity, etc.: held as a quote until dispatch prices it by hand.
+  // Too heavy, over capacity, etc.: held as a quote until dispatch prices it by hand. A pickup far from
+  // Columbia is quoted, but held until dispatch approves it (dispatch's own bookings skip that).
   const { rows: [priced] } = await client.query('SELECT price_breakdown, price_is_custom FROM orders WHERE id = $1', [orderId]);
-  if (priced.price_breakdown?.needsReview && !priced.price_is_custom) {
+  const bd = priced.price_breakdown || {};
+  if (!priced.price_is_custom && (bd.needsReview || (bd.needsApproval && !isStaff(actor)))) {
     await client.query(
       "UPDATE orders SET status = 'quote', booked_at = NULL, review_status = 'needed' WHERE id = $1", [orderId]);
-    await recordEvent(client, orderId, actor.id, 'review_requested', { reasons: priced.price_breakdown.reviewReasons });
+    await recordEvent(client, orderId, actor.id, 'review_requested',
+      { reasons: bd.needsReview ? bd.reviewReasons : [bd.approvalReason], approval: !bd.needsReview || undefined });
     return orderId;
   }
   // The customer was shown a different price (e.g. busy time started while they filled the form):
@@ -211,6 +214,7 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
   const context = fresh || !previous ? await pricingContext(client, orderId) : previous;
   const breakdown = calculatePrice({
     distanceMiles: routeMiles(stops.map((s) => s.location)),
+    pickupTravelMiles: pickupTravelMilesFor(stops.map((s) => s.location)),
     serviceLevel: o.service_level,
     at: o.scheduled_at || at || (o.status === 'quote' ? new Date() : o.booked_at || o.created_at),
     openOrders: context.openOrders,

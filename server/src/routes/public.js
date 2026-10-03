@@ -6,7 +6,7 @@ const { rateLimit } = require('../rate-limit');
 const {
   SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES, businessPlansEnabled,
   SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs,
-  CHARGE_KINDS, pieceWeightProblem,
+  CHARGE_KINDS, pieceWeightProblem, pickupTravelMilesFor,
 } = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
 const { searchAddresses, locate, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
@@ -161,7 +161,7 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
   const fees = await getFees(db);
   const addOns = Array.isArray(b.addOns) ? b.addOns.filter((k) => typeof k === 'string') : [];
   const quote = calculatePrice({
-    distanceMiles: routeMiles(locations), serviceLevel, at, ...(await pricingContext(db)),
+    distanceMiles: routeMiles(locations), pickupTravelMiles: pickupTravelMilesFor(locations), serviceLevel, at, ...(await pricingContext(db)),
     vehicleType: typeof b.vehicleType === 'string' ? b.vehicleType : null,
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
   });
@@ -177,6 +177,8 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
     outOfArea,
     note: quote.needsReview
       ? `${quote.reviewReasons.join('. ')}. We'll price this one by hand: book it and we'll email you the price before anything is charged.`
+      : quote.needsApproval
+      ? `${quote.approvalReason}, so we'll confirm this job before it's booked (usually within a business hour). Nothing is charged until we approve it.`
       : outOfArea
       ? `One of these addresses is outside our ${SERVICE_RADIUS_MILES}-mile service area. Call (803) 949-7034 and we'll see what we can do.`
       : quote.distanceConfirmed

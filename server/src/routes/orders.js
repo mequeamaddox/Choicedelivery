@@ -20,14 +20,16 @@ router.use(requireAuth);
 // Tells dispatch (LEADS_EMAIL) that an order is waiting for a manual price.
 function notifyStaffOfReview(order) {
   const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
-  const reasons = order.priceBreakdown?.reviewReasons || [];
+  const bd = order.priceBreakdown || {};
+  const reasons = bd.needsReview ? (bd.reviewReasons || []) : [bd.approvalReason].filter(Boolean);
+  const approval = !bd.needsReview && bd.needsApproval;
   const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   sendMail({
     to: process.env.LEADS_EMAIL || 'info@choicedeliverysc.com',
-    subject: `Price review needed: ${order.orderNumber}${order.organization ? ` (${order.organization.name})` : ''}`,
-    html: `<p><strong>${esc(order.orderNumber)}</strong> needs a price: ${esc(reasons.join('; '))}.</p>
+    subject: `${approval ? 'Approval needed' : 'Price review needed'}: ${order.orderNumber}${order.organization ? ` (${order.organization.name})` : ''}`,
+    html: `<p><strong>${esc(order.orderNumber)}</strong> ${approval ? `needs your approval (quoted ${money(order.priceCents)})` : 'needs a price'}: ${esc(reasons.join('; '))}.</p>
       <p>${esc(order.vehicleType)} · ${esc(order.weight)} · ${esc(order.stops[0]?.address)} &rarr; ${esc(order.stops[order.stops.length - 1]?.address)}</p>
-      <p><a href="${base}/#/orders/${order.id}">Open the order and set the price</a></p>`,
+      <p><a href="${base}/#/orders/${order.id}">${approval ? 'Open the order to approve it or change the price' : 'Open the order and set the price'}</a></p>`,
   }).catch((e) => console.error('Review email failed:', e.message));
 }
 
@@ -219,7 +221,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
     // A quote edited so the formula can (or can no longer) price it moves in or out of review.
     await client.query(
       `UPDATE orders SET review_status = CASE WHEN price_is_custom THEN review_status
-         WHEN (price_breakdown->>'needsReview')::boolean THEN 'needed' ELSE NULL END
+         WHEN (price_breakdown->>'needsReview')::boolean OR (price_breakdown->>'needsApproval')::boolean THEN 'needed' ELSE NULL END
        WHERE id = $1 AND status = 'quote'`, [current.id]);
     // Dispatch pricing an order that was waiting for review releases it to the customer.
     if (current.reviewStatus === 'needed' && b.priceCents != null && isStaff(req.user)) {

@@ -458,6 +458,15 @@ function FeesEditor() {
               onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, maxLbs: Number(e.target.value) } } })} /><//>
           </div>
         </fieldset>`)}
+      <h3>Pickups away from Columbia</h3>
+      <div class="grid-2">
+        <${Field} label="Free travel to pickup (miles)" hint="Past this, the drive out from Columbia is charged at the vehicle's per-mile rate.">
+          <input type="number" min="0" step="1" value=${fees.pickupTravel.freeMiles}
+            onInput=${(e) => set({ pickupTravel: { ...fees.pickupTravel, freeMiles: Number(e.target.value) } })} /><//>
+        <${Field} label="Needs your approval past (miles)" hint="Customers still see a price, but you approve the job before it's booked.">
+          <input type="number" min="1" step="1" value=${fees.pickupTravel.approvalMiles}
+            onInput=${(e) => set({ pickupTravel: { ...fees.pickupTravel, approvalMiles: Number(e.target.value) } })} /><//>
+      </div>
       <h3>Long trips</h3>
       <div class="grid-2">
         <${Field} label="Long distance starts after (miles)">
