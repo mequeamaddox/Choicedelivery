@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "495917088451",
+    "project_id": "choice-delivery-7e083",
+    "storage_bucket": "choice-delivery-7e083.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:495917088451:android:f951953edc19f5c3212c76",
+        "android_client_info": {
+          "package_name": "com.choicedeliverysc.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAoLdkTY-JwN3D5wgFqtep-UuALB9g5ns8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
