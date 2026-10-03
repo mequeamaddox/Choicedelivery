@@ -47,6 +47,8 @@ const LANDING_FILES = {
   '/robots.txt': 'robots.txt',
   '/sitemap.xml': 'sitemap.xml',
   '/logo.png': 'logo.png',
+  '/logo-square.png': 'logo-square.png', // for ads and listings
+  '/logo-wide.png': 'logo-wide.png',
   '/favicon.png': 'favicon.png',
   '/favicon.ico': 'favicon.png',
   // Area and service pages (landing/local-pages.js), e.g. /courier-lexington-sc
