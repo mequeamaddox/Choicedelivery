@@ -78,9 +78,13 @@ app.use((req, res, next) => {
     res.set('X-Robots-Tag', 'noindex, nofollow');
     if (req.path === '/robots.txt') return res.type('text/plain').send('User-agent: *\nDisallow: /\n');
   }
-  if (!LANDING_HOSTS.includes(host) || !['GET', 'HEAD'].includes(req.method)) return next();
-  const file = LANDING_FILES[req.path];
-  if (!file) return next();
+  if (!LANDING_HOSTS.includes(host)) return next();
+  const file = ['GET', 'HEAD'].includes(req.method) ? LANDING_FILES[req.path] : null;
+  // The API, tracking and payment links also answer on this host; only the public pages are indexed.
+  if (!file) {
+    res.set('X-Robots-Tag', 'noindex, nofollow');
+    return next();
+  }
   // One canonical address: www.choicedeliverysc.com -> choicedeliverysc.com
   if (host.startsWith('www.') && LANDING_HOSTS.includes(host.slice(4))) {
     return res.redirect(301, `https://${host.slice(4)}${req.originalUrl}`);

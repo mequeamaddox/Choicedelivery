@@ -1,4 +1,21 @@
+# choicedeliverysc.com: public pages only. The app (logins, orders, tracking, payment links) lives
+# on app.choicedeliverysc.com, which is kept out of search entirely.
 User-agent: *
 Allow: /
+Disallow: /auth/
+Disallow: /users/
+Disallow: /organizations/
+Disallow: /orders/
+Disallow: /track/
+Disallow: /public/pay/
+Disallow: /leads/
+Disallow: /settings/
+Disallow: /payouts/
+Disallow: /payments/
+Disallow: /shipping-forms/
+Disallow: /demo/
+Disallow: /webhooks/
+Disallow: /reset-password
+Disallow: /static/
 
 Sitemap: https://choicedeliverysc.com/sitemap.xml

@@ -559,7 +559,21 @@ test('landing page is served on www; the app on other hosts', async () => {
   assert.match(r.body, /<link rel="canonical" href="https:\/\/choicedeliverysc.com\/courier-lexington-sc">/);
   assert.equal(r.headers['x-robots-tag'], undefined, 'and can be indexed');
   r = await get('choicedeliverysc.com', '/sitemap.xml');
-  assert.match(r.body, /auto-parts-delivery-columbia-sc/);
+  assert.match(r.headers['content-type'], /xml/);
+  const sitemapUrls = [...r.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  assert.ok(sitemapUrls.length >= 11 && sitemapUrls.every((u) => u.startsWith('https://choicedeliverysc.com/')));
+  assert.ok(!sitemapUrls.some((u) => /\/(auth|orders|track|public|settings|payouts|reset-password|static)\b|\.html$|app\./.test(u)),
+    'nothing private or duplicate in the sitemap');
+  for (const u of sitemapUrls) {
+    const page = await get('choicedeliverysc.com', new URL(u).pathname);
+    assert.equal(page.status, 200, `${u} is served`);
+    assert.equal(page.headers['x-robots-tag'], undefined, `${u} can be indexed`);
+  }
+  r = await get('choicedeliverysc.com', '/robots.txt');
+  assert.match(r.body, /^Sitemap: https:\/\/choicedeliverysc\.com\/sitemap\.xml$/m);
+  assert.match(r.body, /^Disallow: \/orders\/$/m);
+  r = await get('choicedeliverysc.com', '/reset-password');
+  assert.equal(r.headers['x-robots-tag'], 'noindex, nofollow', 'app paths on the main domain stay out of search');
   r = await get('choicedeliverysc.com', '/local-pages.js');
   assert.notEqual(r.status, 200, 'the page source list is not served');
   r = await get('choicedeliverysc.com', '/logo.png');
