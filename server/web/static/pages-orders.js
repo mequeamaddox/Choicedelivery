@@ -127,9 +127,9 @@ function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleTy
 }
 
 // Itemized price, tucked behind "See price details" so the total is what stands out.
-export function PriceBreakdown({ q }) {
+export function PriceBreakdown({ q, open = false }) {
   if (!q) return null;
-  return html`<details class="breakdown-details"><summary>See price details</summary>
+  return html`<details class="breakdown-details" open=${open}><summary>See price details</summary>
     <dl class="breakdown">
       <dt>${q.vehicleType || 'Car'} delivery</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
       ${q.extraMileageCents - (q.longMileageCents || 0) > 0 && html`<dt>Distance</dt><dd>+${formatMoney(q.extraMileageCents - (q.longMileageCents || 0))}</dd>`}
@@ -239,6 +239,7 @@ export function NewOrderPage() {
   const needsReview = quote?.needsReview;
   // Pickup far from Columbia: priced, but dispatch approves it first (dispatch's own bookings skip that).
   const needsApproval = !needsReview && quote?.needsApproval && !staff;
+  const farPickupForStaff = !needsReview && quote?.needsApproval && staff;
   // Same rule as the server: no single piece over the limit, and the total must fit the piece count.
   const pieceLimit = fees?.maxPieceLbs;
   const piecesN = Number.parseInt(v.numberOfPieces, 10);
@@ -359,7 +360,10 @@ export function NewOrderPage() {
                   ? 'Pick a bigger vehicle above, or send it for review.' : 'Send it to us and we\'ll email you a price, usually within a business hour. Nothing is charged until you accept it.'}</div>`
             : quote ? html`${needsApproval && html`<div class="alert warn" role="status"><strong>Needs our approval:</strong>
                 ${' '}${quote.approvalReason}, so we confirm this job before it's booked (usually within a business hour).
-                Nothing is charged until it's approved.</div>`}<${PriceBreakdown} q=${quote} />
+                Nothing is charged until it's approved.</div>`}
+              ${farPickupForStaff && html`<div class="alert warn" role="status"><strong>Far pickup:</strong>
+                ${' '}${quote.approvalReason}. The drive out from Columbia is included in this price (Travel to pickup:
+                ${formatMoney(quote.travelCents)}). Booking it here approves it.</div>`}<${PriceBreakdown} q=${quote} open=${!!quote.travelCents && staff} />
               <p class="muted small">${quote.note}</p>`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}

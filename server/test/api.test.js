@@ -1869,8 +1869,10 @@ test('pickups away from Columbia: travel is charged, and far ones need approval'
   assert.notEqual(r.data.status, 'quote');
   await call('POST', `/orders/${held.id}/cancel`, { token: t.admin });
 
-  // Dispatch's own bookings for far pickups go straight through.
+  // Dispatch's own bookings for far pickups go straight through, with the travel fee in the price.
   r = await call('POST', '/orders', { token: t.dispatcher, body: far });
   assert.equal(r.data.status, 'pending');
+  assert.ok(r.data.priceBreakdown.travelCents > 0, 'the drive out is charged on dispatch bookings too');
+  assert.equal(r.data.priceCents, held.priceCents, 'same price the customer was quoted');
   await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
 });
