@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choice Delivery Flyer</title>
+<style>
+  @page { size: letter; margin: 0; }
+  :root { --teal: #0f766e; --teal-dark: #115e59; --mint: #5eead4; --mint-light: #ccfbf1; --ink: #111827; --muted: #4b5563; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 8.5in; height: 11in; display: flex; flex-direction: column; overflow: hidden; }
+  header { background: linear-gradient(135deg, var(--mint) 0%, var(--teal) 70%); color: #fff; padding: .45in .6in .42in; position: relative; }
+  header img { height: .8in; filter: brightness(0) invert(1); }
+  h1 { font-size: 42pt; line-height: 1.02; font-weight: 800; margin-top: .22in; letter-spacing: -.5pt; }
+  .sub { font-size: 17pt; margin-top: .14in; line-height: 1.3; max-width: 6.6in; }
+  main { flex: 1; padding: .34in .6in 0; display: flex; flex-direction: column; gap: .22in; }
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: .22in; }
+  .feature { border: 2pt solid var(--mint-light); border-radius: 12pt; padding: .2in .18in; }
+  .feature svg { width: .42in; height: .42in; color: var(--teal); }
+  .feature h3 { font-size: 14.5pt; margin: .08in 0 .05in; color: var(--teal); }
+  .feature p { font-size: 11pt; color: var(--muted); line-height: 1.35; }
+  h2 { font-size: 17pt; margin-bottom: .12in; }
+  .who { display: grid; grid-template-columns: 1fr 1fr; gap: .07in .3in; font-size: 12.5pt; }
+  .who li { list-style: none; padding-left: .26in; position: relative; }
+  .who li::before { content: ""; position: absolute; left: 0; top: .05in; width: .13in; height: .13in; border-radius: 50%; background: var(--mint); }
+  .vehicles { display: flex; gap: .15in; flex-wrap: wrap; }
+  .vehicles span { background: var(--mint-light); color: var(--teal-dark); font-weight: 700; font-size: 12pt; padding: .07in .2in; border-radius: 99pt; }
+  .vehicles + p { font-size: 11pt; color: var(--muted); margin-top: .08in; }
+  footer { margin: .15in .6in .38in; background: var(--teal); color: #fff; border-radius: 14pt; padding: .26in .35in; display: flex; align-items: center; gap: .35in; }
+  .qr { background: #fff; padding: .09in; border-radius: 8pt; flex: none; }
+  .qr img { width: 1.35in; height: 1.35in; display: block; }
+  .cta { flex: 1; }
+  .cta .big { font-size: 21pt; font-weight: 800; line-height: 1.15; }
+  .cta .scan { font-size: 11.5pt; color: var(--mint-light); margin: .04in 0 .14in; }
+  .contact { font-size: 13pt; line-height: 1.55; }
+  .contact strong { font-size: 17pt; }
+  @media screen {
+    html { background: #e5e7eb; }
+    body { background: #e5e7eb; padding: 16px; }
+    .page { margin: 0 auto; box-shadow: 0 4px 24px rgba(0,0,0,.15); background: #fff; }
+  }
+  @media screen and (max-width: 860px) {
+    body { padding: 0; }
+    .page { width: 100%; height: auto; box-shadow: none; }
+    header { padding: 28px 16px; } h1 { font-size: 34px; } .sub { font-size: 17px; }
+    main { padding: 24px 16px 0; } .features { grid-template-columns: 1fr; } .who { grid-template-columns: 1fr; }
+    footer { margin: 24px 16px; flex-direction: column; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <img src="logo.png" alt="Choice Delivery SC">
+    <h1>Need it there today?</h1>
+    <p class="sub">Same-day courier service from Columbia and the Midlands to anywhere in South Carolina, plus nearby NC and GA.</p>
+  </header>
+  <main>
+    <section class="features">
+      <div class="feature">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+        <h3>Instant price</h3>
+        <p>Get your price online in seconds. No calling around, no surprises.</p>
+      </div>
+      <div class="feature">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        <h3>Rush delivery</h3>
+        <p>Picked up right away and driven straight there. About 2 hours around Columbia.</p>
+      </div>
+      <div class="feature">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        <h3>Live tracking</h3>
+        <p>Follow your driver on the map. Every delivery confirmed with a photo and signature.</p>
+      </div>
+    </section>
+    <section>
+      <h2>We deliver for</h2>
+      <ul class="who">
+        <li>Auto parts stores &amp; repair shops</li>
+        <li>Print &amp; sign shops</li>
+        <li>Florists, gift &amp; bakery shops</li>
+        <li>Retail &amp; online sellers</li>
+        <li>Offices &amp; real estate</li>
+        <li>Contractors &amp; supply houses</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Car, minivan or pickup truck</h2>
+      <div class="vehicles"><span>Envelopes</span><span>Boxes</span><span>Parts</span><span>Supplies</span><span>Bulky items</span></div>
+      <p>Open 8 AM – 10 PM, 7 days a week. Business accounts welcome.</p>
+    </section>
+  </main>
+  <footer>
+    <div class="qr"><img src="quote-qr.svg" alt="QR code for choicedeliverysc.com"></div>
+    <div class="cta">
+      <div class="big">Scan for your instant quote</div>
+      <div class="scan">Book online in minutes, or give us a call.</div>
+      <div class="contact">
+        <strong>(803) 949-7034</strong><br>
+        choicedeliverysc.com &nbsp;·&nbsp; info@choicedeliverysc.com
+      </div>
+    </div>
+  </footer>
+</div>
+</body>
+</html>
