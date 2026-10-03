@@ -57,7 +57,7 @@
     <link rel="icon" type="image/png" href="favicon.png">
     
     <!-- Tailwind CSS, compiled (npm run build:landing-css) -->
-    <link rel="stylesheet" href="/site.css?v=4">
+    <link rel="stylesheet" href="/site.css?v=5">
     
     <!-- Custom CSS -->
     <style>
@@ -115,6 +115,10 @@
                 opacity: .5;
             }
         }
+            .faq summary { list-style: none; }
+        .faq summary::-webkit-details-marker { display: none; }
+        .faq[open] .faq-icon { transform: rotate(45deg); }
+        .faq-icon { transition: transform .2s; }
     </style>
 </head>
 <body class="smooth-scroll">
@@ -130,6 +134,7 @@
                     <a href="#services" class="text-gray-700 hover:text-choice-teal">Services</a>
                     <!-- business-plans --><a href="#business" class="text-gray-700 hover:text-choice-teal">Business Plans</a><!-- /business-plans -->
                     <a href="#track" class="text-gray-700 hover:text-choice-teal">Track</a>
+                    <a href="#faq" class="text-gray-700 hover:text-choice-teal">FAQ</a>
                     <a href="#contact" class="text-gray-700 hover:text-choice-teal">Contact</a>
                     <a href="https://app.choicedeliverysc.com/#/drive" class="text-gray-700 hover:text-choice-teal">Drive with us</a>
                     <a href="https://app.choicedeliverysc.com/#/login" class="text-gray-700 hover:text-choice-teal font-medium">Log in</a>
@@ -149,6 +154,7 @@
                 <a href="#services" class="block py-2 text-gray-700 hover:text-choice-teal">Services</a>
                 <!-- business-plans --><a href="#business" class="block py-2 text-gray-700 hover:text-choice-teal">Business Plans</a><!-- /business-plans -->
                 <a href="#track" class="block py-2 text-gray-700 hover:text-choice-teal">Track a delivery</a>
+                <a href="#faq" class="block py-2 text-gray-700 hover:text-choice-teal">FAQ</a>
                 <a href="#contact" class="block py-2 text-gray-700 hover:text-choice-teal">Contact</a>
                 <a href="https://app.choicedeliverysc.com/#/drive" class="block py-2 text-gray-700 hover:text-choice-teal">Drive with us</a>
                 <a href="https://app.choicedeliverysc.com/#/login" class="block py-2 text-gray-700 hover:text-choice-teal font-medium">Log in</a>
@@ -496,6 +502,68 @@
     </section>
     <!-- /business-plans -->
 
+    <!-- FAQ -->
+    <section id="faq" class="py-16 bg-white scroll-mt-20">
+        <div class="max-w-3xl mx-auto px-4">
+            <h2 class="text-4xl font-bold text-center mb-4">Frequently Asked Questions</h2>
+            <p class="text-xl text-gray-600 text-center mb-10">Can't find your answer? Call <a href="tel:8039497034" class="text-choice-teal underline">(803) 949-7034</a> or <a href="#contact" class="text-choice-teal underline">send us a message</a>.</p>
+            <div class="space-y-3">
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">How much does a delivery cost?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">Enter your pickup and delivery addresses in the <a href="#quote" class="text-choice-teal underline">instant quote</a> to see your price. It's based on the vehicle, the driving distance and the number of stops, and you can open the price details to see exactly what each part is for. You see the full price before you book.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">How fast is Rush delivery?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">With Rush, a driver picks up right away and drives straight to the drop-off. That's about 2 hours for trips within 50 miles of pickup; longer trips take as long as the drive. The rush fee starts at $25 for local trips and is a little more for longer ones. Your quote shows the exact amount.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">Where do you pick up and deliver?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">We're based in Columbia, SC. We pick up across Columbia and the Midlands and deliver throughout South Carolina, plus nearby North Carolina and Georgia. Pickups farther from Columbia can still be quoted; we'll confirm the job before it's booked.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">What are your hours?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">8 AM to 10 PM, every day. Call <a href="tel:8039497034" class="text-choice-teal underline">(803) 949-7034</a> during those hours for anything urgent.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">Do I need an account?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">Not to get a quote. To book, create a free account at <a href="https://app.choicedeliverysc.com" class="text-choice-teal underline">app.choicedeliverysc.com</a>. It takes about a minute, and you can save quotes, book again quickly and see all your deliveries in one place. Businesses can add coworkers to the same account.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">How do I pay?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">By card when you book; payments are processed securely by Stripe. If you booked with us by phone, we'll email you a secure payment link. Approved business accounts can be invoiced instead.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">Are there any extra charges?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">Only if they happen: waiting more than 15 minutes at a stop, a return trip, or a delivery that couldn't be completed (for example, no one was there). We'll email you the reason and amount for any extra charge.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">How do I track my delivery?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">Use the tracking link we send you, or enter your order number and delivery ZIP under <a href="#track" class="text-choice-teal underline">Track a delivery</a>. You can follow the driver on a live map, and every delivery is confirmed with a photo, signature and GPS location.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">What can't you carry?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">No single piece can weigh more than 75 lbs, and the order has to fit the vehicle you choose. We don't carry hazardous materials, weapons, cash or valuables, live animals, medical waste, or anything illegal. See our <a href="/terms" class="text-choice-teal underline">Terms</a> for the full list.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">Can I cancel an order?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">Yes. You can cancel in the app at no charge until a driver accepts the job, and card payments are refunded in full (refunds usually show up within 5 to 10 business days). After a driver has accepted, call us at (803) 949-7034; a charge may apply for work already done.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">What if something is lost or damaged?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">Tell us within 24 hours of delivery. Our coverage is up to $100 per order unless we agree otherwise before pickup, so if your shipment is worth more, contact us before booking.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">Do I need a shipping label?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">No, but it helps. Our free <a href="https://app.choicedeliverysc.com/#/shipping-form" class="text-choice-teal underline">shipping form</a> prints a label with a barcode on regular letter-size paper, so no special label printer is needed.</p>
+                </details>
+                <details class="faq bg-white rounded-xl shadow p-5">
+                    <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">How can I drive with Choice Delivery?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
+                    <p class="text-gray-600 mt-3">We're always looking for reliable drivers in the Columbia area. <a href="https://app.choicedeliverysc.com/#/drive" class="text-choice-teal underline">Apply here</a>; you'll need to be at least 21 with a valid driver's license and insurance.</p>
+                </details>
+            </div>
+        </div>
+    </section>
+
     <!-- Contact Section -->
     <section id="contact" class="py-16 bg-gray-50">
         <div class="max-w-6xl mx-auto px-4">
@@ -660,6 +728,7 @@
                     <h4 class="text-lg font-semibold mb-4">Company</h4>
                     <ul class="space-y-2 text-choice-mint-light">
                         <li><a href="#contact" class="hover:text-white">Contact Us</a></li>
+                        <li><a href="#faq" class="hover:text-white">FAQ</a></li>
                         <li><a href="https://app.choicedeliverysc.com/#/drive" class="hover:text-white">Drive with us</a></li>
                         <li><a href="https://app.choicedeliverysc.com/#/shipping-form" class="hover:text-white">Shipping Form</a></li>
                         <li><a href="#services" class="hover:text-white">Service Area</a></li>
