@@ -108,6 +108,42 @@ border-radius:10px;text-decoration:none;font-weight:600}</style></head><body><ma
 <a href="/#/driver/history">Open my earnings</a></main></body></html>`);
 });
 
+// Payment link from a "Pay by card" email (orders dispatch booked and asked the customer to pay). Opens a
+// fresh Stripe checkout every time, so the emailed link never expires; once paid it shows tracking.
+const simplePage = (title, text) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · Choice Delivery</title>
+<style>body{font-family:system-ui,-apple-system,sans-serif;background:#f0fdfa;color:#111827;margin:0;padding:24px;display:flex;
+min-height:100vh;align-items:center;justify-content:center;box-sizing:border-box}main{background:#fff;border-radius:16px;
+padding:28px;max-width:420px;box-shadow:0 10px 30px rgba(15,118,110,.12);text-align:center}h1{color:#0f766e;margin:0 0 12px}
+p{line-height:1.6;color:#374151}</style></head><body><main><h1>${title}</h1><p>${text}</p></main></body></html>`;
+router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(async (req, res) => {
+  const stripe = require('../stripe');
+  res.set('Cache-Control', 'no-store');
+  const { rows: [o] } = await db.query(
+    `SELECT o.id, o.order_number, o.status, o.payment_status, o.price_cents, o.public_token, o.stripe_session_id,
+            o.payment_requested_at, o.customer_email,
+            (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS first_address,
+            (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address
+     FROM orders o WHERE o.public_token = $1`, [String(req.params.token)]).catch(() => ({ rows: [] }));
+  const base = String(process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  if (!o) return res.status(404).type('html').send(simplePage('Link not found', 'Check the link in your email, or call (803) 949-7034.'));
+  if (o.payment_status === 'paid') return res.redirect(303, `${base}/#/track/${o.public_token}`);
+  const payable = o.payment_requested_at || o.payment_status === 'unpaid';
+  if (!payable || ['cancelled', 'quote'].includes(o.status) || ['waived', 'refunded'].includes(o.payment_status) || !(o.price_cents >= 50) || !stripe.enabled()) {
+    return res.type('html').send(simplePage('Nothing to pay right now', `Order ${escapeHtml(o.order_number)} doesn't need a card payment. Questions? Email info@choicedeliverysc.com.`));
+  }
+  if (o.stripe_session_id) await stripe.expireCheckoutSession(o.stripe_session_id).catch(() => {});
+  const session = await stripe.createCheckoutSession({
+    orderId: o.id, orderNumber: o.order_number, amountCents: o.price_cents,
+    description: `${o.first_address} → ${o.last_address}`.slice(0, 450),
+    customerEmail: o.customer_email || undefined,
+    successUrl: `${base}/#/track/${o.public_token}`,
+    cancelUrl: `${base}/#/track/${o.public_token}`,
+  });
+  await db.query('UPDATE orders SET stripe_session_id = $2, updated_at = now() WHERE id = $1', [o.id, session.id]);
+  res.redirect(303, session.url);
+}));
+
 // Instant quote using the same formula orders are priced with.
 // Body: { stops: [{address, location?}, ...] } or { pickupAddress, dropoffAddress, pickupLocation?, dropoffLocation? },
 // plus serviceLevel ('standard' | 'rush'), vehicleType and an optional scheduledAt (pickup time).

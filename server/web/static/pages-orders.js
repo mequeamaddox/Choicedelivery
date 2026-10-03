@@ -209,7 +209,7 @@ export function NewOrderPage() {
   const [stops, setStops] = useState([blankStop('pickup'), blankStop('dropoff')]);
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
-    scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '',
+    scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '', customerName: '', customerEmail: '', sendPayLink: true,
   });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -273,8 +273,14 @@ export function NewOrderPage() {
       if (staff) {
         if (v.organizationId) body.organizationId = v.organizationId;
         if (v.price !== '') body.priceCents = Math.round(Number(v.price) * 100);
+        if (!v.organizationId) Object.assign(body, { customerName: v.customerName.trim(), customerEmail: v.customerEmail.trim() });
       }
       const order = await api('/orders', { method: 'POST', body });
+      // Dispatch booking for a phone/walk-in customer: email them a link to pay by card.
+      if (staff && !saveAsQuote && !v.organizationId && v.customerEmail.trim() && v.sendPayLink && payments.data?.enabled
+        && order.status !== 'quote') {
+        await api(`/orders/${order.id}/payment-link`, { method: 'POST', body: {} }).catch(() => {});
+      }
       if (!saveAsQuote && order.paymentStatus === 'unpaid') {
         // Card customers go straight to Stripe's secure payment page.
         try { await startCheckout(order.id); return; } catch { /* fall through to the order page's Pay button */ }
@@ -387,6 +393,15 @@ export function NewOrderPage() {
               <//>
               <${Field} label="Custom price (USD)" hint="Leave empty to use the calculated price."><input type="number" min="0" step="0.01" ...${bind('price')} /><//>
             </div>
+            ${!v.organizationId && html`
+              <p class="small muted">Booking for someone without an account? Add their email and they get the order emails and tracking link.</p>
+              <div class="grid-2">
+                <${Field} label="Customer name"><input ...${bind('customerName')} autocomplete="off" /><//>
+                <${Field} label="Customer email"><input type="email" ...${bind('customerEmail')} autocomplete="off" /><//>
+              </div>
+              ${payments.data?.enabled && html`<label class="inline-check small">
+                <input type="checkbox" checked=${v.sendPayLink} onChange=${(e) => setV({ ...v, sendPayLink: e.target.checked })} />
+                Email them a link to pay by card</label>`}`}
           </section>`}
         ${fees && html`<${ChargesNotice} fees=${fees} />`}
         <p class="small muted">By booking you agree to our <${LegalLinks} />.</p>
@@ -526,6 +541,15 @@ function PaymentPanel({ order, onChange, setError }) {
   const record = (status, method) => async () =>
     onChange(await api(`/orders/${order.id}/payment`, { method: 'POST', body: { status, method } }));
   const cancelled = order.status === 'cancelled';
+  const [payLink, setPayLink] = useState(null);
+  const sendPayLink = async () => {
+    const email = window.prompt('Customer email for the payment link (leave blank to just copy the link):', order.customerEmail || '');
+    if (email === null) return;
+    const r = await api(`/orders/${order.id}/payment-link`, { method: 'POST', body: { email: email.trim() } });
+    setPayLink(r);
+    onChange(r.order);
+  };
+  const canRequest = staff && !cancelled && payments.data?.enabled && !['paid', 'refunded'].includes(order.paymentStatus) && order.priceCents >= 50;
   return html`
     <section class="card">
       <h2>Payment <span class=${`badge ${st.tone}`}>${st.label}</span></h2>
@@ -533,7 +557,19 @@ function PaymentPanel({ order, onChange, setError }) {
         <dt>Price</dt><dd>${formatMoney(order.priceCents)}</dd>
         ${order.paidCents != null && html`<dt>Paid</dt><dd>${formatMoney(order.paidCents)}${order.paymentMethod ? ` · ${order.paymentMethod}` : ''}${order.paidAt ? ` · ${formatDate(order.paidAt)}` : ''}</dd>`}
         ${order.refundedCents != null && html`<dt>Refunded</dt><dd>${formatMoney(order.refundedCents)}</dd>`}
+        ${staff && (order.customerName || order.customerEmail) && html`<dt>Customer</dt><dd>${[order.customerName, order.customerEmail].filter(Boolean).join(' · ')}</dd>`}
+        ${staff && order.paymentRequestedAt && order.paymentStatus !== 'paid' && html`<dt>Payment link</dt><dd>Sent ${formatDate(order.paymentRequestedAt)}</dd>`}
       </dl>
+      ${canRequest && html`
+        <${ActionButton} class="btn primary block" onError=${setError} onClick=${sendPayLink}>
+          ${order.paymentRequestedAt ? 'Resend payment link' : 'Send payment link'}
+        <//>
+        ${payLink && html`<div class="paylink small">
+          ${payLink.emailed ? html`<p>Emailed to ${payLink.order.customerEmail}.</p>` : html`<p>Copy this link and text it to the customer:</p>`}
+          <div class="inline"><input readonly value=${payLink.url} onFocus=${(e) => e.target.select()} />
+            <button type="button" class="btn small" onClick=${() => navigator.clipboard?.writeText(payLink.url)}>Copy</button></div>
+          <p class="muted">The link works until the order is paid. Once paid, this shows "Paid" automatically.</p>
+        </div>`}`}
       ${order.paymentStatus === 'unpaid' && !cancelled && html`
         ${justPaid
           ? html`<p class="small">Thanks! We're confirming your payment with Stripe; this updates automatically.</p>`

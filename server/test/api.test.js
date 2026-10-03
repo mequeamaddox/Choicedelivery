@@ -703,6 +703,58 @@ test('payments: card orders wait for Stripe payment; invoice companies dispatch 
     assert.equal(r.status, 403, 'only dispatch records payments');
     await call('POST', `/orders/${inv}/cancel`, { token: t.admin });
     await call('PATCH', `/organizations/${ids.acmeOrg}`, { token: t.dispatcher, body: { billingMode: 'card' } });
+
+    // Dispatch books for a phone customer: they get the order emails and a payment link that works
+    // until paid; drivers get the job right away; paying marks it paid without alerting drivers again.
+    const mailer = require('../src/mailer');
+    const mails = [];
+    mailer.setSender(async (m) => { mails.push(m); });
+    process.env.PUBLIC_URL = 'https://app.choicedeliverysc.com';
+    try {
+      r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ customerName: 'Pat Phone', customerEmail: 'Pat@Example.com' }) });
+      const phone = r.data.id ? r.data : r.data.order;
+      assert.equal(phone.paymentStatus, 'invoice');
+      assert.equal(phone.customerEmail, 'pat@example.com');
+      await new Promise((ok) => setTimeout(ok, 150));
+      assert.ok(mails.some((m) => m.to === 'pat@example.com' && /booked/.test(m.subject)), 'the customer gets the booking email');
+      r = await call('GET', '/orders?status=pending', { token: t.d1 });
+      assert.ok(r.data.some((o) => o.id === phone.id), 'drivers see it right away');
+      assert.equal((await call('POST', `/orders/${phone.id}/payment-link`, { token: t.acme, body: {} })).status, 403);
+      r = await call('POST', `/orders/${phone.id}/payment-link`, { token: t.dispatcher, body: { email: 'not-an-email' } });
+      assert.equal(r.status, 400);
+      r = await call('POST', `/orders/${phone.id}/payment-link`, { token: t.dispatcher, body: {} });
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      assert.equal(r.data.emailed, true);
+      const payUrl = r.data.url;
+      assert.match(payUrl, /\/public\/pay\/[a-f0-9-]+$/);
+      const payMail = mails.find((m) => /^Payment for your delivery/.test(m.subject));
+      assert.equal(payMail.to, 'pat@example.com');
+      assert.ok(payMail.html.includes(payUrl.replace('https://app.choicedeliverysc.com', '')), 'the email has the pay link');
+      // The link opens a fresh Stripe checkout each time (so it never expires).
+      const open = () => fetch(`${base}${new URL(payUrl).pathname}`, { redirect: 'manual' });
+      let res = await open();
+      assert.equal(res.status, 303);
+      assert.equal(res.headers.get('location'), 'https://checkout.stripe.com/pay/cs_test');
+      res = await open();
+      const session = (await db.query('SELECT stripe_session_id FROM orders WHERE id = $1', [phone.id])).rows[0].stripe_session_id;
+      res = await webhook({ type: 'checkout.session.completed', data: { object: {
+        id: session, payment_status: 'paid', amount_total: phone.priceCents, payment_intent: 'pi_phone', metadata: { order_id: phone.id } } } });
+      assert.equal(res.status, 200);
+      r = await call('GET', `/orders/${phone.id}`, { token: t.admin });
+      assert.equal(r.data.paymentStatus, 'paid');
+      assert.equal(r.data.paymentMethod, 'card');
+      res = await open();
+      assert.equal(res.status, 303);
+      assert.match(res.headers.get('location'), /#\/track\//, 'once paid, the link shows tracking');
+      r = await call('POST', `/orders/${phone.id}/payment-link`, { token: t.dispatcher, body: {} });
+      assert.equal(r.status, 409, 'already paid');
+      await call('POST', `/orders/${phone.id}/cancel`, { token: t.admin });
+      res = await fetch(`${base}/public/pay/not-a-real-token`);
+      assert.equal(res.status, 404);
+    } finally {
+      mailer.setSender(null);
+      delete process.env.PUBLIC_URL;
+    }
   } finally {
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_WEBHOOK_SECRET;

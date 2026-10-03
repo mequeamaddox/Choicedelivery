@@ -39,14 +39,18 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
       const updated = await db.withTx(async (client) => {
         // Only the order's current payment link counts, and only once (Stripe may retry).
         const { rows } = await client.query(
-          `UPDATE orders SET payment_status = 'paid', paid_cents = $3, paid_at = now(), payment_method = 'card',
+          `WITH prev AS (SELECT payment_status FROM orders WHERE id = $1)
+           UPDATE orders SET payment_status = 'paid', paid_cents = $3, paid_at = now(), payment_method = 'card',
              stripe_payment_intent = $4, updated_at = now()
-           WHERE id = $1 AND stripe_session_id = $2 AND payment_status = 'unpaid' RETURNING id, status`,
+           WHERE id = $1 AND stripe_session_id = $2 AND payment_status IN ('unpaid', 'invoice')
+           RETURNING id, status, (SELECT payment_status FROM prev) AS was`,
           [orderId, session.id, session.amount_total, session.payment_intent]);
         if (rows[0]) await recordEvent(client, orderId, null, 'paid', { cents: session.amount_total, method: 'card' });
         return rows[0];
       });
-      if (updated?.status === 'pending') {
+      // Card orders wait for payment before drivers hear about them; orders dispatch booked (paid later by
+      // a payment link) were already sent out to drivers.
+      if (updated?.status === 'pending' && updated.was === 'unpaid') {
         const order = await getOrderFor(SYSTEM, orderId);
         notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
         alertStaffOfBooking(orderId);

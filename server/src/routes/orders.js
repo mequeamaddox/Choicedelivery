@@ -8,7 +8,7 @@ const {
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
-const { emailShipper, alertStaffOfBooking } = require('../notify');
+const { emailShipper, alertStaffOfBooking, emailPaymentRequest } = require('../notify');
 const { sendMail } = require('../mailer');
 const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
@@ -358,6 +358,30 @@ router.post('/:id/checkout', requireRole('shipper', 'admin', 'dispatcher'), asyn
   });
   await db.query('UPDATE orders SET stripe_session_id = $2, updated_at = now() WHERE id = $1', [order.id, session.id]);
   res.json({ url: session.url });
+}));
+
+// Dispatch asks a customer to pay by card: emails them a link (and returns it, to text instead). The
+// link opens a fresh Stripe checkout each time, so it works until the order is paid. Body: { email? }.
+router.post('/:id/payment-link', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  if (!stripe.enabled()) throw new HttpError(503, 'Online payment is not set up yet');
+  const order = await getOrderFor(req.user, req.params.id);
+  if (order.status === 'quote' || order.status === 'cancelled') throw new HttpError(409, `Order is ${order.status}`);
+  if (['paid', 'refunded'].includes(order.paymentStatus)) throw new HttpError(409, 'This order is already paid');
+  if (!order.priceCents || order.priceCents < 50) throw new HttpError(409, 'Set a price first');
+  const email = str(req.body?.email).toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "That email doesn't look right");
+  await db.withTx(async (client) => {
+    await client.query(
+      `UPDATE orders SET payment_requested_at = now(), customer_email = COALESCE(NULLIF($2, ''), customer_email),
+         customer_name = COALESCE(NULLIF($3, ''), customer_name),
+         payment_status = CASE WHEN payment_status = 'waived' THEN 'invoice' ELSE payment_status END, updated_at = now()
+       WHERE id = $1`, [order.id, email, str(req.body?.name).slice(0, 120)]);
+    await recordEvent(client, order.id, req.user.id, 'payment_requested', { email: email || undefined });
+  });
+  const emailed = await emailPaymentRequest(order.id).catch((e) => { console.error('Payment link email failed:', e.message); return false; });
+  const { rows: [o] } = await db.query('SELECT public_token FROM orders WHERE id = $1', [order.id]);
+  const base = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+  res.json({ url: `${base}/public/pay/${o.public_token}`, emailed, order: await getOrderFor(req.user, order.id) });
 }));
 
 // Dispatch records payment made another way (cash, check), waives it, or moves it to invoicing.

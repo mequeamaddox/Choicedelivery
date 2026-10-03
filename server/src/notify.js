@@ -74,13 +74,22 @@ async function emailShipper(orderId, kind, extra = {}) {
        JOIN users u ON u.id = o.created_by
        LEFT JOIN users d ON d.id = o.driver_id
        WHERE o.id = $1`, [orderId]);
-    if (!o || o.is_demo || o.creator_role !== 'shipper' || !o.email_updates || !MESSAGES[kind]) return;
+    if (!o || o.is_demo || !MESSAGES[kind]) return;
+    // Booked by the customer: their account email (unless they turned updates off). Booked by dispatch
+    // for someone without an account: the customer email entered on the order.
+    const byCustomer = o.creator_role === 'shipper';
+    const to = byCustomer ? (o.email_updates ? o.email : null) : o.customer_email;
+    if (!to) return;
+    if (!byCustomer) o.shipper_name = o.customer_name || '';
     const { subject, line, quote, note, button } = MESSAGES[kind](o, extra, await getFees(db));
     const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
     const track = `${base}/#/track/${o.public_token}`;
     const page = `${base}/#/orders/${o.id}`;
+    if (!byCustomer && o.payment_requested_at && o.payment_status !== 'paid' && ['booked', 'driver_assigned'].includes(kind)) {
+      Object.assign(extra, { payLink: true });
+    }
     await sendMail({
-      to: o.email,
+      to,
       subject,
       html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
   <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong></div>
@@ -88,7 +97,11 @@ async function emailShipper(orderId, kind, extra = {}) {
     <p>Hi ${esc((o.shipper_name || '').split(' ')[0] || 'there')},</p>
     <p>${line}</p>
     <p style="color:#4b5563"><strong>${esc(o.order_number)}</strong><br>${esc(o.first_address)} &rarr; ${esc(o.last_address)}</p>
-    ${quote
+    ${!byCustomer
+    ? `<p><a href="${track}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Track delivery</a></p>
+       ${extra.payLink ? `<p>Amount due: <strong>${money(o.price_cents)}</strong></p>
+       <p><a href="${base}/public/pay/${o.public_token}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Pay ${money(o.price_cents)} by card</a></p>` : ''}`
+    : quote
     ? `<p><a href="${page}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">${button || 'View &amp; book quote'}</a></p>`
     : button
     ? `<p><a href="${page}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">${button}</a></p>`
@@ -96,7 +109,7 @@ async function emailShipper(orderId, kind, extra = {}) {
        &nbsp; <a href="${page}" style="color:#0f766e">View order</a></p>
     <p style="color:#6b7280;font-size:12px">You can share the tracking link with whoever is receiving the delivery.</p>`}
     ${note ? `<p style="color:#4b5563;font-size:13px">${note}</p>` : ''}
-    <p style="color:#6b7280;font-size:12px">To stop these emails, turn off "Email updates" on your Account page.</p>
+    ${byCustomer ? '<p style="color:#6b7280;font-size:12px">To stop these emails, turn off "Email updates" on your Account page.</p>' : ''}
   </div></div>`,
     });
   } catch (e) {
@@ -148,4 +161,31 @@ async function alertStaffOfBooking(orderId) {
   }
 }
 
-module.exports = { emailShipper, alertStaffOfBooking };
+// Payment request for an order dispatch booked: a "Pay by card" button that opens Stripe's secure
+// checkout (a fresh one each time, so the link never expires) until the order is paid.
+async function emailPaymentRequest(orderId) {
+  const { rows: [o] } = await db.query(
+    `SELECT o.*, (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS first_address,
+            (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address
+     FROM orders o WHERE o.id = $1`, [orderId]);
+  if (!o?.customer_email) return false;
+  const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+  const pay = `${base}/public/pay/${o.public_token}`;
+  await sendMail({
+    to: o.customer_email,
+    subject: `Payment for your delivery ${o.order_number}: ${money(o.price_cents)}`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
+  <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong></div>
+  <div style="border:1px solid #e5e7eb;border-top:0;padding:20px;border-radius:0 0 10px 10px">
+    <p>Hi ${esc((o.customer_name || '').split(' ')[0] || 'there')},</p>
+    <p>Here's the payment link for your delivery. The total is <strong>${money(o.price_cents)}</strong>.</p>
+    <p style="color:#4b5563"><strong>${esc(o.order_number)}</strong><br>${esc(o.first_address)} &rarr; ${esc(o.last_address)}</p>
+    <p><a href="${pay}" style="background:#0f766e;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:bold">Pay ${money(o.price_cents)} by card</a></p>
+    <p style="color:#6b7280;font-size:12px">Payment is handled by Stripe; we never see your card number.
+      <a href="${base}/#/track/${o.public_token}" style="color:#0f766e">Track your delivery</a></p>
+  </div></div>`,
+  });
+  return true;
+}
+
+module.exports = { emailShipper, alertStaffOfBooking, emailPaymentRequest };

@@ -108,18 +108,23 @@ async function createOrder(client, actor, body) {
   }
 
   const paymentStatus = await paymentStatusFor(client, actor.role, organizationId);
+  // Dispatch booking for a customer without an account: who gets the order emails and payment link.
+  const customerEmail = isStaff(actor) ? str(body.customerEmail).toLowerCase() : '';
+  if (customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) throw new HttpError(400, "That customer email doesn't look right");
+  const customerName = isStaff(actor) ? str(body.customerName).slice(0, 120) : '';
 
   let rows;
   try {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
                            tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status,
-                           status, booked_at, add_ons, max_piece_lbs)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15)
+                           status, booked_at, add_ons, max_piece_lbs, customer_name, customer_email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15, $16, $17)
        RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
-        body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns, maxPieceLbs]
+        body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns, maxPieceLbs,
+        customerName || null, customerEmail || null]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -362,7 +367,8 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     }));
   }
   if (user && isStaff(user)) {
-    Object.assign(out, { driverPayCents: o.driver_pay_cents, driverPayIsCustom: o.driver_pay_is_custom, driverPaidAt: o.driver_paid_at });
+    Object.assign(out, { driverPayCents: o.driver_pay_cents, driverPayIsCustom: o.driver_pay_is_custom, driverPaidAt: o.driver_paid_at,
+      customerName: o.customer_name || null, customerEmail: o.customer_email || null, paymentRequestedAt: o.payment_requested_at || null });
     if (out.driver) out.driver.directDeposit = !!o.driver_direct_deposit;
   }
   return user?.role === 'driver' ? forDriver(out, o) : out;
