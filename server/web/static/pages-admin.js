@@ -405,16 +405,22 @@ function FeesEditor() {
   const loaded = useApi('/settings/fees');
   const [f, setF] = useState(null);
   const [msg, setMsg] = useState({});
+  const [saving, setSaving] = useState(false);
   if (!loaded.data) return null;
   const fees = f || loaded.data.fees;
+  const dirty = !!f && !msg.ok;
   const dollars = (c) => (c / 100).toFixed(2);
   const cents = (v) => Math.round(Number(v || 0) * 100);
   const set = (patch) => { setF({ ...fees, ...patch }); setMsg({}); };
   const setTier = (i, patch) => set({ weightTiers: fees.weightTiers.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
   const save = async (e) => {
     e.preventDefault();
-    try { const r = await api('/settings/fees', { method: 'PUT', body: fees }); setF(r.fees); setMsg({ ok: 'Saved. New quotes and orders use these amounts.' }); }
-    catch (err) { setMsg({ error: err }); }
+    setSaving(true);
+    try {
+      const r = await api('/settings/fees', { method: 'PUT', body: fees });
+      setF(r.fees);
+      setMsg({ ok: `Saved at ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}. New quotes and orders use these amounts.` });
+    } catch (err) { setMsg({ error: err }); } finally { setSaving(false); }
   };
   const tiers = fees.weightTiers;
   return html`
@@ -542,9 +548,12 @@ function FeesEditor() {
           ${formatMoney(Math.min(car.baseCents, fees.driverPay.perJobCents))}. Changes apply to new orders.</p>`;
       })()}
       <div class="actions">
-        <button class="btn primary">Save fees</button>
+        <button class="btn primary" disabled=${saving}>${saving ? 'Saving…' : msg.ok ? 'Saved ✓' : 'Save fees'}</button>
         <button type="button" class="btn" onClick=${() => set(loaded.data.defaults)}>Reset to defaults</button>
       </div>
+      ${msg.ok && html`<${Alert} tone="success">${msg.ok}<//>`}
+      ${msg.error && html`<${Alert} error=${msg.error} />`}
+      ${dirty && html`<p class="small warn-text">You have changes that aren't saved yet.</p>`}
     </form>`;
 }
 
