@@ -429,6 +429,7 @@ function FeesEditor() {
       <p class="muted small">Your rate card. Customers see these prices when they book; saved changes apply to new quotes and orders.</p>
       <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
       <h3>Weight</h3>
+      <p class="muted small">Weight fees apply only when our driver does the lifting (the customer books Loading help or Inside delivery). When the shipper loads it, weight only decides which vehicle fits.</p>
       <${Field} label="Heaviest single piece allowed (lbs)" hint="Orders with any piece heavier than this can't be booked.">
         <input type="number" min="1" step="1" value=${fees.maxPieceLbs} onInput=${(e) => set({ maxPieceLbs: Number(e.target.value) })} />
       <//>

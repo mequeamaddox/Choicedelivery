@@ -952,12 +952,18 @@ test('weight tiers, extra stops, add-ons and wait time are priced like the fee s
   assert.deepEqual(heavy.reviewReasons, ['Over 1,000 lbs']);
   assert.equal(heavy.weightFeeCents, 0);
 
+  // Weight is only charged when our driver loads or carries it; the shipper loading it pays no weight fee.
+  const selfLoaded = calculatePrice({ distanceMiles: 3, at, weightLbs: 120 });
+  assert.equal(selfLoaded.weightFeeCents, 0);
+  assert.equal(selfLoaded.totalCents, 2500);
+  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 120, addOns: ['inside_delivery'] }).weightFeeCents, 1500);
+
   // Vehicles: their own base and per-mile rate; capacity limits send it to review.
   const car = calculatePrice({ distanceMiles: 15, at, vehicleType: 'Car', weightLbs: 100 });
-  assert.equal(car.totalCents, 2500 + 5 * 150 + 1500);
+  assert.equal(car.totalCents, 2500 + 5 * 150);
   const truck = calculatePrice({ distanceMiles: 15, at, vehicleType: 'Pickup Truck', weightLbs: 100 });
   assert.equal(truck.baseFeeCents, DEFAULT_FEES.vehicles['Pickup Truck'].baseCents);
-  assert.equal(truck.totalCents, 4500 + 5 * 250 + 1500);
+  assert.equal(truck.totalCents, 4500 + 5 * 250);
   assert.ok(truck.totalCents > car.totalCents);
   const tooHeavy = calculatePrice({ distanceMiles: 3, at, vehicleType: 'Car', weightLbs: 300 });
   assert.equal(tooHeavy.needsReview, true);

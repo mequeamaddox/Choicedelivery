@@ -336,6 +336,8 @@ function localTime(at) {
 // `at` is when the pickup happens (defaults to now); openOrders and badWeather come from the system.
 // vehicleType, weightLbs, stopCount (default 2) and addOns (keys of fees.addOns) add the extras above.
 // needsReview (with reviewReasons) means the formula can't price it: dispatch sets the price by hand.
+const DRIVER_HANDLING_ADDONS = ['loading_help', 'inside_delivery'];
+
 function calculatePrice({
   distanceMiles, serviceLevel = 'standard', at = new Date(), openOrders = 0, badWeather = false,
   vehicleType = null, weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES, pickupTravelMiles = null,
@@ -374,6 +376,9 @@ function calculatePrice({
   const surchargeCents = surcharges.reduce((sum, s) => sum + s.cents, 0);
 
   const lbs = weightLbs == null || weightLbs === '' ? null : Number(weightLbs);
+  // Weight is charged only when our driver does the lifting (loading help or carrying it inside);
+  // when the shipper loads it, weight just decides which vehicle fits.
+  const driverHandles = addOns.some((k) => DRIVER_HANDLING_ADDONS.includes(k));
   let weightFeeCents = 0;
   let weightTier = null;
   const reviewReasons = [];
@@ -382,7 +387,7 @@ function calculatePrice({
     if (i < 0) {
       reviewReasons.push(`Over ${maxWeightLbs(fees).toLocaleString('en-US')} lbs`);
     } else {
-      weightFeeCents = fees.weightTiers[i].cents;
+      weightFeeCents = driverHandles ? fees.weightTiers[i].cents : 0;
       weightTier = weightTierLabel(fees.weightTiers, i);
       if (vehicle && lbs > vehicle.maxLbs) {
         reviewReasons.push(`Too heavy for a ${vehicleType} (up to ${vehicle.maxLbs.toLocaleString('en-US')} lbs)`);

@@ -377,7 +377,7 @@ export function NewOrderPage() {
             <${Field} label="Pickup time" hint="Leave empty for as soon as possible.">
               <input type="datetime-local" ...${bind('scheduledAt')} />
             <//>
-            <${Field} label="Total weight (lbs)" hint="Heavier shipments cost a little more; your price updates as you type.">
+            <${Field} label="Total weight (lbs)" hint="Weight only adds to the price if our driver loads or carries the shipment (Loading help or Inside delivery).">
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
             <//>
             <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" ...${bind('numberOfPieces')} /><//>
