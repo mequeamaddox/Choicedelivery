@@ -485,7 +485,7 @@ function FeesEditor() {
       </div>
       <h3>Rush & surcharges</h3>
       <div class="grid-2">
-        <${Field} label="Rush: local fee ($)" hint="Picked up right away. About 2 hours within 50 miles; longer trips take as long as the drive.">
+        <${Field} label="Rush: local fee ($)" hint="First in line, driven straight there. About 2 hours within 50 miles; longer trips take as long as the drive.">
           <input type="number" min="0" step="0.01" value=${dollars(fees.rush.baseCents)}
             onInput=${(e) => set({ rush: { ...fees.rush, baseCents: cents(e.target.value) } })} /><//>
         <${Field} label="Rush: plus share of distance charges (%)" hint="Of the extra miles and travel to pickup, so far trips cost more to rush.">

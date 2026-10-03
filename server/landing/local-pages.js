@@ -16,7 +16,7 @@ const AREAS = [
       ['What we deliver around Lexington', 'Parts for repair shops and dealerships, print jobs and signs, flowers and gifts, supplies for contractors, and boxes for small retailers and online sellers who need something to a customer today instead of in three days.'],
     ],
     faqs: [
-      ['How fast can you deliver in Lexington?', 'With Rush, a driver picks up right away and drives straight there, usually about 2 hours or less for trips around Lexington and into Columbia. Standard deliveries are same day.'],
+      ['How fast can you deliver in Lexington?', 'With Rush, your order goes to the front of the line and is driven straight there, usually about 2 hours for trips around Lexington and into Columbia. Standard deliveries are same day.'],
       ['Do you deliver from Lexington to other cities?', 'Yes. We deliver from the Midlands to anywhere in South Carolina, plus nearby North Carolina and Georgia. Your quote shows the price for the exact route.'],
     ],
   },
@@ -42,10 +42,10 @@ const AREAS = [
     title: 'Courier & Same-Day Delivery in West Columbia and Cayce, SC',
     description: 'Fast local courier service in West Columbia, Cayce, Springdale and Pine Ridge. Rush pickups, same-day delivery, live tracking and photo proof. Instant online quote.',
     h1: 'Courier and same-day delivery in West Columbia and Cayce, SC',
-    intro: 'West Columbia and Cayce sit right across the river from downtown, so most trips here are short, quick runs. When something has to get across the Congaree today, we can usually pick it up right away.',
+    intro: 'West Columbia and Cayce sit right across the river from downtown, so most trips here are short, quick runs. When something has to get across the Congaree today, Rush puts it at the front of the line.',
     sections: [
       ['Right across the river', 'We pick up and deliver throughout West Columbia, Cayce, Springdale, Pine Ridge and the airport area, and across the river to downtown Columbia, the Vista and the rest of the Midlands.'],
-      ['Short trips, quick turnaround', 'Local runs like these are where Rush shines: a driver heads to your pickup right away and drives straight to the drop-off, with no other stops in between.'],
+      ['Short trips, quick turnaround', 'Local runs like these are where Rush shines: your order goes to the front of the line and is driven straight to the drop-off, with no other stops in between.'],
     ],
     faqs: [
       ['How much is a delivery from West Columbia to downtown Columbia?', 'It depends on the vehicle and the exact addresses. Enter them in our instant quote to see your price before you book.'],
@@ -83,7 +83,7 @@ const SERVICES = [
       ['Priced by your route', 'Your price is based on the vehicle and the driving distance, and you can see exactly what each part is for before you book. No calling around for a quote.'],
     ],
     faqs: [
-      ['What\'s the difference between standard and Rush?', 'Standard is delivered the same day. With Rush, a driver picks up right away and drives straight there, about 2 hours for trips within 50 miles.'],
+      ['What\'s the difference between standard and Rush?', 'Standard is delivered the same day. With Rush, your order goes to the front of the line and is driven straight there, about 2 hours for trips within 50 miles.'],
       ['How late can I book?', 'We run 8 AM to 10 PM every day. For long trips, booking earlier in the day gives the driver time to get there.'],
     ],
   },
@@ -91,11 +91,11 @@ const SERVICES = [
     slug: 'rush-delivery-columbia-sc',
     nav: 'Rush delivery',
     title: 'Rush Courier Delivery in Columbia, SC (About 2 Hours)',
-    description: 'Rush courier service in Columbia, SC: a driver picks up right away and drives straight to the drop-off, about 2 hours for local trips. Live tracking and photo proof.',
+    description: 'Rush courier service in Columbia, SC: your order goes to the front of the line and is driven straight to the drop-off, about 2 hours for local trips. Live tracking and photo proof.',
     h1: 'Rush delivery in Columbia, SC',
-    intro: 'Forgot something? Customer waiting? With Rush, a driver heads to your pickup right away and drives straight to the drop-off. No stops for other orders in between.',
+    intro: 'Forgot something? Customer waiting? With Rush, your order goes to the front of the line and is driven straight to the drop-off. No stops for other orders in between.',
     sections: [
-      ['About 2 hours around Columbia', 'For trips within about 50 miles of the pickup, Rush delivery usually takes about 2 hours or less from booking. Longer trips take as long as the drive, and your quote shows the estimate before you book.'],
+      ['About 2 hours around Columbia', 'For trips within about 50 miles of the pickup, Rush delivery usually takes about 2 hours. Rush orders are handled before standard ones. Longer trips take as long as the drive, and your quote shows the estimate before you book.'],
       ['Follow it the whole way', 'You get a tracking link to watch the driver on the map, and we confirm the delivery with a photo, signature and GPS location so you know exactly when it arrived and who signed for it.'],
     ],
     faqs: [
@@ -115,7 +115,7 @@ const SERVICES = [
       ['The right vehicle for the part', 'A car for small parts and boxes, a minivan for several boxes, and a pickup truck for bulky items like bumpers, wheels and exhaust parts. No single piece over 75 lbs.'],
     ],
     faqs: [
-      ['Can you pick up from a parts store and bring it to my shop?', 'Yes. Put the store as the pickup and your shop as the drop-off. With Rush, a driver goes right away.'],
+      ['Can you pick up from a parts store and bring it to my shop?', 'Yes. Put the store as the pickup and your shop as the drop-off. With Rush, it goes to the front of the line.'],
       ['Do you offer business accounts?', 'Yes. Shops that book often can set up a business account and add their team. Contact us and we\'ll get you set up.'],
     ],
   },
