@@ -155,8 +155,11 @@ export function ChargesNotice({ fees }) {
         <li><strong>Weight:</strong> the price uses the weight you enter. If the shipment is heavier, the difference can be charged.</li>
         <li><strong>${fees.maxPieceLbs} lbs per piece, max:</strong> we can't move any single piece heavier than that. If the driver finds
           one at pickup, they'll decline it and a failed-attempt charge may apply.</li>
-        <li><strong>Loading help and stairs:</strong> if the driver has to load, unload or carry items inside and it wasn't
-          booked, it can be added to your total.</li>
+        ${fees.offerHelp
+          ? html`<li><strong>Loading help and stairs:</strong> if the driver has to load, unload or carry items inside and it wasn't
+          booked, it can be added to your total.</li>`
+          : html`<li><strong>Loading and unloading:</strong> please have someone at each stop to load and unload. Our driver
+          transports the shipment but doesn't load, unload or carry items inside.</li>`}
         <li><strong>Return trips and failed attempts:</strong> if no one is available, the location is closed, or items must go back to the pickup.</li>
       </ul>
       <p class="small muted">We email you the reason and amount with any additional charge.</p>
@@ -338,7 +341,7 @@ export function NewOrderPage() {
                 </label>`)}
             </div>
           </div>
-          ${fees && html`
+          ${fees?.offerHelp && html`
             <div class="field">
               <span class="field-label">Extras</span>
               <div class="choice-grid">
@@ -377,7 +380,7 @@ export function NewOrderPage() {
             <${Field} label="Pickup time" hint="Leave empty for as soon as possible.">
               <input type="datetime-local" ...${bind('scheduledAt')} />
             <//>
-            <${Field} label="Total weight (lbs)" hint="Weight only adds to the price if our driver loads or carries the shipment (Loading help or Inside delivery).">
+            <${Field} label="Total weight (lbs)" hint=${fees?.offerHelp ? 'Weight only adds to the price if our driver loads or carries the shipment (Loading help or Inside delivery).' : 'Used to pick a vehicle that fits. You load and unload the shipment.'}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
             <//>
             <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" ...${bind('numberOfPieces')} /><//>
@@ -865,7 +868,7 @@ export function OrderPage({ id }) {
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}${order.maxPieceLbs != null ? ` · heaviest ${order.maxPieceLbs} lbs` : ''}</dd>
               <dt>Pickup time</dt><dd>${order.scheduledAt ? formatDate(order.scheduledAt) : 'ASAP'}</dd>
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
-              <dt>Extras</dt><dd>${order.addOns.length ? order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ') : '—'}</dd>
+              ${order.addOns.length > 0 && html`<dt>Extras</dt><dd>${order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ')}</dd>`}
               <dt>Distance</dt><dd>${order.distanceMiles != null ? `about ${order.distanceMiles} mi` : '—'}</dd>
               <dt>Price</dt><dd>${awaitingPrice ? 'Waiting for our price' : `${formatMoney(order.priceCents)}${order.priceIsCustom ? ' (set by dispatch)' : ''}`}</dd>
             </dl>

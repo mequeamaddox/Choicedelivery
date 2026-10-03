@@ -126,6 +126,9 @@ const DEFAULT_FEES = {
   extraHolidayDates: [], // 'YYYY-MM-DD' (Columbia time), e.g. a closure you want charged as a holiday
   maxPieceLbs: 75, // no single piece heavier than this is accepted (one person has to lift it)
   extraStopCents: 1000, // each stop beyond one pickup and one drop-off
+  // Loading help / inside delivery are off until we offer helpers on the platform; the switch is in
+  // Account -> Fees. While off, they aren't offered, priced or chargeable, and weight adds no fee.
+  offerHelp: false,
   addOns: {
     loading_help: { label: 'Loading/unloading help', description: 'Driver helps load and unload', cents: 2500 },
     inside_delivery: { label: 'Inside delivery / stairs', description: 'Carried inside, upstairs or to a specific room', cents: 2000 },
@@ -227,6 +230,7 @@ function normalizeFees(saved) {
     maxPieceLbs: Math.max(1, cleanCents(f.maxPieceLbs, DEFAULT_FEES.maxPieceLbs)),
     extraStopCents: cleanCents(f.extraStopCents, DEFAULT_FEES.extraStopCents),
     addOns,
+    offerHelp: f.offerHelp === true,
     waitFreeMinutes: cleanCents(f.waitFreeMinutes, DEFAULT_FEES.waitFreeMinutes),
     waitBlockMinutes: Math.max(1, cleanCents(f.waitBlockMinutes, DEFAULT_FEES.waitBlockMinutes)),
     waitBlockCents: cleanCents(f.waitBlockCents, DEFAULT_FEES.waitBlockCents),
@@ -378,6 +382,7 @@ function calculatePrice({
   const lbs = weightLbs == null || weightLbs === '' ? null : Number(weightLbs);
   // Weight is charged only when our driver does the lifting (loading help or carrying it inside);
   // when the shipper loads it, weight just decides which vehicle fits.
+  if (!fees.offerHelp) addOns = [];
   const driverHandles = addOns.some((k) => DRIVER_HANDLING_ADDONS.includes(k));
   let weightFeeCents = 0;
   let weightTier = null;

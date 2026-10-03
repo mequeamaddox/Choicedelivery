@@ -40,7 +40,8 @@ router.get('/pricing', asyncH(async (req, res) => {
     planLocalMiles: PLAN_LOCAL_MILES,
     planRushCents: PLAN_RUSH_CENTS,
     fees: { ...fees, driverPay: undefined }, // what drivers earn is internal
-    chargeKinds: CHARGE_KINDS,
+    // Loading help charges only while helpers are offered.
+    chargeKinds: fees.offerHelp ? CHARGE_KINDS : Object.fromEntries(Object.entries(CHARGE_KINDS).filter(([k]) => k !== 'labor')),
   });
 }));
 
@@ -172,7 +173,7 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
     priceCents: quote.totalCents,
     maxPieceLbs: fees.maxPieceLbs,
     pieceProblem,
-    extraChargesNote: `Waiting more than ${fees.waitFreeMinutes} minutes at a stop, loading help, stairs, return trips `
+    extraChargesNote: `Waiting more than ${fees.waitFreeMinutes} minutes at a stop, ${fees.offerHelp ? 'loading help, stairs, ' : ''}return trips `
       + 'and failed attempts are added to the total if they happen.',
     outOfArea,
     note: quote.needsReview

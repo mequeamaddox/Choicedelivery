@@ -429,7 +429,7 @@ function FeesEditor() {
       <p class="muted small">Your rate card. Customers see these prices when they book; saved changes apply to new quotes and orders.</p>
       <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
       <h3>Weight</h3>
-      <p class="muted small">Weight fees apply only when our driver does the lifting (the customer books Loading help or Inside delivery). When the shipper loads it, weight only decides which vehicle fits.</p>
+      <p class="muted small">Weight fees apply only when our driver does the lifting (Loading help or Inside delivery, when offered). When the shipper loads it, weight only decides which vehicle fits.</p>
       <${Field} label="Heaviest single piece allowed (lbs)" hint="Orders with any piece heavier than this can't be booked.">
         <input type="number" min="1" step="1" value=${fees.maxPieceLbs} onInput=${(e) => set({ maxPieceLbs: Number(e.target.value) })} />
       <//>
@@ -508,11 +508,16 @@ function FeesEditor() {
           onChange=${(e) => set({ extraHolidayDates: e.target.value.split(/[\s,]+/).filter(Boolean) })} />
       <//>
       <h3>Stops & add-ons</h3>
+      <label class="inline-check small">
+        <input type="checkbox" checked=${!!fees.offerHelp} onChange=${(e) => set({ offerHelp: e.target.checked })} />
+        Offer loading help and inside delivery (turn on once helpers are approved on the platform)
+      </label>
+      <p class="muted small">While off, customers load and unload themselves: these extras aren't offered or charged, and weight adds no fee.</p>
       <div class="grid-2">
         <${Field} label="Each extra stop ($)" hint="Beyond one pickup and one drop-off.">
           <input type="number" min="0" step="0.01" value=${dollars(fees.extraStopCents)} onInput=${(e) => set({ extraStopCents: cents(e.target.value) })} />
         <//>
-        ${Object.entries(fees.addOns).map(([k, a]) => html`
+        ${fees.offerHelp && Object.entries(fees.addOns).map(([k, a]) => html`
           <${Field} label=${`${a.label} ($)`} hint=${a.description}>
             <input type="number" min="0" step="0.01" value=${dollars(a.cents)}
               onInput=${(e) => set({ addOns: { ...fees.addOns, [k]: { ...a, cents: cents(e.target.value) } } })} />
@@ -535,7 +540,7 @@ function FeesEditor() {
         <${Field} label="Share of the mileage fee (%)" hint="The per-mile charge after the included miles.">
           <input type="number" min="0" max="100" step="1" value=${fees.driverPay.mileagePercent}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, mileagePercent: Number(e.target.value) } })} /><//>
-        <${Field} label="Share of extras (%)" hint="Loading help and inside delivery (booked or added later), wait time, return trips and other added charges.">
+        <${Field} label="Share of extras (%)" hint="Wait time, return trips, failed attempts and other added charges (and loading help, when offered).">
           <input type="number" min="0" max="100" step="1" value=${fees.driverPay.extrasPercent}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, extrasPercent: Number(e.target.value) } })} /><//>
       </div>

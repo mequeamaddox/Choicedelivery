@@ -940,7 +940,12 @@ test('weight tiers, extra stops, add-ons and wait time are priced like the fee s
   const plain = calculatePrice({ distanceMiles: 3, at });
   assert.equal(plain.totalCents, 2500);
   assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 50 }).weightFeeCents, 0);
-  const q = calculatePrice({ distanceMiles: 3, at, weightLbs: 120, stopCount: 4, addOns: ['loading_help', 'inside_delivery'] });
+  // Helpers off (the default): add-ons aren't priced and weight adds nothing.
+  const off = calculatePrice({ distanceMiles: 3, at, weightLbs: 120, addOns: ['loading_help'] });
+  assert.deepEqual(off.addOns, []);
+  assert.equal(off.totalCents, 2500);
+  const HELP = { ...DEFAULT_FEES, offerHelp: true };
+  const q = calculatePrice({ distanceMiles: 3, at, weightLbs: 120, stopCount: 4, addOns: ['loading_help', 'inside_delivery'], fees: HELP });
   assert.equal(q.weightTier, '51–150 lbs');
   assert.equal(q.weightFeeCents, 1500);
   assert.equal(q.extraStops, 2);
@@ -956,7 +961,7 @@ test('weight tiers, extra stops, add-ons and wait time are priced like the fee s
   const selfLoaded = calculatePrice({ distanceMiles: 3, at, weightLbs: 120 });
   assert.equal(selfLoaded.weightFeeCents, 0);
   assert.equal(selfLoaded.totalCents, 2500);
-  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 120, addOns: ['inside_delivery'] }).weightFeeCents, 1500);
+  assert.equal(calculatePrice({ distanceMiles: 3, at, weightLbs: 120, addOns: ['inside_delivery'], fees: HELP }).weightFeeCents, 1500);
 
   // Vehicles: their own base and per-mile rate; capacity limits send it to review.
   const car = calculatePrice({ distanceMiles: 15, at, vehicleType: 'Car', weightLbs: 100 });
@@ -1007,7 +1012,7 @@ test('extra charges: booked add-ons, owner-editable fees, wait-time charges paid
     r = await call('GET', '/settings/fees', { token: t.dispatcher });
     const fees = r.data.fees;
     assert.equal((await call('PUT', '/settings/fees', { token: t.dispatcher, body: fees })).status, 403);
-    r = await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, addOns: { ...fees.addOns, loading_help: { cents: 3000 } } } });
+    r = await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, offerHelp: true, addOns: { ...fees.addOns, loading_help: { cents: 3000 } } } });
     assert.equal(r.data.fees.addOns.loading_help.cents, 3000);
     assert.equal((await call('GET', '/public/pricing')).data.fees.addOns.loading_help.cents, 3000, 'published for the booking form');
 
@@ -1885,7 +1890,7 @@ test('pickups away from Columbia: travel is charged, and far ones need approval'
 
 test('drivers get their extras share of loading help booked up front', () => {
   const { calculatePrice, driverPayFor, normalizeFees } = require('../src/pricing');
-  const fees = normalizeFees({ driverPay: { perJobCents: 1000, mileagePercent: 70, extrasPercent: 50 } });
+  const fees = normalizeFees({ offerHelp: true, driverPay: { perJobCents: 1000, mileagePercent: 70, extrasPercent: 50 } });
   const q = calculatePrice({ distanceMiles: 5, vehicleType: 'Car', addOns: ['loading_help'], fees, at: new Date('2026-10-07T15:00:00Z') });
   assert.equal(q.totalCents, 2500 + 2500);
   assert.equal(driverPayFor(q.totalCents, 0, fees, q), 1000 + 1250, '$10 + 50% of the $25 loading help');

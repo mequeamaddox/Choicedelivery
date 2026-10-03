@@ -89,7 +89,8 @@ async function insertStops(client, orderId, stops) {
 async function createOrder(client, actor, body) {
   const stops = normalizeStops(body.stops);
   const isQuote = body.saveAsQuote === true;
-  const addOns = normalizeAddOns(body.addOns);
+  const requestedAddOns = normalizeAddOns(body.addOns); // unknown ones are still rejected
+  const addOns = (await getFees(client)).offerHelp ? requestedAddOns : [];
   const maxPieceLbs = parsePieceLbs(body.maxPieceLbs);
   if (maxPieceLbs == null && actor.role === 'shipper') {
     throw new HttpError(400, 'Enter the weight of the heaviest single piece');
