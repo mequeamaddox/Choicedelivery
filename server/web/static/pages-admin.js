@@ -534,7 +534,7 @@ function FeesEditor() {
         <${Field} label="Share of the mileage fee (%)" hint="The per-mile charge after the included miles.">
           <input type="number" min="0" max="100" step="1" value=${fees.driverPay.mileagePercent}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, mileagePercent: Number(e.target.value) } })} /><//>
-        <${Field} label="Share of extra charges (%)" hint="Wait time, loading help and other charges added after booking.">
+        <${Field} label="Share of extras (%)" hint="Loading help and inside delivery (booked or added later), wait time, return trips and other added charges.">
           <input type="number" min="0" max="100" step="1" value=${fees.driverPay.extrasPercent}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, extrasPercent: Number(e.target.value) } })} /><//>
       </div>

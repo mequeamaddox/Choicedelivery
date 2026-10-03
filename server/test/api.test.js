@@ -1876,3 +1876,12 @@ test('pickups away from Columbia: travel is charged, and far ones need approval'
   assert.equal(r.data.priceCents, held.priceCents, 'same price the customer was quoted');
   await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
 });
+
+test('drivers get their extras share of loading help booked up front', () => {
+  const { calculatePrice, driverPayFor, normalizeFees } = require('../src/pricing');
+  const fees = normalizeFees({ driverPay: { perJobCents: 1000, mileagePercent: 70, extrasPercent: 50 } });
+  const q = calculatePrice({ distanceMiles: 5, vehicleType: 'Car', addOns: ['loading_help'], fees, at: new Date('2026-10-07T15:00:00Z') });
+  assert.equal(q.totalCents, 2500 + 2500);
+  assert.equal(driverPayFor(q.totalCents, 0, fees, q), 1000 + 1250, '$10 + 50% of the $25 loading help');
+  assert.equal(driverPayFor(q.totalCents, 1000, fees, q), 1000 + 1250 + 500, 'plus 50% of a $10 charge added later');
+});

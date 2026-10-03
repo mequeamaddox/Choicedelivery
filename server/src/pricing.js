@@ -146,7 +146,9 @@ function driverPayFor(priceCents, extrasCents, fees, breakdown = null) {
   const { perJobCents, mileagePercent, extrasPercent } = fees.driverPay;
   const mileage = Math.round((((breakdown?.extraMileageCents || 0) + (breakdown?.travelCents || 0)) * mileagePercent) / 100);
   const trip = Math.min(priceCents, perJobCents + mileage);
-  return trip + Math.round(((extrasCents || 0) * extrasPercent) / 100);
+  // Extras the driver does the work for: booked up front (loading help, inside delivery) or added later.
+  const bookedExtras = (breakdown?.addOns || []).reduce((sum, a) => sum + (a.cents || 0), 0);
+  return trip + Math.round((((extrasCents || 0) + bookedExtras) * extrasPercent) / 100);
 }
 
 // Charges added after booking (by dispatch), with the reason shown to the customer.
