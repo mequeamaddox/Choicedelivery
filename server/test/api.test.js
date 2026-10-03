@@ -1761,39 +1761,60 @@ test('miles past 100 cost 50% more per mile, and drivers share it', () => {
   assert.equal(calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees: custom, at: WEEKDAY }).longMileageCents, 50 * 180);
 });
 
-test('unassigning a driver re-alerts the other drivers and tells the removed one', async () => {
+test('each driver is alerted about a job once; owners every time, even after being taken off it', async () => {
   const me = async (tk) => (await call('GET', '/users/me', { token: tk })).data;
   const d1 = await me(t.d1);
-  // Every approved driver with a phone registered for push.
   const { rows: drivers } = await db.query("SELECT id FROM users WHERE role = 'driver' AND is_active AND driver_status = 'approved' AND NOT is_demo");
   for (const d of drivers) await db.query('UPDATE users SET push_token = $2 WHERE id = $1', [d.id, `ExponentPushToken[${d.id}]`]);
+  const tokenOf = (id) => `ExponentPushToken[${id}]`;
   const pushes = [];
   const realFetch = global.fetch;
   global.fetch = async (url, opts) => {
     if (String(url).startsWith('https://exp.host/')) { pushes.push(...JSON.parse(opts.body)); return { ok: true, json: async () => ({}) }; }
     return realFetch(url, opts);
   };
-  const settle = () => new Promise((r) => setTimeout(r, 150));
+  const settle = () => new Promise((r) => setTimeout(r, 200));
+  const jobAlerts = () => pushes.filter((p) => /job available/.test(p.title));
+  const alertedTokens = async (orderId) => new Set((await db.query(
+    'SELECT driver_id FROM order_driver_alerts WHERE order_id = $1', [orderId])).rows.map((x) => tokenOf(x.driver_id)));
   try {
+    // A regular driver.
     let r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody() });
     const order = r.data;
     await settle();
-    assert.ok(pushes.some((p) => p.title === 'New job available'), 'new loads alert drivers');
-    r = await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: d1.id } });
-    assert.equal(r.data.status, 'accepted');
+    assert.ok(jobAlerts().some((p) => p.to === tokenOf(d1.id)), 'new loads alert drivers');
+    await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: d1.id } });
     await settle();
     pushes.length = 0;
+    let before = await alertedTokens(order.id);
     r = await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: null } });
     assert.equal(r.data.status, 'pending');
     await settle();
-    const fresh = pushes.filter((p) => p.title === 'New job available');
-    assert.ok(fresh.length >= 1, 'the job goes back out as a new alert');
-    assert.ok(!fresh.some((p) => p.to === `ExponentPushToken[${d1.id}]`), 'not re-offered to the driver taken off it');
-    assert.ok(pushes.some((p) => p.to === `ExponentPushToken[${d1.id}]` && p.title === 'Job removed'), 'the removed driver is told');
-    assert.equal(fresh[0].data.orderId, order.id);
+    assert.ok(!jobAlerts().some((p) => before.has(p.to)), 'drivers already alerted about this job are not alerted again');
+    assert.ok(!jobAlerts().some((p) => p.to === tokenOf(d1.id)), 'nor the driver taken off it');
+    assert.ok(pushes.some((p) => p.to === tokenOf(d1.id) && p.title === 'Job removed'), 'the removed driver is told');
+    // A driver who never heard about it (newly registered phone) still gets it when it goes back out.
+    await db.query('DELETE FROM order_driver_alerts WHERE order_id = $1 AND driver_id <> $2', [order.id, d1.id]);
+    await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: d1.id } });
+    pushes.length = 0;
+    await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: null } });
+    await settle();
+    assert.ok(jobAlerts().length >= 1, 'drivers not yet alerted get it');
+    assert.ok(!jobAlerts().some((p) => p.to === tokenOf(d1.id)), 'not the regular driver who was taken off it');
+
+    // An owner gets every alert, including after being taken off the job.
+    await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: true } });
+    await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: d1.id } });
+    pushes.length = 0;
+    before = await alertedTokens(order.id);
+    await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: null } });
+    await settle();
+    assert.ok(jobAlerts().some((p) => p.to === tokenOf(d1.id)), 'owners are re-alerted');
+    assert.ok(!jobAlerts().some((p) => p.to !== tokenOf(d1.id) && before.has(p.to)), 'other drivers already alerted are not');
     await call('POST', `/orders/${order.id}/cancel`, { token: t.admin });
   } finally {
     global.fetch = realFetch;
+    await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: false } });
     await db.query("UPDATE users SET push_token = NULL WHERE push_token LIKE 'ExponentPushToken[%'");
   }
 });

@@ -14,28 +14,40 @@ async function sendExpo(messages) {
 
 const isExpoToken = (t) => typeof t === 'string' && t.startsWith('ExponentPushToken');
 
-// Tells active drivers about a new open job (online drivers only, if any are online).
-// excludeDriverId: a driver who just came off this job (not re-offered it).
+// Tells active drivers about an open job (online drivers only, if any are online; owners always). Each driver hears
+// about a job once: when it goes back out (a driver was taken off it), only drivers who weren't alerted
+// before get it, and not the driver who was removed. Owners (who drive with no payout) get every alert.
+// excludeDriverId: a driver who just came off this job.
 async function notifyDriversOfOrder(order, { excludeDriverId = null } = {}) {
   if (order.status !== 'pending' || order.driver) return;
   const { rows } = await db.query(
-    `SELECT push_token, is_online FROM users
-     WHERE role = 'driver' AND is_active AND driver_status = 'approved' AND NOT is_demo AND push_token IS NOT NULL
-       AND id IS DISTINCT FROM $1`, [excludeDriverId]);
-  const online = rows.filter((r) => r.is_online);
-  const targets = (online.length ? online : rows).map((r) => r.push_token).filter(isExpoToken);
+    `SELECT u.id, u.push_token, u.is_online, u.no_driver_pay,
+            EXISTS (SELECT 1 FROM order_driver_alerts a WHERE a.order_id = $1 AND a.driver_id = u.id) AS alerted
+     FROM users u
+     WHERE u.role = 'driver' AND u.is_active AND u.driver_status = 'approved' AND NOT u.is_demo AND u.push_token IS NOT NULL`,
+    [order.id]);
+  const eligible = rows.filter((r) => isExpoToken(r.push_token)
+    && (r.no_driver_pay || (!r.alerted && r.id !== excludeDriverId)));
+  // Regular drivers: online ones if any are online. Owners: always, online or not.
+  const regular = eligible.filter((r) => !r.no_driver_pay);
+  const online = regular.filter((r) => r.is_online);
+  const recipients = [...(online.length ? online : regular), ...eligible.filter((r) => r.no_driver_pay)];
+  if (!recipients.length) return;
   const { rows: [pay] } = await db.query('SELECT driver_pay_cents FROM orders WHERE id = $1', [order.id]);
   const payText = pay?.driver_pay_cents != null ? `$${(pay.driver_pay_cents / 100).toFixed(2)} · ` : '';
   const pickup = order.stops.find((s) => s.type === 'pickup');
   const dropoff = [...order.stops].reverse().find((s) => s.type === 'dropoff');
-  await sendExpo(targets.map((to) => ({
-    to,
+  await sendExpo(recipients.map((r) => ({
+    to: r.push_token,
     sound: 'default',
     channelId: 'jobs', // the driver app's high-priority Android channel
     title: order.serviceLevel === 'rush' ? 'New RUSH job available' : 'New job available',
     body: `${payText}${order.distanceMiles != null ? `${order.distanceMiles} mi · ` : ''}${pickup?.address} → ${dropoff?.address}`,
     data: { orderId: order.id, requestId: order.id },
   })));
+  await db.query(
+    `INSERT INTO order_driver_alerts (order_id, driver_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
+    [order.id, recipients.map((r) => r.id)]);
 }
 
 async function notifyUser(userId, title, body, data = {}) {
