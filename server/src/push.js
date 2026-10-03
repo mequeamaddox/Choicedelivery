@@ -15,11 +15,13 @@ async function sendExpo(messages) {
 const isExpoToken = (t) => typeof t === 'string' && t.startsWith('ExponentPushToken');
 
 // Tells active drivers about a new open job (online drivers only, if any are online).
-async function notifyDriversOfOrder(order) {
-  if (order.status !== 'pending') return;
+// excludeDriverId: a driver who just came off this job (not re-offered it).
+async function notifyDriversOfOrder(order, { excludeDriverId = null } = {}) {
+  if (order.status !== 'pending' || order.driver) return;
   const { rows } = await db.query(
     `SELECT push_token, is_online FROM users
-     WHERE role = 'driver' AND is_active AND driver_status = 'approved' AND NOT is_demo AND push_token IS NOT NULL`);
+     WHERE role = 'driver' AND is_active AND driver_status = 'approved' AND NOT is_demo AND push_token IS NOT NULL
+       AND id IS DISTINCT FROM $1`, [excludeDriverId]);
   const online = rows.filter((r) => r.is_online);
   const targets = (online.length ? online : rows).map((r) => r.push_token).filter(isExpoToken);
   const { rows: [pay] } = await db.query('SELECT driver_pay_cents FROM orders WHERE id = $1', [order.id]);

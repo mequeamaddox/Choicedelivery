@@ -483,6 +483,7 @@ router.post('/:id/charges/:chargeId/waive', requireRole('admin', 'dispatcher'), 
 // Dispatch assigns (or reassigns) a driver. driverId: null puts it back in the open pool.
 router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   const driverId = req.body?.driverId || null;
+  let previousDriverId = null;
   await db.withTx(async (client) => {
     let driverIsDemo = null;
     if (driverId) {
@@ -493,9 +494,10 @@ router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req
       const blocker = rows[0].is_demo ? null : driverWorkBlocker(await getUser(driverId, client));
       if (blocker) throw new HttpError(400, `That driver can't take jobs right now: ${blocker}`);
     }
-    const { rows } = await client.query('SELECT status, is_demo FROM orders WHERE id = $1 FOR UPDATE', [req.params.id])
+    const { rows } = await client.query('SELECT status, is_demo, driver_id FROM orders WHERE id = $1 FOR UPDATE', [req.params.id])
       .catch(() => ({ rows: [] }));
     if (!rows[0]) throw new HttpError(404, 'Order not found');
+    previousDriverId = rows[0].driver_id;
     if (driverIsDemo !== null && driverIsDemo !== rows[0].is_demo) {
       throw new HttpError(400, rows[0].is_demo ? 'Demo orders can only go to demo drivers' : 'Demo drivers cannot take real orders');
     }
@@ -514,12 +516,23 @@ router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req
     await recordEvent(client, req.params.id, req.user.id, driverId ? 'assigned' : 'unassigned', { driverId });
     await refreshDriverPay(client, req.params.id); // owners who drive aren't paid out
   });
+  const pushFailed = (e) => console.error('Push notify failed:', e);
   if (driverId) {
-    notifyUser(driverId, 'New job assigned', 'Dispatch assigned you a job', { orderId: req.params.id })
-      .catch((e) => console.error('Push notify failed:', e));
+    notifyUser(driverId, 'New job assigned', 'Dispatch assigned you a job', { orderId: req.params.id }).catch(pushFailed);
     emailShipper(req.params.id, 'driver_assigned');
   }
-  res.json(await getOrderFor(req.user, req.params.id));
+  // The driver taken off the job is told, and an unassigned job goes back out to the other drivers
+  // as a fresh "New job available" alert.
+  if (previousDriverId && previousDriverId !== driverId) {
+    notifyUser(previousDriverId, 'Job removed', 'Dispatch took you off a job. It is no longer on your list.')
+      .catch(pushFailed);
+  }
+  const updated = await getOrderFor(req.user, req.params.id);
+  // (Unpaid card orders stay hidden from drivers until paid.)
+  if (!driverId && previousDriverId && updated.paymentStatus !== 'unpaid' && !updated.isDemo) {
+    notifyDriversOfOrder(updated, { excludeDriverId: previousDriverId }).catch(pushFailed);
+  }
+  res.json(updated);
 }));
 
 // Driver claims an open job. Atomic, so two drivers can't accept the same order.

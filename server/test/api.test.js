@@ -1760,3 +1760,40 @@ test('miles past 100 cost 50% more per mile, and drivers share it', () => {
   const custom = normalizeFees({ longDistance: { afterMiles: 150, percent: 20 } });
   assert.equal(calculatePrice({ distanceMiles: 200, vehicleType: 'Car', fees: custom, at: WEEKDAY }).longMileageCents, 50 * 180);
 });
+
+test('unassigning a driver re-alerts the other drivers and tells the removed one', async () => {
+  const me = async (tk) => (await call('GET', '/users/me', { token: tk })).data;
+  const d1 = await me(t.d1);
+  // Every approved driver with a phone registered for push.
+  const { rows: drivers } = await db.query("SELECT id FROM users WHERE role = 'driver' AND is_active AND driver_status = 'approved' AND NOT is_demo");
+  for (const d of drivers) await db.query('UPDATE users SET push_token = $2 WHERE id = $1', [d.id, `ExponentPushToken[${d.id}]`]);
+  const pushes = [];
+  const realFetch = global.fetch;
+  global.fetch = async (url, opts) => {
+    if (String(url).startsWith('https://exp.host/')) { pushes.push(...JSON.parse(opts.body)); return { ok: true, json: async () => ({}) }; }
+    return realFetch(url, opts);
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  try {
+    let r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody() });
+    const order = r.data;
+    await settle();
+    assert.ok(pushes.some((p) => p.title === 'New job available'), 'new loads alert drivers');
+    r = await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: d1.id } });
+    assert.equal(r.data.status, 'accepted');
+    await settle();
+    pushes.length = 0;
+    r = await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: null } });
+    assert.equal(r.data.status, 'pending');
+    await settle();
+    const fresh = pushes.filter((p) => p.title === 'New job available');
+    assert.ok(fresh.length >= 1, 'the job goes back out as a new alert');
+    assert.ok(!fresh.some((p) => p.to === `ExponentPushToken[${d1.id}]`), 'not re-offered to the driver taken off it');
+    assert.ok(pushes.some((p) => p.to === `ExponentPushToken[${d1.id}]` && p.title === 'Job removed'), 'the removed driver is told');
+    assert.equal(fresh[0].data.orderId, order.id);
+    await call('POST', `/orders/${order.id}/cancel`, { token: t.admin });
+  } finally {
+    global.fetch = realFetch;
+    await db.query("UPDATE users SET push_token = NULL WHERE push_token LIKE 'ExponentPushToken[%'");
+  }
+});
