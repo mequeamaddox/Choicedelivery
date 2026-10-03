@@ -554,6 +554,14 @@ test('landing page is served on www; the app on other hosts', async () => {
   assert.equal(r.status, 200);
   assert.match(r.body, /Terms &amp; Conditions/);
   assert.match(r.body, /75 lbs/);
+  r = await get('choicedeliverysc.com', '/courier-lexington-sc');
+  assert.equal(r.status, 200, 'area pages are served');
+  assert.match(r.body, /<link rel="canonical" href="https:\/\/choicedeliverysc.com\/courier-lexington-sc">/);
+  assert.equal(r.headers['x-robots-tag'], undefined, 'and can be indexed');
+  r = await get('choicedeliverysc.com', '/sitemap.xml');
+  assert.match(r.body, /auto-parts-delivery-columbia-sc/);
+  r = await get('choicedeliverysc.com', '/local-pages.js');
+  assert.notEqual(r.status, 200, 'the page source list is not served');
   r = await get('choicedeliverysc.com', '/logo.png');
   assert.match(r.headers['content-type'], /image\/png/);
   r = await get('www.choicedeliverysc.com', '/privacy.html');

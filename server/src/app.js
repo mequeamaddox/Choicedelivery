@@ -49,6 +49,8 @@ const LANDING_FILES = {
   '/logo.png': 'logo.png',
   '/favicon.png': 'favicon.png',
   '/favicon.ico': 'favicon.png',
+  // Area and service pages (landing/local-pages.js), e.g. /courier-lexington-sc
+  ...Object.fromEntries(require('../landing/local-pages').ALL.map((p) => [`/${p.slug}`, `${p.slug}.html`])),
 };
 // The business-plan parts of the home page are marked <!-- business-plans -->…<!-- /business-plans -->
 // (optionally with <!-- business-plans:else --> shown instead when hidden), and /* business-plans */

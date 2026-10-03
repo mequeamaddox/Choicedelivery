@@ -36,7 +36,7 @@
       "areaServed": [
         { "@type": "City", "name": "Columbia, SC" }, { "@type": "City", "name": "Lexington, SC" },
         { "@type": "City", "name": "Irmo, SC" }, { "@type": "City", "name": "West Columbia, SC" },
-        { "@type": "City", "name": "Cayce, SC" }, { "@type": "City", "name": "Blythewood, SC" },
+        { "@type": "City", "name": "Cayce, SC" }, { "@type": "City", "name": "Blythewood, SC" }, { "@type": "City", "name": "Chapin, SC" },
         { "@type": "State", "name": "South Carolina" }
       ],
       "openingHoursSpecification": [{
@@ -45,10 +45,10 @@
         "opens": "08:00", "closes": "22:00"
       }],
       "makesOffer": [
-        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Same-day courier delivery" } },
-        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Rush delivery (about 2 hours locally)" } },
-        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Legal document and court filing delivery" } },
-        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Medical office courier" } }
+        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Same-day courier delivery", "url": "https://choicedeliverysc.com/same-day-delivery-columbia-sc" } },
+        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Rush delivery (about 2 hours locally)", "url": "https://choicedeliverysc.com/rush-delivery-columbia-sc" } },
+        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Auto parts delivery", "url": "https://choicedeliverysc.com/auto-parts-delivery-columbia-sc" } },
+        { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Local business courier", "url": "https://choicedeliverysc.com/business-delivery-columbia-sc" } }
       ]
     }
     </script>
@@ -57,7 +57,7 @@
     <link rel="icon" type="image/png" href="favicon.png">
     
     <!-- Tailwind CSS, compiled (npm run build:landing-css) -->
-    <link rel="stylesheet" href="/site.css?v=5">
+    <link rel="stylesheet" href="/site.css?v=6">
     
     <!-- Custom CSS -->
     <style>
@@ -372,6 +372,11 @@
                             <span class="font-medium">And Many More</span>
                         </div>
                     </div>
+                    <p class="mt-8 text-gray-600"><span class="font-semibold text-gray-800">Around Columbia:</span>
+                        <a href="/courier-lexington-sc" class="text-choice-teal hover:underline">Lexington</a> &middot;
+                        <a href="/courier-irmo-chapin-sc" class="text-choice-teal hover:underline">Irmo &amp; Chapin</a> &middot;
+                        <a href="/courier-west-columbia-cayce-sc" class="text-choice-teal hover:underline">West Columbia &amp; Cayce</a> &middot;
+                        <a href="/courier-blythewood-sc" class="text-choice-teal hover:underline">Blythewood &amp; Northeast</a></p>
                 </div>
                 
                 <div class="bg-gray-100 rounded-xl p-8">
@@ -717,8 +722,10 @@
                 <div>
                     <h4 class="text-lg font-semibold mb-4">Services</h4>
                     <ul class="space-y-2 text-choice-mint-light">
-                        <li><a href="#services" class="hover:text-white">Rush Delivery</a></li>
-                        <li><a href="#services" class="hover:text-white">Standard Delivery</a></li>
+                        <li><a href="/rush-delivery-columbia-sc" class="hover:text-white">Rush Delivery</a></li>
+                        <li><a href="/same-day-delivery-columbia-sc" class="hover:text-white">Same-Day Delivery</a></li>
+                        <li><a href="/auto-parts-delivery-columbia-sc" class="hover:text-white">Auto Parts Delivery</a></li>
+                        <li><a href="/business-delivery-columbia-sc" class="hover:text-white">Business Deliveries</a></li>
                         <!-- business-plans --><li><a href="#business" class="hover:text-white">Business Contracts</a></li><!-- /business-plans -->
                         <li><a href="#app" class="hover:text-white">Online Ordering</a></li>
                     </ul>
