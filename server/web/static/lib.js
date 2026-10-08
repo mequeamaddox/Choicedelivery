@@ -15,6 +15,38 @@ const storage = {
   remove(k) { try { localStorage.removeItem(k); } catch { /* private mode */ } },
 };
 
+// ---------- Attribution ----------
+// Where this visitor came from, so signups can be credited to the ad that brought them (src/attribution.js).
+// The website passes what it remembered as ?a={...} on links here; an ad pointing straight at the app
+// brings its own utm_*/click-ID parameters. Kept for 30 days; a new ad click replaces it.
+const ATTR_KEY = 'cd_attribution';
+const ATTR_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+  'fbclid', 'gclid', 'gbraid', 'wbraid', 'msclkid', 'ttclid', 'li_fat_id'];
+function captureAttribution() {
+  const q = new URLSearchParams(location.search);
+  let found = null;
+  try { found = q.has('a') ? JSON.parse(q.get('a')) : null; } catch { /* bad link */ }
+  if (!found || typeof found !== 'object') {
+    const hit = {};
+    ATTR_PARAMS.forEach((k) => { if (q.get(k)) hit[k] = q.get(k).slice(0, 300); });
+    if (Object.keys(hit).length) found = { ...hit, landingPage: location.pathname + location.hash, at: new Date().toISOString() };
+  }
+  if (found) storage.set(ATTR_KEY, JSON.stringify(found));
+  if (q.has('a') || ATTR_PARAMS.some((k) => q.has(k))) {
+    // Tidy the address bar (keeps the #/route).
+    ['a', ...ATTR_PARAMS].forEach((k) => q.delete(k));
+    const rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  }
+}
+captureAttribution();
+function attribution() {
+  try {
+    const v = JSON.parse(storage.get(ATTR_KEY));
+    return v && Date.now() - Date.parse(v.at) < 30 * 24 * 60 * 60 * 1000 ? v : {};
+  } catch { return {}; }
+}
+
 let token = storage.get(TOKEN_KEY);
 let currentUser = null;
 const sessionListeners = new Set();
@@ -76,13 +108,13 @@ export async function createOwner(fields) {
 
 // "Apply to drive": creates a driver account waiting for review and signs them in.
 export async function driverSignup(fields) {
-  const { token: t, user } = await api('/auth/driver-signup', { method: 'POST', body: fields });
+  const { token: t, user } = await api('/auth/driver-signup', { method: 'POST', body: { ...fields, attribution: attribution() } });
   setSession(t, user);
   return user;
 }
 
 export async function signup(fields) {
-  const { token: t, user } = await api('/auth/signup', { method: 'POST', body: fields });
+  const { token: t, user } = await api('/auth/signup', { method: 'POST', body: { ...fields, attribution: attribution() } });
   setSession(t, user);
   return user;
 }

@@ -10,6 +10,7 @@ const {
 } = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
 const { searchAddresses, locate, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
+const { cleanAttribution, logEvent } = require('../attribution');
 
 const router = express.Router();
 const limitWrites = rateLimit({ windowMs: 10 * 60 * 1000, max: 8 });
@@ -167,6 +168,14 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
   });
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
+  // The website's quote calculator sends `attribution` (even when empty); the app's booking form, which
+  // re-quotes as the customer edits, doesn't, so only website quotes are logged.
+  if (b.attribution !== undefined) {
+    logEvent('quote', cleanAttribution(b.attribution), {
+      pickup: str(stops[0]?.address).slice(0, 200), dropoff: str(stops[stops.length - 1]?.address).slice(0, 200),
+      serviceLevel, vehicleType: quote.vehicleType || null, totalCents: quote.totalCents, outOfArea,
+    });
+  }
   const pieceProblem = pieceWeightProblem({ maxPieceLbs: b.maxPieceLbs, weightLbs: quote.weightLbs, pieces: b.numberOfPieces }, fees);
   res.json({
     ...quote,
@@ -188,19 +197,24 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
   });
 }));
 
+// "facebook (campaign: Fall promo)" for the lead email; null for direct visits.
+const sourceLabel = (a) => a && (a.utm_campaign ? `${a.channel} (campaign: ${a.utm_campaign})` : a.channel);
+
 async function saveLead(req, lead) {
   // Hidden "website" field: humans leave it empty, spam bots fill it in.
   if (str(req.body?.website)) return;
+  const attribution = cleanAttribution(req.body?.attribution);
   const { rows } = await db.query(
-    `INSERT INTO leads (type, name, company, email, phone, message, plan, ip)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
-    [lead.type, lead.name, lead.company, lead.email, lead.phone, lead.message, lead.plan || null, req.ip]
+    `INSERT INTO leads (type, name, company, email, phone, message, plan, ip, attribution)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at`,
+    [lead.type, lead.name, lead.company, lead.email, lead.phone, lead.message, lead.plan || null, req.ip, attribution]
   );
+  logEvent(lead.type, attribution, { leadId: rows[0].id });
   const subject = lead.type === 'contract'
     ? `Business plan request: ${PLAN_NAMES[lead.plan] || lead.plan} — ${lead.company || lead.name}`
     : `Website message from ${lead.name}`;
   const rowsHtml = [['Name', lead.name], ['Company', lead.company], ['Email', lead.email], ['Phone', lead.phone],
-    ['Plan', lead.plan && PLAN_NAMES[lead.plan]], ['Message', lead.message]]
+    ['Plan', lead.plan && PLAN_NAMES[lead.plan]], ['Message', lead.message], ['Came from', sourceLabel(attribution)]]
     .filter(([, v]) => v).map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join('');
   const base = process.env.PUBLIC_URL || '';
   sendMail({

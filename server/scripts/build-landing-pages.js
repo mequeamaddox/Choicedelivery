@@ -143,6 +143,7 @@ ${p.faqs.map(([q, a]) => `                <div><h3 class="font-semibold text-lg"
             </div>
         </div>
     </footer>
+    <script src="/attribution.js?v=1"></script>
 </body>
 </html>
 `;
