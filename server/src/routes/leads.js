@@ -13,6 +13,8 @@ const serialize = (l) => ({
   id: l.id, type: l.type, name: l.name, company: l.company, email: l.email, phone: l.phone, message: l.message,
   plan: l.plan, planName: l.plan ? PLAN_NAMES[l.plan] || l.plan : null, status: l.status,
   createdAt: l.created_at, updatedAt: l.updated_at, isDemo: l.is_demo,
+  // Where the visitor came from: channel (facebook, google_ads, direct…) plus the ad's campaign tag if any.
+  source: l.attribution ? { channel: l.attribution.channel, campaign: l.attribution.utm_campaign || null } : null,
 });
 
 router.get('/', asyncH(async (req, res) => {

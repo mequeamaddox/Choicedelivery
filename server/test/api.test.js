@@ -433,6 +433,29 @@ test('website: contact messages and plan requests become leads', async () => {
   assert.equal(r.status, 201);
   r = await call('POST', '/public/contract-request', { body: { plan: 'law_firm', name: 'A', email: 'a@b.co' } });
   assert.equal(r.status, 400, 'old plans are no longer offered');
+
+  // Leads and website quotes are credited to the ad or site the visitor came from.
+  const fbAd = { fbclid: 'IwAR123', utm_campaign: 'Fall promo', landingPage: '/', at: new Date().toISOString(), bogus: 'x' };
+  r = await call('POST', '/public/contact', { body: { name: 'Ad Click', email: 'ad@x.com', message: 'Saw your ad', attribution: fbAd } });
+  assert.equal(r.status, 201);
+  let { rows: [adLead] } = await db.query("SELECT attribution FROM leads WHERE email = 'ad@x.com'");
+  assert.equal(adLead.attribution.channel, 'facebook');
+  assert.equal(adLead.attribution.utm_campaign, 'Fall promo');
+  assert.equal(adLead.attribution.bogus, undefined, 'unknown keys are dropped');
+  ({ rows: [adLead] } = await db.query("SELECT attribution FROM leads WHERE email = 'jo@x.com'"));
+  assert.equal(adLead.attribution, null, 'forms without attribution still work');
+  const before = (await db.query("SELECT count(*)::int AS n FROM site_events WHERE kind = 'quote'")).rows[0].n;
+  await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'irmo', attribution: { gclid: 'g1', at: fbAd.at } } });
+  await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'irmo', attribution: {} } });
+  await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'irmo' } }); // the app's booking form
+  await new Promise((done) => setTimeout(done, 100));
+  const { rows: quoteEvents } = await db.query(
+    "SELECT channel, details FROM site_events WHERE kind = 'quote' ORDER BY id DESC LIMIT 2");
+  assert.equal((await db.query("SELECT count(*)::int AS n FROM site_events WHERE kind = 'quote'")).rows[0].n, before + 2,
+    'only website quotes are logged');
+  assert.deepEqual(quoteEvents.map((e) => e.channel), ['direct', 'google_ads']);
+  assert.equal(quoteEvents[0].details.dropoff, 'irmo');
+  assert.ok((await db.query("SELECT 1 FROM site_events WHERE kind = 'contact' AND channel = 'facebook'")).rows.length);
   r = await call('POST', '/public/contract-request', { body: { plan: 'free_stuff', name: 'A', email: 'a@b.co' } });
   assert.equal(r.status, 400);
   delete process.env.SHOW_BUSINESS_PLANS;
@@ -1202,10 +1225,12 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
       city: 'Columbia', zip: '29201', vehicle: { type: 'Car', make: 'Honda', model: 'Civic', year: '2019', color: 'White', plate: 'abc123' }, agreed: true };
     let r = await call('POST', '/auth/driver-signup', { body: { ...apply, agreed: false } });
     assert.equal(r.status, 400, 'must agree to the terms');
-    r = await call('POST', '/auth/driver-signup', { body: apply });
+    r = await call('POST', '/auth/driver-signup', { body: { ...apply, attribution: { utm_source: 'facebook', utm_medium: 'paid', at: '2026-10-08T00:00:00Z' } } });
     assert.equal(r.status, 201);
     const dana = r.data.token;
     const danaId = r.data.user.id;
+    const { rows: [danaRow] } = await db.query('SELECT attribution FROM users WHERE id = $1', [danaId]);
+    assert.equal(danaRow.attribution.channel, 'facebook', 'driver applications record where they came from');
     assert.equal(r.data.user.driverStatus, 'applied');
     assert.equal(r.data.user.vehicle.plate, 'ABC123');
     assert.equal(r.data.user.checklist.complete, false);

@@ -668,7 +668,7 @@ export function LeadsPage() {
               <div class="card-head">
                 <div>
                   <h2>${l.type === 'contract' ? `${l.planName} request` : 'Website message'}<${DemoBadge} on=${l.isDemo} /></h2>
-                  <div class="muted small">${formatDate(l.createdAt)}${l.company ? ` · ${l.company}` : ''}</div>
+                  <div class="muted small">${formatDate(l.createdAt)}${l.company ? ` · ${l.company}` : ''}${` · From ${l.source ? l.source.channel + (l.source.campaign ? ` (${l.source.campaign})` : '') : 'direct/unknown'}`}</div>
                 </div>
                 <span class=${`badge ${l.status === 'new' ? 'amber' : l.status === 'won' ? 'green' : l.status === 'contacted' ? 'blue' : 'gray'}`}>${LEAD_STATUS[l.status]}</span>
               </div>

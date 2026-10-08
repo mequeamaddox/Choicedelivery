@@ -8,6 +8,7 @@ const driverEmails = require('../driver-emails');
 const { rateLimit } = require('../rate-limit');
 const { sendMail } = require('../mailer');
 const { asyncH, HttpError, str } = require('../util');
+const { cleanAttribution, logEvent } = require('../attribution');
 
 const router = express.Router();
 const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
@@ -34,13 +35,17 @@ router.get('/me', requireAuth, asyncH(async (req, res) => {
 router.post('/signup', asyncH(async (req, res) => {
   const { companyName, name, email, password, phoneNumber } = req.body || {};
   if (!str(companyName)) throw new HttpError(400, 'companyName is required');
+  const attribution = cleanAttribution(req.body?.attribution);
   const user = await db.withTx(async (client) => {
     const { rows } = await client.query(
       'INSERT INTO organizations (name, phone, billing_email) VALUES ($1, $2, lower($3)) RETURNING id',
       [str(companyName), str(phoneNumber), str(email)]
     );
-    return createUser({ email, password, name, phoneNumber, role: 'shipper', organizationId: rows[0].id }, client);
+    const u = await createUser({ email, password, name, phoneNumber, role: 'shipper', organizationId: rows[0].id }, client);
+    if (attribution) await client.query('UPDATE users SET attribution = $2 WHERE id = $1', [u.id, attribution]);
+    return u;
   });
+  logEvent('signup', attribution, { userId: user.id, organizationId: user.organization_id });
   res.status(201).json({ token: signToken(user), user: publicUser(user) });
 }));
 
@@ -54,14 +59,17 @@ router.post('/driver-signup', rateLimit({ windowMs: 10 * 60 * 1000, max: 6 }), a
   if (b.agreed !== true) {
     throw new HttpError(400, 'Please confirm you have a valid license and insurance and agree to the driver terms');
   }
+  const attribution = cleanAttribution(b.attribution);
   const user = await db.withTx(async (client) => {
     const u = await createUser({ email: b.email, password: b.password, name: b.name, phoneNumber: b.phoneNumber,
       role: 'driver', driverStatus: 'applied' }, client);
     await setVehicle(u.id, b.vehicle, client);
     const profile = { ...mergeDriverProfile({}, { city: b.city, zip: b.zip }), agreedAt: new Date().toISOString() };
-    await client.query('UPDATE users SET driver_profile = $2 WHERE id = $1', [u.id, JSON.stringify(profile)]);
+    await client.query('UPDATE users SET driver_profile = $2, attribution = $3 WHERE id = $1',
+      [u.id, JSON.stringify(profile), attribution]);
     return getUser(u.id, client);
   });
+  logEvent('driver_signup', attribution, { userId: user.id });
   driverEmails.applicationReceived(user);
   driverEmails.newApplication(user);
   res.status(201).json({ token: signToken(user), user: publicUser(user) });

@@ -44,6 +44,7 @@ const LANDING_FILES = {
   '/terms': 'terms.html',
   '/terms.html': 'terms.html',
   '/site.css': 'site.css',
+  '/attribution.js': 'attribution.js', // remembers which ad or site a visitor came from
   '/robots.txt': 'robots.txt',
   '/sitemap.xml': 'sitemap.xml',
   '/logo.png': 'logo.png',
