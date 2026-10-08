@@ -69,7 +69,6 @@ function page(p) {
         <div class="max-w-6xl mx-auto px-4 flex justify-between items-center py-3 gap-4">
             <a href="/"><img src="logo.png" alt="Choice Delivery SC" class="h-12 w-auto"></a>
             <div class="flex items-center gap-4">
-                <a href="tel:8039497034" class="hidden sm:inline text-choice-teal font-semibold hover:underline">(803) 949-7034</a>
                 <a href="/#quote" class="bg-choice-teal text-white px-4 py-2 rounded-lg font-semibold hover:bg-opacity-90">Get a quote</a>
             </div>
         </div>
@@ -82,7 +81,7 @@ function page(p) {
             <p class="text-xl mt-5 max-w-3xl">${esc(p.intro)}</p>
             <div class="flex flex-col sm:flex-row gap-3 mt-8">
                 <a href="/#quote" class="bg-white text-choice-teal px-6 py-3 rounded-lg text-lg font-semibold text-center hover:bg-gray-100">Get your instant price</a>
-                <a href="tel:8039497034" class="border-2 border-white text-white px-6 py-3 rounded-lg text-lg font-semibold text-center hover:bg-white hover:text-choice-teal">Call (803) 949-7034</a>
+                <a href="/#contact" class="border-2 border-white text-white px-6 py-3 rounded-lg text-lg font-semibold text-center hover:bg-white hover:text-choice-teal">Send us a message</a>
             </div>
         </div>
     </header>
@@ -112,7 +111,7 @@ ${p.faqs.map(([q, a]) => `                <div><h3 class="font-semibold text-lg"
             <p class="text-lg mt-2">Open 8 AM &ndash; 10 PM, 7 days a week.</p>
             <div class="flex flex-col sm:flex-row gap-3 justify-center mt-6">
                 <a href="/#quote" class="bg-white text-choice-teal px-6 py-3 rounded-lg text-lg font-semibold hover:bg-gray-100">Get your instant price</a>
-                <a href="tel:8039497034" class="border-2 border-white px-6 py-3 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal">(803) 949-7034</a>
+                <a href="/#contact" class="border-2 border-white px-6 py-3 rounded-lg text-lg font-semibold hover:bg-white hover:text-choice-teal">Send us a message</a>
             </div>
         </section>
     </main>

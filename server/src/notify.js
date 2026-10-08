@@ -62,12 +62,12 @@ const MESSAGES = {
     line: `An additional charge of <strong>${money(charge.cents)}</strong> was added to this order for
       <strong>${esc(CHARGE_KINDS[charge.kind] || charge.kind)}</strong>${charge.minutes != null ? ` (${charge.minutes} minutes)` : ''}${charge.description ? `: ${esc(charge.description)}` : ''}.
       ${charge.status === 'due' ? 'You can pay it on the order page.' : 'It will be added to your account bill.'}
-      Questions? Call (803) 949-7034.`,
+      Questions? Email info@choicedeliverysc.com.`,
     button: charge.status === 'due' ? 'Pay now' : 'View order',
   }),
   cancelled: (o) => ({
     subject: `Order ${o.order_number} cancelled`,
-    line: `This order was cancelled${o.refunded_cents ? ` and ${money(o.refunded_cents)} was refunded to your card` : ''}. Questions? Call (803) 949-7034.`,
+    line: `This order was cancelled${o.refunded_cents ? ` and ${money(o.refunded_cents)} was refunded to your card` : ''}. Questions? Email info@choicedeliverysc.com.`,
   }),
 };
 

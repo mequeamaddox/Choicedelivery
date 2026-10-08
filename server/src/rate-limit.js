@@ -16,7 +16,7 @@ function rateLimit({ windowMs, max }) {
     entry.count += 1;
     if (entry.count > max) {
       res.set('Retry-After', String(Math.ceil((entry.reset - now) / 1000)));
-      return res.status(429).json({ message: 'Too many requests. Please try again in a few minutes or call (803) 949-7034.' });
+      return res.status(429).json({ message: 'Too many requests. Please try again in a few minutes.' });
     }
     next();
   };

@@ -94,6 +94,13 @@ test('shipper self-signup creates a company; coworkers can be added', async () =
   r = await call('POST', '/auth/signup', { body: { companyName: 'Other Co', email: 'o@other.com', password: 'password1' } });
   t.other = r.data.token;
 
+  // People shipping for themselves can leave the business name blank.
+  r = await call('POST', '/auth/signup', { body: { name: 'Riley Solo', email: 'riley@solo.com', password: 'password1' } });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.user.organization.name, 'Riley Solo');
+  r = await call('POST', '/auth/signup', { body: { email: 'nobody@solo.com', password: 'password1' } });
+  assert.equal(r.status, 400, 'a name or business name is needed');
+
   r = await call('POST', `/organizations/${ids.acmeOrg}/users`, { token: t.acme, body: { email: 'pat@acme.com', password: 'password1' } });
   assert.equal(r.status, 201);
   r = await call('POST', `/organizations/${ids.acmeOrg}/users`, { token: t.other, body: { email: 'evil@other.com', password: 'password1' } });
@@ -456,6 +463,28 @@ test('website: contact messages and plan requests become leads', async () => {
   assert.deepEqual(quoteEvents.map((e) => e.channel), ['direct', 'google_ads']);
   assert.equal(quoteEvents[0].details.dropoff, 'irmo');
   assert.ok((await db.query("SELECT 1 FROM site_events WHERE kind = 'contact' AND channel = 'facebook'")).rows.length);
+
+  // "Email me this quote": the visitor gets the quote with a prefilled booking link; it lands in Leads.
+  {
+    const mailer = require('../src/mailer');
+    const mails = [];
+    mailer.setSender(async (m) => { mails.push(m); });
+    r = await call('POST', '/public/email-quote', { body: { email: 'not-an-email', pickupAddress: 'columbia', dropoffAddress: 'irmo' } });
+    assert.equal(r.status, 400);
+    r = await call('POST', '/public/email-quote', { body: { email: 'Shopper@X.com', pickupAddress: 'columbia', dropoffAddress: 'irmo',
+      vehicleType: 'Car', serviceLevel: 'standard', attribution: fbAd } });
+    assert.equal(r.status, 201);
+    const toVisitor = mails.find((m) => m.to === 'shopper@x.com');
+    assert.match(toVisitor.subject, /Your Choice Delivery quote/);
+    assert.match(toVisitor.html, /\?book=/, 'links to booking with the quote filled in');
+    assert.doesNotMatch(toVisitor.html, /949-7034/, 'no phone number');
+    const { rows: [ql] } = await db.query("SELECT type, message, attribution FROM leads WHERE email = 'shopper@x.com'");
+    assert.equal(ql.type, 'quote');
+    assert.match(ql.message, /From: columbia/);
+    assert.equal(ql.attribution.channel, 'facebook');
+    assert.ok(mails.some((m) => /Quote emailed to shopper@x.com/.test(m.subject)), 'owner is told');
+    mailer.setSender(null);
+  }
   r = await call('POST', '/public/contract-request', { body: { plan: 'free_stuff', name: 'A', email: 'a@b.co' } });
   assert.equal(r.status, 400);
   delete process.env.SHOW_BUSINESS_PLANS;
