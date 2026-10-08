@@ -1,6 +1,6 @@
 import {
   html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
-  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText,
+  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText, bookingDraft, clearBookingDraft,
 } from './lib.js';
 import {
   Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
@@ -233,6 +233,20 @@ export function NewOrderPage() {
       setFormCode(f.code);
     }).catch(setError);
   }, [fromForm]);
+  // From "Book This Delivery" on the website (or an emailed quote): fill in that quote's details once.
+  const [fromQuote, setFromQuote] = useState(false);
+  useEffect(() => {
+    const d = !fromForm && bookingDraft();
+    if (!d) return;
+    clearBookingDraft();
+    const text = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '');
+    setStops([{ ...blankStop('pickup'), address: text(d.pickupAddress, 200) }, { ...blankStop('dropoff'), address: text(d.dropoffAddress, 200) }]);
+    setV((cur) => ({ ...cur,
+      serviceLevel: d.serviceLevel === 'rush' ? 'rush' : 'standard',
+      vehicleType: text(d.vehicleType, 40) || cur.vehicleType,
+      weightLbs: Number(d.weightLbs) > 0 ? String(Math.round(Number(d.weightLbs))) : cur.weightLbs }));
+    setFromQuote(true);
+  }, []);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
   const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType);
   const fees = pricing.data?.fees;
@@ -309,6 +323,7 @@ export function NewOrderPage() {
   return html`
     <${Layout}>
       <${PageHeader} title="New order" subtitle="Drivers are notified as soon as you book." />
+      ${fromQuote && html`<${Alert} tone="success">Your quote's addresses are filled in. Pick each address from the suggestions so the driver gets a map pin, add contact names and a pickup time, then book.<//>`}
       ${formCode && html`<${Alert} tone="success">Filled in from shipping form ${formCode}. Its barcode is this order's reference number. Check the addresses, then book.<//>`}
       <form class="form-layout" onSubmit=${submit}>
         <${Alert} error=${error} />
@@ -358,7 +373,7 @@ export function NewOrderPage() {
               <span><strong>Estimated total</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
               <span class="price">${pieceProblem ? '—' : needsReview ? 'Custom' : quote ? formatMoney(quote.totalCents) : '—'}</span>
             </div>
-            ${pieceProblem ? html`<div class="alert error" role="alert"><strong>Can't book this shipment:</strong> ${`${pieceProblem} Split it into lighter pieces, or call (803) 949-7034.`}</div>`
+            ${pieceProblem ? html`<div class="alert error" role="alert"><strong>Can't book this shipment:</strong> ${`${pieceProblem} Split it into lighter pieces, or email info@choicedeliverysc.com.`}</div>`
             : needsReview ? html`<div class="alert warn" role="status"><strong>We'll price this one by hand:</strong>
                 ${' '}${quote.reviewReasons.join('. ')}. ${vehicles.some(([, x]) => !tooHeavyFor(x)) && lbs != null && lbs <= Math.max(...vehicles.map(([, x]) => x.maxLbs))
                   ? 'Pick a bigger vehicle above, or send it for review.' : 'Send it to us and we\'ll email you a price, usually within a business hour. Nothing is charged until you accept it.'}</div>`

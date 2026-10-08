@@ -111,7 +111,7 @@ const SERVICES = [
     h1: 'Auto parts delivery in Columbia and the Midlands',
     intro: 'A car on the lift waiting on a part is money lost. We run parts between stores, warehouses, dealerships and repair shops across the Midlands, so your techs stay working instead of driving.',
     sections: [
-      ['For shops, dealers and parts stores', 'Independent repair shops, body shops, dealerships, parts stores and mobile mechanics use us for same-day parts runs, store-to-store transfers and returns. Book online in a minute, or call and we\'ll book it for you.'],
+      ['For shops, dealers and parts stores', 'Independent repair shops, body shops, dealerships, parts stores and mobile mechanics use us for same-day parts runs, store-to-store transfers and returns. Book online in a minute and track every run from your phone.'],
       ['The right vehicle for the part', 'A car for small parts and boxes, a minivan for several boxes, and a pickup truck for bulky items like bumpers, wheels and exhaust parts. No single piece over 75 lbs.'],
     ],
     faqs: [

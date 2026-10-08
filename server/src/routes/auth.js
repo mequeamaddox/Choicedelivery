@@ -33,13 +33,15 @@ router.get('/me', requireAuth, asyncH(async (req, res) => {
 
 // Self-serve signup for shipping customers: creates their company and their first user.
 router.post('/signup', asyncH(async (req, res) => {
-  const { companyName, name, email, password, phoneNumber } = req.body || {};
-  if (!str(companyName)) throw new HttpError(400, 'companyName is required');
+  const { name, email, password, phoneNumber } = req.body || {};
+  // People shipping for themselves leave the business name blank; their account is named after them.
+  const companyName = str(req.body?.companyName) || str(name);
+  if (!companyName) throw new HttpError(400, 'Please enter your name');
   const attribution = cleanAttribution(req.body?.attribution);
   const user = await db.withTx(async (client) => {
     const { rows } = await client.query(
       'INSERT INTO organizations (name, phone, billing_email) VALUES ($1, $2, lower($3)) RETURNING id',
-      [str(companyName), str(phoneNumber), str(email)]
+      [companyName, str(phoneNumber), str(email)]
     );
     const u = await createUser({ email, password, name, phoneNumber, role: 'shipper', organizationId: rows[0].id }, client);
     if (attribution) await client.query('UPDATE users SET attribution = $2 WHERE id = $1', [u.id, attribution]);

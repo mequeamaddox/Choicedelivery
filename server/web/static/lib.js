@@ -32,14 +32,29 @@ function captureAttribution() {
     if (Object.keys(hit).length) found = { ...hit, landingPage: location.pathname + location.hash, at: new Date().toISOString() };
   }
   if (found) storage.set(ATTR_KEY, JSON.stringify(found));
-  if (q.has('a') || ATTR_PARAMS.some((k) => q.has(k))) {
+  // "Book This Delivery" on the website (or in an emailed quote) passes the quote as ?book={...}; the new
+  // order page fills it in after the visitor signs up or logs in.
+  let book = null;
+  try { book = q.has('book') ? JSON.parse(q.get('book')) : null; } catch { /* bad link */ }
+  if (book && typeof book === 'object') storage.set(BOOK_KEY, JSON.stringify({ ...book, at: new Date().toISOString() }));
+  if (q.has('a') || q.has('book') || ATTR_PARAMS.some((k) => q.has(k))) {
     // Tidy the address bar (keeps the #/route).
-    ['a', ...ATTR_PARAMS].forEach((k) => q.delete(k));
+    ['a', 'book', ...ATTR_PARAMS].forEach((k) => q.delete(k));
     const rest = q.toString();
     history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
   }
 }
+const BOOK_KEY = 'cd_booking';
 captureAttribution();
+
+// The website quote waiting to be booked (kept for a day), or null.
+export function bookingDraft() {
+  try {
+    const v = JSON.parse(storage.get(BOOK_KEY));
+    return v && Date.now() - Date.parse(v.at) < 24 * 60 * 60 * 1000 && (v.pickupAddress || v.dropoffAddress) ? v : null;
+  } catch { return null; }
+}
+export const clearBookingDraft = () => storage.remove(BOOK_KEY);
 function attribution() {
   try {
     const v = JSON.parse(storage.get(ATTR_KEY));

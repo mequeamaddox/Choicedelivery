@@ -1,4 +1,4 @@
-import { html, render, useState, useEffect, useRoute, match, navigate, getUser, isStaff, onSessionChange, restoreSession } from './lib.js';
+import { html, render, useState, useEffect, useRoute, match, navigate, getUser, isStaff, onSessionChange, restoreSession, bookingDraft } from './lib.js';
 import { Spinner } from './components.js';
 import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage, DriverSignupPage, DriverAppPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
@@ -55,6 +55,8 @@ function App() {
   if (PUBLIC[path] || path === '/') {
     let next = null;
     try { next = sessionStorage.getItem('afterLogin'); sessionStorage.removeItem('afterLogin'); } catch { /* private mode */ }
+    // Came from "Book This Delivery" on the website: straight to the new order, filled in.
+    if (bookingDraft()) next = '/orders/new';
     navigate(next && !PUBLIC[next] ? next : '/orders');
     return null;
   }

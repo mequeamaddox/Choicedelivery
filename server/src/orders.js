@@ -22,7 +22,7 @@ async function assertPieceWeights(client, orderId) {
     'SELECT max_piece_lbs, weight, number_of_pieces FROM orders WHERE id = $1', [orderId]);
   const problem = pieceWeightProblem(
     { maxPieceLbs: o.max_piece_lbs, weightLbs: parseWeightLbs(o.weight), pieces: o.number_of_pieces }, await getFees(client));
-  if (problem) throw new HttpError(400, `${problem} Call (803) 949-7034 if you have questions.`);
+  if (problem) throw new HttpError(400, `${problem} Questions? Email info@choicedeliverysc.com.`);
 }
 
 // Add-ons are the keys of the fee settings (loading_help, inside_delivery).

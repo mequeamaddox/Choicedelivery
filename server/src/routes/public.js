@@ -128,7 +128,7 @@ router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(as
             (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address
      FROM orders o WHERE o.public_token = $1`, [String(req.params.token)]).catch(() => ({ rows: [] }));
   const base = String(process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-  if (!o) return res.status(404).type('html').send(simplePage('Link not found', 'Check the link in your email, or call (803) 949-7034.'));
+  if (!o) return res.status(404).type('html').send(simplePage('Link not found', 'Check the link in your email, or email info@choicedeliverysc.com.'));
   if (o.payment_status === 'paid') return res.redirect(303, `${base}/#/track/${o.public_token}`);
   const payable = o.payment_requested_at || o.payment_status === 'unpaid';
   if (!payable || ['cancelled', 'quote'].includes(o.status) || ['waived', 'refunded'].includes(o.payment_status) || !(o.price_cents >= 50) || !stripe.enabled()) {
@@ -149,8 +149,7 @@ router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(as
 // Instant quote using the same formula orders are priced with.
 // Body: { stops: [{address, location?}, ...] } or { pickupAddress, dropoffAddress, pickupLocation?, dropoffLocation? },
 // plus serviceLevel ('standard' | 'rush'), vehicleType and an optional scheduledAt (pickup time).
-router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
-  const b = req.body || {};
+async function priceQuote(b) {
   const stops = Array.isArray(b.stops) && b.stops.length >= 2
     ? b.stops.slice(0, 20)
     : [{ address: b.pickupAddress, location: b.pickupLocation }, { address: b.dropoffAddress, location: b.dropoffLocation }];
@@ -168,16 +167,8 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
   });
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
-  // The website's quote calculator sends `attribution` (even when empty); the app's booking form, which
-  // re-quotes as the customer edits, doesn't, so only website quotes are logged.
-  if (b.attribution !== undefined) {
-    logEvent('quote', cleanAttribution(b.attribution), {
-      pickup: str(stops[0]?.address).slice(0, 200), dropoff: str(stops[stops.length - 1]?.address).slice(0, 200),
-      serviceLevel, vehicleType: quote.vehicleType || null, totalCents: quote.totalCents, outOfArea,
-    });
-  }
   const pieceProblem = pieceWeightProblem({ maxPieceLbs: b.maxPieceLbs, weightLbs: quote.weightLbs, pieces: b.numberOfPieces }, fees);
-  res.json({
+  const result = {
     ...quote,
     priceCents: quote.totalCents,
     maxPieceLbs: fees.maxPieceLbs,
@@ -190,11 +181,74 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
       : quote.needsApproval
       ? `${quote.approvalReason}, so we'll confirm this job before it's booked (usually within a business hour). Nothing is charged until we approve it.`
       : outOfArea
-      ? `One of these addresses is outside our ${SERVICE_RADIUS_MILES}-mile service area. Call (803) 949-7034 and we'll see what we can do.`
+      ? `One of these addresses is outside our ${SERVICE_RADIUS_MILES}-mile service area. Send us a message through choicedeliverysc.com and we'll see what we can do.`
       : quote.distanceConfirmed
         ? 'Estimate based on approximate driving distance. Final price is confirmed when your order is booked.'
         : "We couldn't pinpoint one of the addresses, so this is the base price. Final price is confirmed when your order is booked.",
+  };
+  return { quote: result, stops, serviceLevel };
+}
+
+router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
+  const b = req.body || {};
+  const { quote, stops, serviceLevel } = await priceQuote(b);
+  // The website's quote calculator sends `attribution` (even when empty); the app's booking form, which
+  // re-quotes as the customer edits, doesn't, so only website quotes are logged.
+  if (b.attribution !== undefined) {
+    logEvent('quote', cleanAttribution(b.attribution), {
+      pickup: str(stops[0]?.address).slice(0, 200), dropoff: str(stops[stops.length - 1]?.address).slice(0, 200),
+      serviceLevel, vehicleType: quote.vehicleType || null, totalCents: quote.totalCents, outOfArea: quote.outOfArea,
+    });
+  }
+  res.json(quote);
+}));
+
+// "Not ready to book? Email me this quote" on the website: emails the visitor their quote with a link that
+// opens booking with the details filled in, and saves them as a lead so the owner can follow up by email.
+router.post('/email-quote', limitWrites, asyncH(async (req, res) => {
+  const b = req.body || {};
+  const email = limit(b.email, 200).toLowerCase();
+  if (!isEmail(email)) throw new HttpError(400, 'Enter a valid email address');
+  const pickup = limit(b.pickupAddress, 200);
+  const dropoff = limit(b.dropoffAddress, 200);
+  if (!pickup || !dropoff) throw new HttpError(400, 'Get a quote first, then we can email it to you');
+  const ok = { message: `Sent! Check ${email} for your quote. It has a link to book whenever you're ready.` };
+  if (str(b.website)) return res.status(201).json(ok); // spam trap
+  let quote = null;
+  try { ({ quote } = await priceQuote(b)); } catch (e) { console.error('Email quote pricing failed:', e.message); }
+  const money = (c) => `$${(c / 100).toFixed(2)}`;
+  const priceText = !quote ? "We'll work out the price and email it to you."
+    : quote.needsReview ? "This one needs a custom price. We'll email it to you before anything is charged."
+    : `${money(quote.totalCents)}${quote.needsApproval ? ' (we confirm this job before it’s booked)' : ''}`;
+  const details = {
+    pickupAddress: pickup, dropoffAddress: dropoff,
+    serviceLevel: quote?.serviceLevel || (b.serviceLevel === 'rush' ? 'rush' : 'standard'),
+    vehicleType: limit(b.vehicleType, 40) || 'Car', weightLbs: Number(b.weightLbs) > 0 ? Math.round(Number(b.weightLbs)) : undefined,
+  };
+  const app = String(process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com').replace(/\/$/, '');
+  const attribution = cleanAttribution(b.attribution);
+  const bookUrl = `${app}/?book=${encodeURIComponent(JSON.stringify(details))}`
+    + `${attribution ? `&a=${encodeURIComponent(JSON.stringify(b.attribution))}` : ''}#/signup`;
+  const level = details.serviceLevel === 'rush' ? 'Rush delivery' : 'Standard delivery';
+  const rows = [['From', pickup], ['To', dropoff], ['Vehicle', details.vehicleType], ['Service', level],
+    ...(details.weightLbs ? [['Weight', `${details.weightLbs} lbs`]] : []), ['Price', priceText]];
+  await sendMail({
+    to: email,
+    replyTo: LEADS_EMAIL(),
+    subject: quote && !quote.needsReview ? `Your Choice Delivery quote: ${money(quote.totalCents)}` : 'Your Choice Delivery quote',
+    html: `<p>Here's the delivery quote you asked for.</p>`
+      + rows.map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join('')
+      + (quote?.note ? `<p>${escapeHtml(quote.note)}</p>` : '')
+      + `<p><a href="${bookUrl}">Book this delivery</a>. Your addresses are already filled in. Book and pay online in about 2 minutes.</p>`
+      + '<p>Prices depend on the time of pickup, so the final price is shown when you book. Questions? Just reply to this email.</p>'
+      + '<p>Choice Delivery SC · Same-day courier in Columbia, SC · 8 AM to 10 PM daily</p>',
+  }).catch((e) => console.error('Quote email failed:', e.message));
+  await saveLead(req, {
+    type: 'quote', name: '', email, phone: '', company: '',
+    message: rows.map(([k, v]) => `${k}: ${v}`).join('\n'),
+    subject: `Quote emailed to ${email}: ${quote && !quote.needsReview ? money(quote.totalCents) : 'needs a price'}`,
   });
+  res.status(201).json(ok);
 }));
 
 // "facebook (campaign: Fall promo)" for the lead email; null for direct visits.
@@ -209,10 +263,10 @@ async function saveLead(req, lead) {
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, created_at`,
     [lead.type, lead.name, lead.company, lead.email, lead.phone, lead.message, lead.plan || null, req.ip, attribution]
   );
-  logEvent(lead.type, attribution, { leadId: rows[0].id });
-  const subject = lead.type === 'contract'
+  logEvent(lead.type === 'quote' ? 'quote_emailed' : lead.type, attribution, { leadId: rows[0].id });
+  const subject = lead.subject || (lead.type === 'contract'
     ? `Business plan request: ${PLAN_NAMES[lead.plan] || lead.plan} — ${lead.company || lead.name}`
-    : `Website message from ${lead.name}`;
+    : `Website message from ${lead.name}`);
   const rowsHtml = [['Name', lead.name], ['Company', lead.company], ['Email', lead.email], ['Phone', lead.phone],
     ['Plan', lead.plan && PLAN_NAMES[lead.plan]], ['Message', lead.message], ['Came from', sourceLabel(attribution)]]
     .filter(([, v]) => v).map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join('');

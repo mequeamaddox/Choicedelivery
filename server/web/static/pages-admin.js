@@ -661,18 +661,18 @@ export function LeadsPage() {
       </div>
       <${Alert} error=${error || actionError} />
       ${loading ? html`<${Spinner} />` : !data?.length ? html`
-        <${Empty} title=${tab === 'new' ? 'No new leads' : 'Nothing here'}>New website messages and plan requests show up here.<//>` : html`
+        <${Empty} title=${tab === 'new' ? 'No new leads' : 'Nothing here'}>New website messages, emailed quotes and plan requests show up here.<//>` : html`
         <div class="stack">
           ${data.map((l) => html`
             <article class="card">
               <div class="card-head">
                 <div>
-                  <h2>${l.type === 'contract' ? `${l.planName} request` : 'Website message'}<${DemoBadge} on=${l.isDemo} /></h2>
+                  <h2>${l.type === 'contract' ? `${l.planName} request` : l.type === 'quote' ? 'Quote emailed (not booked yet)' : 'Website message'}<${DemoBadge} on=${l.isDemo} /></h2>
                   <div class="muted small">${formatDate(l.createdAt)}${l.company ? ` · ${l.company}` : ''}${` · From ${l.source ? l.source.channel + (l.source.campaign ? ` (${l.source.campaign})` : '') : 'direct/unknown'}`}</div>
                 </div>
                 <span class=${`badge ${l.status === 'new' ? 'amber' : l.status === 'won' ? 'green' : l.status === 'contacted' ? 'blue' : 'gray'}`}>${LEAD_STATUS[l.status]}</span>
               </div>
-              <p><strong>${l.name}</strong>${' · '}<a href=${`mailto:${l.email}`}>${l.email}</a>${l.phone && html`${' · '}<a href=${`tel:${l.phone}`}>${l.phone}</a>`}</p>
+              <p>${l.name && html`<strong>${l.name}</strong>${' · '}`}<a href=${`mailto:${l.email}`}>${l.email}</a>${l.phone && html`${' · '}<a href=${`tel:${l.phone}`}>${l.phone}</a>`}</p>
               ${l.message && html`<p class="lead-message">${l.message}</p>`}
               <div class="actions">
                 ${l.status !== 'contacted' && html`<${ActionButton} class="btn small" onError=${setActionError} onClick=${() => setStatus(l.id, 'contacted')}>Mark contacted<//>`}

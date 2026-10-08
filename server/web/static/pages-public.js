@@ -1,4 +1,4 @@
-import { html, useState, useEffect, api, login, signup, driverSignup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink, VEHICLE_TYPES } from './lib.js';
+import { html, useState, useEffect, api, login, signup, driverSignup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink, VEHICLE_TYPES, bookingDraft } from './lib.js';
 import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo, LiveMap, LegalLinks } from './components.js';
 
 function useForm(initial) {
@@ -71,23 +71,27 @@ function LoginForm() {
 
 export function SignupPage() {
   const [v, bind] = useForm({ companyName: '', name: '', phoneNumber: '', email: '', password: '' });
+  const booking = bookingDraft(); // came from "Book This Delivery" on the website
   const { onSubmit, error, busy } = useSubmit(async () => {
     await signup(v);
     navigate('/orders/new');
   });
   return html`
-    <${AuthShell} title="Ship with Choice Delivery" subtitle="Create a company account to book and track deliveries.">
+    <${AuthShell} title=${booking ? 'Almost there: create your account' : 'Ship with Choice Delivery'}
+      subtitle=${booking ? "Then you'll pick a time and pay. Your quote's addresses are already filled in."
+        : 'Book and track deliveries for yourself or your business.'}>
       <form onSubmit=${onSubmit} class="stack">
         <${Alert} error=${error} />
-        <${Field} label="Company name"><input required autocomplete="organization" ...${bind('companyName')} /><//>
         <${Field} label="Your name"><input required autocomplete="name" ...${bind('name')} /><//>
+        <${Field} label="Email"><input type="email" required autocomplete="email" ...${bind('email')} /><//>
         <${Field} label="Phone"><input type="tel" autocomplete="tel" ...${bind('phoneNumber')} /><//>
-        <${Field} label="Work email"><input type="email" required autocomplete="email" ...${bind('email')} /><//>
+        <${Field} label="Business name (optional)" hint="Leave blank if you're shipping for yourself.">
+          <input autocomplete="organization" ...${bind('companyName')} /><//>
         <${Field} label="Password" hint="At least 8 characters."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>
         <p class="small muted">By creating an account you agree to our <${LegalLinks} />.</p>
         <button class="btn primary block" disabled=${busy}>${busy ? 'Creating account…' : 'Create account'}</button>
       </form>
-      <p class="auth-links">Already have an account? <a href="#/login">Log in</a></p>
+      <p class="auth-links">Already have an account? <a href="#/login">Log in</a>${booking ? ' and your quote will be waiting.' : ''}</p>
     <//>`;
 }
 
