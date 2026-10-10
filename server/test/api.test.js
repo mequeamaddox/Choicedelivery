@@ -442,6 +442,7 @@ test('website: contact messages and plan requests become leads', async () => {
   assert.equal(r.status, 400, 'old plans are no longer offered');
 
   // Leads and website quotes are credited to the ad or site the visitor came from.
+  // Address lookups stay offline here (and don't fill the cache the next test relies on).
   const fbAd = { fbclid: 'IwAR123', utm_campaign: 'Fall promo', landingPage: '/', at: new Date().toISOString(), bogus: 'x' };
   r = await call('POST', '/public/contact', { body: { name: 'Ad Click', email: 'ad@x.com', message: 'Saw your ad', attribution: fbAd } });
   assert.equal(r.status, 201);
@@ -452,16 +453,16 @@ test('website: contact messages and plan requests become leads', async () => {
   ({ rows: [adLead] } = await db.query("SELECT attribution FROM leads WHERE email = 'jo@x.com'"));
   assert.equal(adLead.attribution, null, 'forms without attribution still work');
   const before = (await db.query("SELECT count(*)::int AS n FROM site_events WHERE kind = 'quote'")).rows[0].n;
-  await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'irmo', attribution: { gclid: 'g1', at: fbAd.at } } });
-  await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'irmo', attribution: {} } });
-  await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'irmo' } }); // the app's booking form
+  await call('POST', '/public/quote', { body: { pickupAddress: 'lead pickup', dropoffAddress: 'lead dropoff', attribution: { gclid: 'g1', at: fbAd.at } } });
+  await call('POST', '/public/quote', { body: { pickupAddress: 'lead pickup', dropoffAddress: 'lead dropoff', attribution: {} } });
+  await call('POST', '/public/quote', { body: { pickupAddress: 'lead pickup', dropoffAddress: 'lead dropoff' } }); // the app's booking form
   await new Promise((done) => setTimeout(done, 100));
   const { rows: quoteEvents } = await db.query(
     "SELECT channel, details FROM site_events WHERE kind = 'quote' ORDER BY id DESC LIMIT 2");
   assert.equal((await db.query("SELECT count(*)::int AS n FROM site_events WHERE kind = 'quote'")).rows[0].n, before + 2,
     'only website quotes are logged');
   assert.deepEqual(quoteEvents.map((e) => e.channel), ['direct', 'google_ads']);
-  assert.equal(quoteEvents[0].details.dropoff, 'irmo');
+  assert.equal(quoteEvents[0].details.dropoff, 'lead dropoff');
   assert.ok((await db.query("SELECT 1 FROM site_events WHERE kind = 'contact' AND channel = 'facebook'")).rows.length);
 
   // "Email me this quote": the visitor gets the quote with a prefilled booking link; it lands in Leads.
@@ -469,9 +470,9 @@ test('website: contact messages and plan requests become leads', async () => {
     const mailer = require('../src/mailer');
     const mails = [];
     mailer.setSender(async (m) => { mails.push(m); });
-    r = await call('POST', '/public/email-quote', { body: { email: 'not-an-email', pickupAddress: 'columbia', dropoffAddress: 'irmo' } });
+    r = await call('POST', '/public/email-quote', { body: { email: 'not-an-email', pickupAddress: 'lead pickup', dropoffAddress: 'lead dropoff' } });
     assert.equal(r.status, 400);
-    r = await call('POST', '/public/email-quote', { body: { email: 'Shopper@X.com', pickupAddress: 'columbia', dropoffAddress: 'irmo',
+    r = await call('POST', '/public/email-quote', { body: { email: 'Shopper@X.com', pickupAddress: 'lead pickup', dropoffAddress: 'lead dropoff',
       vehicleType: 'Car', serviceLevel: 'standard', attribution: fbAd } });
     assert.equal(r.status, 201);
     const toVisitor = mails.find((m) => m.to === 'shopper@x.com');
@@ -480,7 +481,7 @@ test('website: contact messages and plan requests become leads', async () => {
     assert.doesNotMatch(toVisitor.html, /949-7034/, 'no phone number');
     const { rows: [ql] } = await db.query("SELECT type, message, attribution FROM leads WHERE email = 'shopper@x.com'");
     assert.equal(ql.type, 'quote');
-    assert.match(ql.message, /From: columbia/);
+    assert.match(ql.message, /From: lead pickup/);
     assert.equal(ql.attribution.channel, 'facebook');
     assert.ok(mails.some((m) => /Quote emailed to shopper@x.com/.test(m.subject)), 'owner is told');
     mailer.setSender(null);
@@ -492,7 +493,7 @@ test('website: contact messages and plan requests become leads', async () => {
   r = await call('GET', '/leads', { token: t.acme });
   assert.equal(r.status, 403, 'shippers cannot see leads');
   r = await call('GET', '/leads?status=new', { token: t.dispatcher });
-  assert.deepEqual(r.data.map((l) => l.type).sort(), ['contact', 'contract'], 'spam was dropped');
+  assert.deepEqual(r.data.map((l) => l.type).sort(), ['contact', 'contact', 'contract', 'quote'], 'spam was dropped');
   const contract = r.data.find((l) => l.type === 'contract');
   assert.equal(contract.planName, 'Pro Plan');
   r = await call('PATCH', `/leads/${contract.id}`, { token: t.dispatcher, body: { status: 'contacted' } });
@@ -527,6 +528,7 @@ test('address suggestions and distance-aware quotes', async () => {
 
   r = await call('POST', '/public/quote', { body: { pickupAddress: 'columbia', dropoffAddress: 'charleston', serviceLevel: 'rush',
     scheduledAt: '2026-09-30T14:00:00Z' } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.ok(r.data.distanceMiles > 100 && r.data.distanceMiles < 160, `distance ${r.data.distanceMiles}`);
   const demand = r.data.surcharges.reduce((sum, x) => sum + x.cents, 0);
   const mileage = 90 * 150 + Math.round(Math.round((r.data.distanceMiles - 100) * 10) / 10 * 225);

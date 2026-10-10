@@ -14,6 +14,8 @@ const { cleanAttribution, logEvent } = require('../attribution');
 
 const router = express.Router();
 const limitWrites = rateLimit({ windowMs: 10 * 60 * 1000, max: 8 });
+// Emailed quotes have their own allowance, so a visitor comparing a few quotes can still send a message.
+const limitQuoteEmails = rateLimit({ windowMs: 10 * 60 * 1000, max: 8 });
 
 const LEADS_EMAIL = () => process.env.LEADS_EMAIL || 'info@choicedeliverysc.com';
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -205,7 +207,7 @@ router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async 
 
 // "Not ready to book? Email me this quote" on the website: emails the visitor their quote with a link that
 // opens booking with the details filled in, and saves them as a lead so the owner can follow up by email.
-router.post('/email-quote', limitWrites, asyncH(async (req, res) => {
+router.post('/email-quote', limitQuoteEmails, asyncH(async (req, res) => {
   const b = req.body || {};
   const email = limit(b.email, 200).toLowerCase();
   if (!isEmail(email)) throw new HttpError(400, 'Enter a valid email address');
