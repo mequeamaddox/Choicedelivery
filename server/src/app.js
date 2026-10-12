@@ -135,6 +135,7 @@ app.use('/public', require('./routes/public'));
 app.use('/leads', require('./routes/leads'));
 app.use('/settings', require('./routes/settings'));
 app.use('/payouts', require('./routes/payouts'));
+app.use('/mileage', require('./routes/mileage'));
 app.use('/shipping-forms', require('./routes/shipping-forms'));
 app.use('/demo', require('./routes/demo'));
 app.get('/reset-password', resetPage);

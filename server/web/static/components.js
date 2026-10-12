@@ -11,6 +11,7 @@ export function Layout({ children }) {
   const links = user?.role === 'driver' ? [
     { href: '/driver', label: 'Jobs', icon: 'list', tab: true },
     { href: '/driver/history', label: 'History', icon: 'inbox', tab: true },
+    { href: '/driver/mileage', label: 'Mileage', icon: 'pin', tab: true },
     { href: '/account', label: 'Account', icon: 'user', tab: true },
   ] : [
     { href: '/orders', label: 'Orders', icon: 'list', tab: true },

@@ -7,6 +7,7 @@ const {
 } = require('../users');
 const driverEmails = require('../driver-emails');
 const { refreshDriverPay } = require('../orders');
+const { recordLocation } = require('../mileage');
 
 const isImageDataUrl = (v) => typeof v === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v);
 const MAX_DOC_BYTES = 4 * 1024 * 1024;
@@ -92,10 +93,8 @@ router.put('/me/push-token', requireUser, asyncH(async (req, res) => {
 router.put('/me/location', requireUser, requireRole('driver'), asyncH(async (req, res) => {
   const location = parseLocation(req.body);
   if (!location) throw new HttpError(400, 'lat and lng are required');
-  await db.query(
-    'UPDATE users SET last_location = $1, location_updated_at = now() WHERE id = $2',
-    [JSON.stringify(location), req.user.id]
-  );
+  // Also adds the miles since the last position to the driver's mileage log.
+  await db.withTx((client) => recordLocation(client, req.user.id, location));
   res.json({ ok: true });
 }));
 

@@ -1,5 +1,6 @@
 import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS, VEHICLE_TYPES, navigate, formatMoney } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton, DemoBadge } from './components.js';
+import { MileageLog } from './pages-mileage.js';
 
 function AddAccountForm({ roles, companies, fixedCompanyId, onCreated, submitPath }) {
   const [v, setV] = useState({ name: '', email: '', phoneNumber: '', password: '', role: roles[0], organizationId: '', invite: true });
@@ -248,6 +249,8 @@ export function DriverDetailPage({ id }) {
           </section>
         </div>
       </div>
+      ${u.driverStatus === 'approved' && html`<h2 class="section-title">Mileage</h2>
+        <${MileageLog} driverId=${u.id} driverName=${u.name || u.email} />`}
     <//>`;
 }
 

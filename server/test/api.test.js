@@ -1991,3 +1991,53 @@ test('rush fee: flat locally, grows with distance, capped; drivers get half', ()
   const q = calculatePrice({ distanceMiles: 3, serviceLevel: 'rush', fees });
   assert.equal(driverPayFor(q.totalCents, 0, fees, q), 1000 + 1250, '$10 a job + half the rush fee');
 });
+
+test('mileage: counted from locations while online, with added trips; drivers see only their own', async () => {
+  const { stepMiles } = require('../src/mileage');
+  const at = new Date('2026-10-14T15:00:00Z');
+  const ago = (s) => new Date(at - s * 1000);
+  const a = { lat: 34.0, lng: -81.0 };
+  const b = { lat: 34.01, lng: -81.0 }; // about 0.69 mi north
+  assert.ok(Math.abs(stepMiles(a, ago(60), b, at) - 0.69) < 0.01, 'a normal move counts');
+  assert.equal(stepMiles(a, ago(15 * 60), b, at), 0, 'after a long gap it starts fresh');
+  assert.equal(stepMiles(a, ago(5), b, at), 0, 'impossible speed is a bad GPS fix');
+  assert.equal(stepMiles(a, ago(60), { lat: 34.0002, lng: -81.0 }, at), 0, 'drift while parked is ignored');
+  assert.equal(stepMiles(null, null, b, at), 0);
+
+  const before = (await call('GET', '/mileage', { token: t.d1 })).data.totals;
+  await call('PUT', '/users/me/location', { token: t.d1, body: a });
+  await db.query("UPDATE users SET location_updated_at = now() - interval '1 minute' WHERE id = $1", [ids.d1]);
+  await call('PUT', '/users/me/location', { token: t.d1, body: b });
+  let r = await call('GET', '/mileage', { token: t.d1 });
+  assert.equal(r.status, 200);
+  assert.ok(Math.abs(r.data.totals.trackedMiles - before.trackedMiles - 0.7) < 0.15, `tracked ${r.data.totals.trackedMiles}`);
+
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+  r = await call('POST', '/mileage/entries', { token: t.d1, body: { day: today, miles: 12.34, note: 'Supply run' } });
+  assert.equal(r.status, 201);
+  const entryId = r.data.id;
+  r = await call('POST', '/mileage/entries', { token: t.d1, body: { day: '2999-01-01', miles: 5 } });
+  assert.equal(r.status, 400, 'no future dates');
+  r = await call('POST', '/mileage/entries', { token: t.d1, body: { day: today, miles: 0 } });
+  assert.equal(r.status, 400);
+  r = await call('GET', '/mileage', { token: t.d1 });
+  const day = r.data.days.find((d) => d.day === today);
+  assert.equal(day.entries[0].note, 'Supply run');
+  assert.equal(day.addedMiles, 12.3);
+  assert.equal(r.data.totals.addedMiles, before.addedMiles + 12.3);
+
+  r = await call('GET', `/mileage?driverId=${ids.d1}`, { token: t.dispatcher });
+  assert.equal(r.status, 200, 'staff can see a driver\'s log');
+  assert.equal(r.data.totals.addedMiles, before.addedMiles + 12.3);
+  r = await call('GET', '/mileage', { token: t.acme });
+  assert.equal(r.status, 403, 'shippers have no mileage log');
+  const adminId = (await call('GET', '/users/me', { token: t.admin })).data.id;
+  r = await call('GET', `/mileage?driverId=${adminId}`, { token: t.d1 });
+  assert.equal(r.data.totals.addedMiles, before.addedMiles + 12.3, 'drivers always get their own log');
+  r = await call('DELETE', `/mileage/entries/${entryId}`, { token: t.acme });
+  assert.equal(r.status, 403);
+  r = await call('DELETE', `/mileage/entries/${entryId}`, { token: t.d1 });
+  assert.equal(r.status, 200);
+  r = await call('GET', '/mileage', { token: t.d1 });
+  assert.equal(r.data.totals.addedMiles, before.addedMiles);
+});

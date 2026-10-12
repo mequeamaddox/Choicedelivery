@@ -4,6 +4,7 @@ import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage, DriverSignupPa
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
 import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDetailPage, PayoutsPage } from './pages-admin.js';
 import { DriverJobsPage, DriverJobPage, DriverHistoryPage, PayoutMethodPage } from './pages-driver.js';
+import { DriverMileagePage } from './pages-mileage.js';
 import { ShippingFormPage, ShippingLabelPage } from './pages-shipping.js';
 
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
@@ -45,6 +46,7 @@ function App() {
     if (path === '/driver') return html`<${DriverJobsPage} />`;
     if (job) return html`<${DriverJobPage} key=${job.id} id=${job.id} />`;
     if (path === '/driver/history') return html`<${DriverHistoryPage} />`;
+    if (path === '/driver/mileage') return html`<${DriverMileagePage} />`;
     if (path === '/account') return html`<${AccountPage} />`;
     navigate('/driver');
     return null;

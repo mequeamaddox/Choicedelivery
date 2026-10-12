@@ -449,3 +449,7 @@ fieldset.card { margin: 0; min-width: 0; }
 .paylink { margin-top: .75rem; padding: .75rem; border: 1px solid var(--border); border-radius: 10px; background: var(--gray-bg); }
 .paylink input { font-size: .85rem; }
 .paylink + .actions, .card > .btn.block + .actions { margin-top: .6rem; }
+
+/* Mileage log */
+.mileage-bar { flex-wrap: wrap; }
+.mileage-bar > select { flex: 0 0 auto; width: auto; }
