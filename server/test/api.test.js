@@ -2041,3 +2041,26 @@ test('mileage: counted from locations while online, with added trips; drivers se
   r = await call('GET', '/mileage', { token: t.d1 });
   assert.equal(r.data.totals.addedMiles, before.addedMiles);
 });
+
+test('fuel surcharge: off by default; a percent of the delivery charge, shown as its own line; drivers share it', () => {
+  const { calculatePrice, driverPayFor, normalizeFees } = require('../src/pricing');
+  const wed = new Date('2026-10-14T15:00:00Z');
+  const off = normalizeFees({});
+  assert.equal(off.fuel.enabled, false);
+  const plain = calculatePrice({ distanceMiles: 30, at: wed, fees: off });
+  assert.ok(!plain.surcharges.some((s) => s.key === 'fuel'));
+
+  const fees = normalizeFees({ fuel: { enabled: true, percent: 10 } });
+  const q = calculatePrice({ distanceMiles: 30, at: wed, fees, pickupTravelMiles: 35 });
+  const charge = q.baseFeeCents + q.extraMileageCents + q.travelCents;
+  const fuel = q.surcharges.find((s) => s.key === 'fuel');
+  assert.equal(fuel.label, 'Fuel surcharge');
+  assert.equal(fuel.cents, Math.round(charge * 0.1));
+  assert.equal(q.totalCents, charge + fuel.cents);
+  const rush = calculatePrice({ distanceMiles: 30, at: wed, fees, serviceLevel: 'rush' });
+  assert.equal(rush.surcharges.find((s) => s.key === 'fuel').cents, Math.round((rush.baseFeeCents + rush.extraMileageCents) * 0.1),
+    'not charged on the rush fee');
+  assert.equal(driverPayFor(q.totalCents, 0, fees, q),
+    1000 + Math.round((q.extraMileageCents + q.travelCents + fuel.cents) * 0.7), 'drivers get their mileage share of it');
+  assert.equal(normalizeFees({ fuel: { enabled: true, percent: 500 } }).fuel.percent, 100);
+});

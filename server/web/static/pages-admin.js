@@ -514,6 +514,21 @@ function FeesEditor() {
           <input type="number" min="0" step="0.01" aria-label=${`${label} ($)`} value=${dollars(fees.surcharges[k].cents)} disabled=${!fees.surcharges[k].enabled}
             onInput=${(e) => set({ surcharges: { ...fees.surcharges, [k]: { ...fees.surcharges[k], cents: cents(e.target.value) } } })} />
         </div>`)}
+      <h3>Fuel surcharge</h3>
+      <div class="inline surcharge-row">
+        <label class="inline-check"><input type="checkbox" checked=${fees.fuel.enabled}
+          onChange=${(e) => set({ fuel: { ...fees.fuel, enabled: e.target.checked } })} /> Add a fuel surcharge (%)</label>
+        <input type="number" min="0" max="100" step="1" aria-label="Fuel surcharge (%)" value=${fees.fuel.percent} disabled=${!fees.fuel.enabled}
+          onInput=${(e) => set({ fuel: { ...fees.fuel, percent: Number(e.target.value) } })} />
+      </div>
+      ${(() => {
+        const car = fees.vehicles.Car;
+        const charge = car.baseCents + Math.round(Math.max(0, 30 - car.includedMiles) * car.perMileCents);
+        return html`<p class="muted small">A percent of the delivery charge (vehicle price + distance + travel to pickup), shown to customers
+          as its own "Fuel surcharge" line. Example: a 30-mile Car delivery (${formatMoney(charge)}) adds
+          ${formatMoney(Math.round(charge * fees.fuel.percent / 100))}${fees.fuel.enabled ? '' : ' when turned on'}.
+          Drivers get the same share of it as of the mileage fee.</p>`;
+      })()}
       <h3>Holidays</h3>
       <p class="muted small">The holiday surcharge applies on these days (Columbia time), instead of the weekend charge.</p>
       <div class="holiday-grid">
@@ -555,7 +570,7 @@ function FeesEditor() {
         <${Field} label="Per job ($)">
           <input type="number" min="0" step="0.01" value=${dollars(fees.driverPay.perJobCents)}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, perJobCents: cents(e.target.value) } })} /><//>
-        <${Field} label="Share of the mileage fee (%)" hint="The per-mile charge after the included miles.">
+        <${Field} label="Share of the mileage fee (%)" hint="The per-mile charge after the included miles, travel to pickup and the fuel surcharge.">
           <input type="number" min="0" max="100" step="1" value=${fees.driverPay.mileagePercent}
             onInput=${(e) => set({ driverPay: { ...fees.driverPay, mileagePercent: Number(e.target.value) } })} /><//>
         <${Field} label="Share of extras (%)" hint="Wait time, return trips, failed attempts and other added charges (and loading help, when offered).">

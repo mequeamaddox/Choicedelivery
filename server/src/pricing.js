@@ -8,6 +8,7 @@
 //   + surcharges: weekend $15, holiday $25 (instead of the weekend charge, not on top of it),
 //     and from the original app: high demand (3+ open orders) $15, bad weather $15 (switched on by
 //     dispatch); lunch rush (11:30am-1:30pm) $5 exists but is off
+//   + fuel surcharge (off by default): a percent of the vehicle base + distance + travel to pickup
 //   + weight tiers, $10 per extra stop, optional add-ons (loading help, inside delivery/stairs),
 //     and wait time billed after the order (first 15 minutes at each stop free, then $10 per 15 minutes).
 //
@@ -123,6 +124,9 @@ const DEFAULT_FEES = {
   // We're based in Columbia: a pickup more than freeMiles away adds the drive out to it (at the vehicle's
   // per-mile rate), and one more than approvalMiles away is quoted but has to be approved by dispatch.
   pickupTravel: { freeMiles: 25, approvalMiles: 60 },
+  // Fuel surcharge: a percent of the delivery charge (vehicle base + distance + travel to pickup), shown
+  // as its own line. Off until the owner turns it on (e.g. when gas prices go up).
+  fuel: { enabled: false, percent: 10 },
   // Lunch rush is off by the owner's choice (it can be switched back on).
   surcharges: Object.fromEntries(Object.entries(SURCHARGES).map(([k, sc]) => [k, { cents: sc.cents, enabled: k !== 'lunch' }])),
   holidays: Object.fromEntries(Object.entries(HOLIDAYS).map(([k, h]) => [k, h.on])),
@@ -150,7 +154,9 @@ const DEFAULT_FEES = {
 function driverPayFor(priceCents, extrasCents, fees, breakdown = null) {
   if (priceCents == null) return null;
   const { perJobCents, mileagePercent, extrasPercent, rushPercent = 0 } = fees.driverPay;
-  const mileage = Math.round((((breakdown?.extraMileageCents || 0) + (breakdown?.travelCents || 0)) * mileagePercent) / 100);
+  // The fuel surcharge pays for gas, so drivers get the same share of it as of the mileage fee.
+  const fuelCents = (breakdown?.surcharges || []).find((sc) => sc.key === 'fuel')?.cents || 0;
+  const mileage = Math.round((((breakdown?.extraMileageCents || 0) + (breakdown?.travelCents || 0) + fuelCents) * mileagePercent) / 100);
   const trip = Math.min(priceCents, perJobCents + mileage);
   // Extras the driver does the work for: booked up front (loading help, inside delivery) or added later.
   const bookedExtras = (breakdown?.addOns || []).reduce((sum, a) => sum + (a.cents || 0), 0);
@@ -235,6 +241,10 @@ function normalizeFees(saved) {
     longDistance: {
       afterMiles: Math.max(1, cleanCents(f.longDistance?.afterMiles, DEFAULT_FEES.longDistance.afterMiles)),
       percent: Math.min(500, cleanCents(f.longDistance?.percent, DEFAULT_FEES.longDistance.percent)),
+    },
+    fuel: {
+      enabled: f.fuel?.enabled === true,
+      percent: Math.min(100, cleanCents(f.fuel?.percent, DEFAULT_FEES.fuel.percent)),
     },
     surcharges,
     holidays,
@@ -396,6 +406,9 @@ function calculatePrice({
   const surcharges = Object.entries(SURCHARGES)
     .filter(([key]) => applies[key] && fees.surcharges[key].enabled && fees.surcharges[key].cents > 0)
     .map(([key, s]) => ({ key, label: key === 'holiday' ? `Holiday (${holiday})` : s.label, cents: fees.surcharges[key].cents }));
+  const fuel = fees.fuel || DEFAULT_FEES.fuel;
+  const fuelCents = fuel.enabled ? Math.round(((rates.baseCents + extraMileageCents + travelCents) * fuel.percent) / 100) : 0;
+  if (fuelCents > 0) surcharges.unshift({ key: 'fuel', label: 'Fuel surcharge', cents: fuelCents });
   const surchargeCents = surcharges.reduce((sum, s) => sum + s.cents, 0);
 
   const lbs = weightLbs == null || weightLbs === '' ? null : Number(weightLbs);
