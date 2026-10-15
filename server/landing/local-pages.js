@@ -158,6 +158,24 @@ const SERVICES = [
     ],
   },
   {
+    slug: 'facebook-marketplace-delivery-columbia-sc',
+    nav: 'Marketplace pickup & delivery',
+    title: 'Facebook Marketplace Pickup & Delivery in Columbia, SC | Same Day',
+    description: 'Bought something on Facebook Marketplace, OfferUp or Craigslist? We pick it up from the seller and deliver it to you the same day in Columbia, Lexington and the Midlands. Instant price online.',
+    h1: 'Facebook Marketplace pickup and delivery in Columbia',
+    intro: 'Found the perfect deal but have no truck, no time, or no way across town? Pay the seller, book us online, and we\'ll pick it up and bring it straight to your door today.',
+    sections: [
+      ['How it works', 'Agree on the item and pay the seller through Facebook, a payment app or however you both prefer. Then book a delivery with the seller\'s address as the pickup and yours as the drop-off, and add the seller\'s name and phone number so the driver can reach them. We pick it up, drive it straight to you, and send a photo when it\'s delivered. You can follow the driver on the map the whole way.'],
+      ['What we can bring', 'Chairs, small tables, nightstands, TVs, electronics, grills, patio items, bikes, kids\' gear, tools, auto parts, boxes and décor, from Facebook Marketplace, OfferUp, Craigslist or a yard sale. Choose a car, minivan or pickup truck depending on the size. No single piece over 75 lbs.'],
+      ['Before you book', 'Please have someone at both ends to help load and unload, since the driver handles the drive, not the heavy lifting. Make sure you\'ve paid the seller first: our drivers don\'t carry cash or collect payment for items. Measure big items so you pick a vehicle they\'ll fit in.'],
+    ],
+    faqs: [
+      ['Do you collect the payment from the seller for me?', 'No. Pay the seller before the pickup, through Facebook, a payment app or however you agree. Our drivers don\'t handle cash or item payments.'],
+      ['Can you inspect the item for me?', 'We don\'t inspect or test items, so check the photos and ask the seller questions first. We pick up exactly what the seller hands over and deliver it to you.'],
+      ['Can you move a couch or a big dresser?', 'Only if no single piece is over 75 lbs and it fits in a pickup truck, with someone to help load and unload at both ends. Heavier furniture needs a moving company.'],
+    ],
+  },
+  {
     slug: 'business-delivery-columbia-sc',
     nav: 'Business deliveries',
     title: 'Local Business Courier Service in Columbia, SC',

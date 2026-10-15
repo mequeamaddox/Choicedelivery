@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Choice Delivery Marketplace Posters</title>
-<!-- Square 1080x1080 images for Facebook Marketplace. ?n=1 (main photo) or ?n=2 (what we deliver). -->
+<title>Marketplace Delivery Posters</title>
+<!-- Square 1080x1080 images promoting pickup & delivery of Facebook Marketplace purchases. ?n=1 or ?n=2. -->
 <style>
   :root { --teal: #0f766e; --teal-dark: #115e59; --mint: #5eead4; --mint-light: #ccfbf1; --ink: #111827; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -29,7 +29,7 @@
 
   /* 2: what we deliver */
   .p2 { background: #fff; padding: 72px 84px; }
-  .p2 h2 { font-size: 70px; line-height: 1.05; font-weight: 800; color: var(--teal); letter-spacing: -1px; }
+  .p2 h2 { font-size: 66px; line-height: 1.05; font-weight: 800; color: var(--teal); letter-spacing: -1px; }
   .p2 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 44px; }
   .p2 .item { background: var(--mint-light); border-radius: 24px; padding: 26px 30px; font-size: 33px; font-weight: 700; color: var(--teal-dark); display: flex; gap: 16px; align-items: center; }
   .p2 .item i { font-style: normal; font-size: 44px; }
@@ -43,37 +43,38 @@
 <body>
 <div class="poster p1" id="p1">
   <img class="logo" src="logo-white.png" alt="Choice Delivery SC">
-  <h1>Need it there<br><span>today?</span></h1>
-  <p class="sub">Same-day courier from Columbia &amp; the Midlands<br>to anywhere in South Carolina.</p>
+  <h1>Bought it on<br><span>Marketplace?</span></h1>
+  <p class="sub">No truck? No time? We'll pick it up from the seller<br>and bring it to you, today.</p>
   <div class="pills">
-    <div class="pill">⚡ Rush delivery</div>
+    <div class="pill">🚚 Car · Van · Pickup truck</div>
     <div class="pill">📍 Live tracking</div>
-    <div class="pill">📸 Photo proof</div>
-    <div class="pill">🚚 Car · Van · Truck</div>
+    <div class="pill">📸 Photo at drop-off</div>
+    <div class="pill">⚡ Same day</div>
   </div>
   <div class="cta">
-    <div><b>choicedeliverysc.com</b><small>Instant price online · Open 7 days, 8 AM – 10 PM</small></div>
+    <div><b>choicedeliverysc.com</b><small>Instant price online · Columbia &amp; the Midlands</small></div>
     <div class="arrow">→</div>
   </div>
 </div>
 
 <div class="poster p2" id="p2">
-  <h2>We deliver for Columbia businesses &amp; neighbors</h2>
+  <h2>Marketplace pickup &amp; delivery, made easy</h2>
   <div class="grid">
-    <div class="item"><i>🔧</i>Auto parts</div>
-    <div class="item"><i>🧰</i>Contractor supplies</div>
-    <div class="item"><i>🖨️</i>Print &amp; signs</div>
-    <div class="item"><i>💐</i>Flowers &amp; gifts</div>
-    <div class="item"><i>💻</i>Office &amp; IT gear</div>
-    <div class="item"><i>📦</i>Packages &amp; boxes</div>
+    <div class="item"><i>🪑</i>Chairs &amp; tables</div>
+    <div class="item"><i>📺</i>TVs &amp; electronics</div>
+    <div class="item"><i>🔥</i>Grills &amp; patio items</div>
+    <div class="item"><i>🧸</i>Kids' gear &amp; toys</div>
+    <div class="item"><i>🔧</i>Tools &amp; parts</div>
+    <div class="item"><i>📦</i>Boxes &amp; décor</div>
   </div>
   <div class="steps">
-    <div><b>1</b>Get your price in seconds online</div>
-    <div><b>2</b>Book standard or Rush, pay securely</div>
-    <div><b>3</b>Track your driver live on the map</div>
+    <div><b>1</b>Pay the seller, then enter both addresses online</div>
+    <div><b>2</b>We pick it up and drive it straight to you</div>
+    <div><b>3</b>Track it live, get a photo when it's delivered</div>
   </div>
-  <div class="foot">choicedeliverysc.com<span>Columbia · Lexington · Irmo · Cayce · Blythewood &amp; more</span></div>
+  <div class="foot">choicedeliverysc.com<span>Please have someone to help load &amp; unload · max 75 lbs per piece</span></div>
 </div>
+
 <script>
   const n = new URLSearchParams(location.search).get('n') || '1';
   document.getElementById('p' + n).classList.add('on');
