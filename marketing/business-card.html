@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choice Delivery Business Card</title>
+<!-- Renders the card. ?side=front|back picks one side; ?bleed=1 adds the 1/8" print-shop bleed;
+     ?sheet=front|back lays out 10 cards on letter paper (Avery 8371-style: 2 x 5, 0.5" top, 0.75" sides). -->
+<style>
+  :root { --teal: #0f766e; --teal-dark: #115e59; --mint: #5eead4; --mint-light: #ccfbf1; --ink: #111827; --muted: #4b5563; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { margin: 0; }
+  html, body { background: #fff; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .card { width: 3.5in; height: 2in; position: relative; overflow: hidden; }
+  .bleed .card { width: 3.75in; height: 2.25in; }
+  .bleed .safe { position: absolute; inset: 0.125in; }
+  .safe { position: absolute; inset: 0; }
+
+  .front { background: linear-gradient(135deg, var(--mint) -40%, var(--teal) 65%); color: #fff; }
+  .front .inner { position: absolute; inset: 0.2in 0.22in; display: flex; flex-direction: column; justify-content: center; }
+  .front img { width: 1.95in; display: block; }
+  .front .tag { font-size: 10.5pt; font-weight: 700; margin-top: 0.14in; letter-spacing: 0.1pt; }
+  .front .sub { font-size: 7.6pt; margin-top: 0.04in; color: var(--mint-light); }
+
+  .back { background: #fff; }
+  .back .inner { position: absolute; inset: 0.18in 0.2in; display: flex; gap: 0.16in; align-items: center; }
+  .back .qr { flex: none; width: 1.02in; text-align: center; }
+  .back .qr img { width: 1.02in; height: 1.02in; display: block; }
+  .back .qr span { display: block; font-size: 6pt; color: var(--muted); margin-top: 0.03in; }
+  .back .info { flex: 1; min-width: 0; }
+  .back .logo { width: 1.1in; display: block; margin-bottom: 0.05in; }
+  .back .big { font-size: 9.6pt; font-weight: 800; color: var(--teal); line-height: 1.15; }
+  .back ul { list-style: none; margin-top: 0.05in; font-size: 6.6pt; line-height: 1.45; color: var(--ink); }
+  .back ul li::before { content: "✓ "; color: var(--teal); font-weight: 700; }
+  .back .contact { margin-top: 0.05in; font-size: 7pt; line-height: 1.35; }
+  .back .contact strong { color: var(--teal); }
+  .back .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 0.07in; background: var(--teal); }
+
+  .sheet { width: 8.5in; height: 11in; padding: 0.5in 0.75in; display: grid; grid-template-columns: 3.5in 3.5in; grid-auto-rows: 2in; }
+  .sheet { break-after: page; }
+  .sheet .card { outline: 0.5pt dashed #d1d5db; }
+  .sheet.backs { direction: rtl; } /* mirrored columns so backs line up when printed double-sided */
+  .sheet.backs .card { direction: ltr; }
+</style>
+</head>
+<body>
+<template id="front">
+  <div class="card front"><div class="safe"><div class="inner">
+    <img src="logo-white.png" alt="Choice Delivery SC">
+    <div class="tag">Same-day courier · Columbia, SC</div>
+    <div class="sub">Rush, local &amp; statewide delivery · 7 days a week</div>
+  </div></div></div>
+</template>
+<template id="back">
+  <div class="card back"><div class="safe">
+    <div class="inner">
+      <div class="qr"><img src="card-qr.svg" alt="QR code for an instant quote"><span>Scan for a quote</span></div>
+      <div class="info">
+        <img class="logo" src="logo-teal.png" alt="Choice Delivery SC">
+        <div class="big">Instant price online.<br>Delivered today.</div>
+        <ul><li>Live tracking &amp; photo proof</li><li>Car, minivan or pickup truck</li></ul>
+        <div class="contact"><strong>choicedeliverysc.com</strong><br>info@choicedeliverysc.com<br>(803) 949-7034</div>
+      </div>
+    </div>
+  </div><div class="bar"></div></div>
+</template>
+<div id="out"></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const out = document.getElementById('out');
+  const card = (side) => document.getElementById(side).content.cloneNode(true);
+  if (q.get('sheet')) {
+    const sides = q.get('sheet') === 'both' ? ['front', 'back'] : [q.get('sheet')];
+    for (const side of sides) {
+      const s = document.createElement('div');
+      s.className = 'sheet' + (side === 'back' ? ' backs' : '');
+      for (let i = 0; i < 10; i++) s.appendChild(card(side));
+      out.appendChild(s);
+    }
+  } else {
+    if (q.get('bleed')) out.className = 'bleed';
+    out.appendChild(card(q.get('side') || 'front'));
+  }
+</script>
+</body>
+</html>

@@ -52,6 +52,12 @@ const LANDING_FILES = {
   '/logo-wide.png': 'logo-wide.png',
   '/logo-landscape.png': 'logo-landscape.png',
   '/flyer.jpg': 'flyer.jpg',
+  // Business cards: print-shop files (with bleed), a letter sheet of 10 to print at home, and previews.
+  '/card-front.pdf': 'card-front.pdf',
+  '/card-back.pdf': 'card-back.pdf',
+  '/cards-print-at-home.pdf': 'cards-print-at-home.pdf',
+  '/card-front.png': 'card-front.png',
+  '/card-back.png': 'card-back.png',
   '/logos': 'logos.html', // logo downloads (not in the sitemap; noindex)
   '/favicon.png': 'favicon.png',
   '/favicon.ico': 'favicon.png',
