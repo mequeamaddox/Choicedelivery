@@ -52,6 +52,8 @@ const LANDING_FILES = {
   '/logo-wide.png': 'logo-wide.png',
   '/logo-landscape.png': 'logo-landscape.png',
   '/flyer.jpg': 'flyer.jpg',
+  '/marketplace-1.jpg': 'marketplace-1.jpg', // square images for Facebook Marketplace
+  '/marketplace-2.jpg': 'marketplace-2.jpg',
   // Business cards: print-shop files (with bleed), a letter sheet of 10 to print at home, and previews.
   '/card-front.pdf': 'card-front.pdf',
   '/card-back.pdf': 'card-back.pdf',

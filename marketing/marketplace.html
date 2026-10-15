@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choice Delivery Marketplace Posters</title>
+<!-- Square 1080x1080 images for Facebook Marketplace. ?n=1 (main photo) or ?n=2 (what we deliver). -->
+<style>
+  :root { --teal: #0f766e; --teal-dark: #115e59; --mint: #5eead4; --mint-light: #ccfbf1; --ink: #111827; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); }
+  .poster { width: 1080px; height: 1080px; position: relative; overflow: hidden; display: none; }
+  .poster.on { display: block; }
+
+  /* 1: main photo */
+  .p1 { background: linear-gradient(140deg, var(--mint) -25%, var(--teal) 55%, var(--teal-dark) 100%); color: #fff; padding: 80px 84px; }
+  .p1 .logo { width: 400px; display: block; }
+  .p1 h1 { font-size: 104px; line-height: 1.0; font-weight: 800; letter-spacing: -2px; margin-top: 64px; }
+  .p1 h1 span { color: var(--mint); }
+  .p1 .sub { font-size: 38px; margin-top: 26px; line-height: 1.3; color: var(--mint-light); }
+  .p1 .pills { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 48px; }
+  .p1 .pill { background: rgba(255,255,255,.14); border: 2px solid rgba(255,255,255,.35); border-radius: 999px; padding: 14px 28px; font-size: 32px; font-weight: 700; }
+  .p1 .cta { position: absolute; left: 84px; right: 84px; bottom: 76px; background: #fff; color: var(--teal); border-radius: 28px;
+    padding: 30px 40px; display: flex; justify-content: space-between; align-items: center; }
+  .p1 .cta b { font-size: 46px; font-weight: 800; }
+  .p1 .cta small { display: block; font-size: 28px; color: var(--ink); font-weight: 600; margin-top: 4px; }
+  .p1 .cta .arrow { font-size: 64px; font-weight: 800; }
+
+  /* 2: what we deliver */
+  .p2 { background: #fff; padding: 72px 84px; }
+  .p2 h2 { font-size: 70px; line-height: 1.05; font-weight: 800; color: var(--teal); letter-spacing: -1px; }
+  .p2 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 44px; }
+  .p2 .item { background: var(--mint-light); border-radius: 24px; padding: 26px 30px; font-size: 33px; font-weight: 700; color: var(--teal-dark); display: flex; gap: 16px; align-items: center; }
+  .p2 .item i { font-style: normal; font-size: 44px; }
+  .p2 .steps { margin-top: 36px; display: grid; gap: 14px; font-size: 32px; }
+  .p2 .steps div { display: flex; gap: 18px; align-items: baseline; }
+  .p2 .steps b { flex: none; width: 52px; height: 52px; border-radius: 50%; background: var(--teal); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 28px; }
+  .p2 .foot { position: absolute; left: 0; right: 0; bottom: 0; background: var(--teal); color: #fff; padding: 28px 84px 32px; font-size: 44px; font-weight: 800; }
+  .p2 .foot span { display: block; font-size: 28px; font-weight: 600; color: var(--mint-light); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="poster p1" id="p1">
+  <img class="logo" src="logo-white.png" alt="Choice Delivery SC">
+  <h1>Need it there<br><span>today?</span></h1>
+  <p class="sub">Same-day courier from Columbia &amp; the Midlands<br>to anywhere in South Carolina.</p>
+  <div class="pills">
+    <div class="pill">⚡ Rush delivery</div>
+    <div class="pill">📍 Live tracking</div>
+    <div class="pill">📸 Photo proof</div>
+    <div class="pill">🚚 Car · Van · Truck</div>
+  </div>
+  <div class="cta">
+    <div><b>choicedeliverysc.com</b><small>Instant price online · Open 7 days, 8 AM – 10 PM</small></div>
+    <div class="arrow">→</div>
+  </div>
+</div>
+
+<div class="poster p2" id="p2">
+  <h2>We deliver for Columbia businesses &amp; neighbors</h2>
+  <div class="grid">
+    <div class="item"><i>🔧</i>Auto parts</div>
+    <div class="item"><i>🧰</i>Contractor supplies</div>
+    <div class="item"><i>🖨️</i>Print &amp; signs</div>
+    <div class="item"><i>💐</i>Flowers &amp; gifts</div>
+    <div class="item"><i>💻</i>Office &amp; IT gear</div>
+    <div class="item"><i>📦</i>Packages &amp; boxes</div>
+  </div>
+  <div class="steps">
+    <div><b>1</b>Get your price in seconds online</div>
+    <div><b>2</b>Book standard or Rush, pay securely</div>
+    <div><b>3</b>Track your driver live on the map</div>
+  </div>
+  <div class="foot">choicedeliverysc.com<span>Columbia · Lexington · Irmo · Cayce · Blythewood &amp; more</span></div>
+</div>
+<script>
+  const n = new URLSearchParams(location.search).get('n') || '1';
+  document.getElementById('p' + n).classList.add('on');
+</script>
+</body>
+</html>
