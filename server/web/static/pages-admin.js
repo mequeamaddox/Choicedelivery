@@ -351,6 +351,7 @@ export function CompaniesPage() {
         </div>
         <div><button class="btn primary">Add company</button></div>
       </form>
+      <${ApiKeys} staff=${true} />
     <//>`;
 }
 
@@ -599,6 +600,54 @@ function FeesEditor() {
     </form>`;
 }
 
+// API keys: customers make them for their own systems (shown once); staff see every active key.
+function ApiKeys({ staff = false }) {
+  const keys = useApi('/api-keys');
+  const [name, setName] = useState('');
+  const [created, setCreated] = useState(null);
+  const [error, setError] = useState(null);
+  const create = async (e) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      const k = await api('/api-keys', { method: 'POST', body: { name } });
+      setCreated(k); setName(''); keys.reload();
+    } catch (x) { setError(x); }
+  };
+  const list = keys.data || [];
+  return html`
+    <section class="card stack">
+      <h2>API keys</h2>
+      <p class="small muted">${staff
+        ? 'Keys customers made so their own software can book and track deliveries. Each key only sees its own company\'s orders. Revoke one to shut it off right away.'
+        : 'For connecting your own software (an online store, inventory or order system) so it can get prices, book deliveries and track them. A key can only see your company\'s orders and can\'t change your account.'}</p>
+      <${Alert} error=${error || keys.error} />
+      ${created && html`<div class="alert success" role="status">
+        <strong>Copy your key now. It won't be shown again.</strong>
+        <div class="api-key-reveal"><code>${created.key}</code>
+          <button type="button" class="btn small" onClick=${() => navigator.clipboard?.writeText(created.key)}>Copy</button></div>
+        <span class="small">Send it as <code>${'Authorization: Bearer <key>'}</code> to https://app.choicedeliverysc.com. Keep it secret, like a password.</span>
+      </div>`}
+      ${list.length > 0 && html`<div class="table-wrap"><table>
+        <thead><tr><th>Name</th>${staff && html`<th>Customer</th>`}<th>Key</th><th>Last used</th><th></th></tr></thead>
+        <tbody>${list.map((k) => html`<tr key=${k.id}>
+          <td data-label="Name"><div>${k.name}<div class="muted small">Made ${formatDate(k.createdAt)}</div></div></td>
+          ${staff && html`<td data-label="Customer">${k.company || '—'}<div class="muted small">${k.user?.name || k.user?.email}</div></td>`}
+          <td data-label="Key"><code>${k.prefix}…</code></td>
+          <td data-label="Last used">${k.lastUsedAt ? timeAgo(k.lastUsedAt) : 'Never'}</td>
+          <td class="row-actions"><${ActionButton} class="btn small danger" onError=${setError}
+            confirmText=${`Revoke "${k.name}"? Anything using it stops working right away.`}
+            onClick=${async () => { await api(`/api-keys/${k.id}`, { method: 'DELETE' }); if (created?.id === k.id) setCreated(null); keys.reload(); }}>Revoke<//></td>
+        </tr>`)}</tbody>
+      </table></div>`}
+      ${staff && !keys.loading && !list.length && html`<p class="small muted">No customer has made an API key yet.</p>`}
+      ${!staff && html`<form class="inline" onSubmit=${create}>
+        <input aria-label="Key name" placeholder="What it's for, e.g. Online store" maxlength="80" value=${name} onInput=${(e) => setName(e.target.value)} />
+        <button class="btn">Create key</button>
+      </form>`}
+    </section>`;
+}
+
 export function AccountPage() {
   const me = getUser();
   const [v, setV] = useState({ name: me.name || '', email: me.email, phoneNumber: me.phoneNumber || '',
@@ -652,6 +701,7 @@ export function AccountPage() {
           <div><button class="btn primary">Change password</button></div>
         </form>
       </div>
+      ${me.role === 'shipper' && html`<div class="account-extra stack"><${ApiKeys} /></div>`}
       ${me.role === 'admin' && html`<div class="account-extra stack"><${PaymentsStatus} /><${EmailStatus} /><${DriverAppLink} /><${FeesEditor} /></div>`}
     <//>`;
 }

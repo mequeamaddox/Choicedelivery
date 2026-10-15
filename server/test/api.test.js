@@ -2064,3 +2064,55 @@ test('fuel surcharge: off by default; a percent of the delivery charge, shown as
     1000 + Math.round((q.extraMileageCents + q.travelCents + fuel.cents) * 0.7), 'drivers get their mileage share of it');
   assert.equal(normalizeFees({ fuel: { enabled: true, percent: 500 } }).fuel.percent, 100);
 });
+
+test('API keys: customers make them; a key books and tracks only its own company\'s orders and can be revoked', async () => {
+  let r = await call('POST', '/api-keys', { token: t.acme, body: { name: 'Online store' } });
+  assert.equal(r.status, 201);
+  const { key, id: keyId } = r.data;
+  assert.match(key, /^cd_live_[A-Za-z0-9_-]{32}$/);
+  assert.ok(key.startsWith(r.data.prefix));
+  const { rows: [stored] } = await db.query('SELECT key_hash FROM api_keys WHERE id = $1', [keyId]);
+  assert.notEqual(stored.key_hash, key, 'only a hash is stored');
+
+  r = await call('POST', '/orders', { token: key, body: orderBody({ notes: 'From the online store' }) });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const apiOrder = r.data;
+  r = await call('GET', `/orders/${apiOrder.id}`, { token: t.acme });
+  assert.equal(r.status, 200, 'the company sees orders its key booked');
+  const acmeOrg = ids.acmeOrg;
+  const otherOrder = (await call('POST', '/orders', { token: t.other, body: orderBody() })).data;
+  r = await call('GET', '/orders', { token: key });
+  assert.equal(r.status, 200);
+  const acmeList = (await call('GET', '/orders', { token: t.acme })).data.map((o) => o.id).sort();
+  assert.deepEqual(r.data.map((o) => o.id).sort(), acmeList, 'a key sees exactly what its company sees');
+  assert.ok(r.data.some((o) => o.id === apiOrder.id) && !r.data.some((o) => o.id === otherOrder.id), 'and not other companies\' orders');
+  r = await call('GET', `/orders/${otherOrder.id}`, { token: key });
+  assert.ok([403, 404].includes(r.status), 'cannot see another company\'s order');
+
+  r = await call('POST', '/auth/change-password', { token: key, body: { currentPassword: 'x', newPassword: 'whatever123' } });
+  assert.equal(r.status, 403, 'keys cannot change the password');
+  r = await call('PUT', '/users/me', { token: key, body: { name: 'Hacked' } });
+  assert.equal(r.status, 403, 'or the profile');
+  r = await call('POST', '/api-keys', { token: key, body: { name: 'another' } });
+  assert.equal(r.status, 403, 'or make more keys');
+  r = await call('POST', `/organizations/${acmeOrg}/users`, { token: key, body: { email: 'x@acme.com', password: 'password1' } });
+  assert.equal(r.status, 403, 'or add coworkers');
+
+  r = await call('GET', '/api-keys', { token: t.other });
+  assert.equal(r.data.length, 0, 'customers only see their own keys');
+  r = await call('DELETE', `/api-keys/${keyId}`, { token: t.other });
+  assert.equal(r.status, 404, 'and cannot revoke someone else\'s');
+  r = await call('GET', '/api-keys', { token: t.dispatcher });
+  const listed = r.data.find((k) => k.id === keyId);
+  assert.ok(listed.company && listed.user.email, 'staff see every key with its customer');
+  assert.equal(listed.key, undefined, 'the key itself is never listed');
+  assert.equal((await call('POST', '/api-keys', { token: t.dispatcher, body: {} })).status, 403, 'keys are made from customer accounts');
+  assert.equal((await call('POST', '/api-keys', { token: t.d1, body: {} })).status, 403);
+
+  r = await call('DELETE', `/api-keys/${keyId}`, { token: t.acme });
+  assert.equal(r.status, 200);
+  r = await call('GET', '/orders', { token: key });
+  assert.equal(r.status, 401, 'a revoked key stops working right away');
+  r = await call('GET', '/orders', { token: 'cd_live_notarealkey' });
+  assert.equal(r.status, 401);
+});

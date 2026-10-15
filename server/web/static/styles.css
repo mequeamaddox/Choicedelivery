@@ -453,3 +453,7 @@ fieldset.card { margin: 0; min-width: 0; }
 /* Mileage log */
 .mileage-bar { flex-wrap: wrap; }
 .mileage-bar > select { flex: 0 0 auto; width: auto; }
+
+/* API keys */
+.api-key-reveal { display: flex; gap: .5rem; align-items: center; margin: .5rem 0; }
+.api-key-reveal code { flex: 1; min-width: 0; overflow-wrap: anywhere; background: var(--surface); padding: .4rem .6rem; border-radius: 6px; border: 1px solid var(--border); }
