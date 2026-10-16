@@ -45,6 +45,7 @@ const LANDING_FILES = {
   '/terms.html': 'terms.html',
   '/site.css': 'site.css',
   '/attribution.js': 'attribution.js', // remembers which ad or site a visitor came from
+  '/pixel.js': 'pixel.js',
   '/robots.txt': 'robots.txt',
   '/sitemap.xml': 'sitemap.xml',
   '/logo.png': 'logo.png',
@@ -115,11 +116,11 @@ const WEB_DIR = path.join(__dirname, '..', 'web');
 const webHeaders = (res) => {
   res.set({
     // Stripe's embedded payout form (drivers' bank & debit card page) loads from Stripe's domains.
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org https://*.stripe.com; "
+    'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https://tile.openstreetmap.org https://*.stripe.com https://www.facebook.com; "
       + "style-src 'self' 'sha256-0hAheEzaMe6uXIKV4EehS9pu1am1lj/KnnzrOYqckXk='; "
-      + "script-src 'self' https://connect-js.stripe.com https://js.stripe.com; "
+      + "script-src 'self' https://connect-js.stripe.com https://js.stripe.com https://connect.facebook.net; "
       + "frame-src https://connect-js.stripe.com https://js.stripe.com; "
-      + "connect-src 'self' https://api.stripe.com https://connect-js.stripe.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      + "connect-src 'self' https://api.stripe.com https://connect-js.stripe.com https://www.facebook.com https://connect.facebook.net; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'same-origin',
   });

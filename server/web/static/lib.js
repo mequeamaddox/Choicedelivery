@@ -1,5 +1,6 @@
 // Shared plumbing for the web app: rendering, API client, session, routing, formatting.
 import { h, render } from './vendor/preact.js';
+import { trackPixel } from './pixel.js';
 import { useState, useEffect, useCallback, useRef } from './vendor/hooks.js';
 import htm from './vendor/htm.js';
 
@@ -124,12 +125,14 @@ export async function createOwner(fields) {
 // "Apply to drive": creates a driver account waiting for review and signs them in.
 export async function driverSignup(fields) {
   const { token: t, user } = await api('/auth/driver-signup', { method: 'POST', body: { ...fields, attribution: attribution() } });
+  trackPixel('SubmitApplication', { content_name: 'Driver application' });
   setSession(t, user);
   return user;
 }
 
 export async function signup(fields) {
   const { token: t, user } = await api('/auth/signup', { method: 'POST', body: { ...fields, attribution: attribution() } });
+  trackPixel('CompleteRegistration');
   setSession(t, user);
   return user;
 }

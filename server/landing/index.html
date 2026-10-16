@@ -766,6 +766,7 @@
 
     <!-- JavaScript -->
     <script src="/attribution.js?v=1"></script>
+    <script src="/pixel.js?v=1"></script>
     <script>
         // Mobile menu toggle
         document.getElementById('mobile-menu-btn').addEventListener('click', function() {
@@ -872,6 +873,7 @@
             document.getElementById('email-quote-status').classList.add('hidden');
             try {
                 const q = await postJson('/public/quote', lastQuote);
+                if (window.cdTrack) cdTrack('ViewContent', { content_name: 'Instant quote', value: q.totalCents / 100 });
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
                 document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price'
                     : q.needsApproval ? `Estimated: ${money(q.totalCents)} (needs our approval)` : `Estimated: ${money(q.totalCents)}`;
@@ -942,6 +944,7 @@
             button.disabled = true;
             try {
                 const r = await postJson('/public/contract-request', Object.fromEntries(new FormData(this)));
+                if (window.cdTrack) cdTrack('Lead', { content_name: 'Business plan request' });
                 showStatus(status, r.message, true);
                 setTimeout(closePlanDialog, 3500);
             } catch (err) {
@@ -950,6 +953,11 @@
             }
         });
         /* /business-plans */
+
+        // Starting to book from a quote (Meta Pixel).
+        document.getElementById('quote-book').addEventListener('click', function () {
+            if (window.cdTrack) cdTrack('InitiateCheckout', { content_name: 'Book from quote' });
+        });
 
         // "Email me this quote": sends the quote on screen to the visitor and to Leads.
         document.getElementById('email-quote-form').addEventListener('submit', async function (e) {
@@ -961,6 +969,7 @@
             button.disabled = true;
             try {
                 const r = await postJson('/public/email-quote', { ...lastQuote, email: input.value.trim(), website: this.elements.website.value });
+                if (window.cdTrack) cdTrack('Lead', { content_name: 'Emailed quote' });
                 showStatus(status, r.message, true);
             } catch (err) {
                 showStatus(status, err.message, false);
@@ -977,6 +986,7 @@
             button.disabled = true;
             try {
                 const r = await postJson('/public/contact', Object.fromEntries(new FormData(this)));
+                if (window.cdTrack) cdTrack('Contact');
                 showStatus(status, r.message, true);
                 this.reset();
             } catch (err) {

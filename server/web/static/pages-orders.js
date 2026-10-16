@@ -7,6 +7,7 @@ import {
   LiveMap,
   LegalLinks,
 } from './components.js';
+import { trackPurchase } from './pixel.js';
 
 const FILTERS = [
   { key: 'active', label: 'In progress', statuses: ['pending', ...ACTIVE_STATUSES] },
@@ -297,6 +298,8 @@ export function NewOrderPage() {
         if (!v.organizationId) Object.assign(body, { customerName: v.customerName.trim(), customerEmail: v.customerEmail.trim() });
       }
       const order = await api('/orders', { method: 'POST', body });
+      // Invoice (monthly account) bookings are complete now; card bookings count once paid (PaymentPanel).
+      if (!staff && !saveAsQuote && order.status !== 'quote' && order.paymentStatus === 'invoice') trackPurchase(order);
       // Dispatch booking for a phone/walk-in customer: email them a link to pay by card.
       if (staff && !saveAsQuote && !v.organizationId && v.customerEmail.trim() && v.sendPayLink && payments.data?.enabled
         && order.status !== 'quote') {
@@ -565,6 +568,7 @@ function PaymentPanel({ order, onChange, setError }) {
   const staff = isStaff(user);
   const payments = useApi('/payments/config');
   const justPaid = location.hash.includes('paid=1');
+  useEffect(() => { if (justPaid && !staff && order.paymentStatus === 'paid') trackPurchase(order); }, [order.id, order.paymentStatus]);
   const st = PAYMENT_STATUS[order.paymentStatus] || { label: order.paymentStatus, tone: 'gray' };
   const record = (status, method) => async () =>
     onChange(await api(`/orders/${order.id}/payment`, { method: 'POST', body: { status, method } }));

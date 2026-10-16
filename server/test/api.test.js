@@ -315,6 +315,7 @@ test('web app is served with security headers', async () => {
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /html/);
   assert.match(res.headers.get('content-security-policy'), /default-src 'self'/);
+  assert.match(res.headers.get('content-security-policy'), /script-src [^;]*https:\/\/connect\.facebook\.net/, 'the app may load the Meta Pixel');
   assert.match(await res.text(), /static\/main\.js/);
   res = await fetch(`${base}/static/main.js`);
   assert.equal(res.status, 200);
@@ -623,6 +624,11 @@ test('landing page is served on www; the app on other hosts', async () => {
     assert.equal(page.status, 200, `${u} is served`);
     assert.equal(page.headers['x-robots-tag'], undefined, `${u} can be indexed`);
   }
+  for (const u of sitemapUrls) {
+    assert.match((await get('choicedeliverysc.com', new URL(u).pathname)).body, /<script src="\/pixel\.js/, `${u} has the Meta Pixel`);
+  }
+  r = await get('choicedeliverysc.com', '/pixel.js');
+  assert.match(r.body, /fbq\('init', PIXEL_ID\)/);
   r = await get('choicedeliverysc.com', '/robots.txt');
   assert.match(r.body, /^Sitemap: https:\/\/choicedeliverysc\.com\/sitemap\.xml$/m);
   assert.match(r.body, /^Disallow: \/orders\/$/m);
