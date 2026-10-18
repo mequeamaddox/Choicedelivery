@@ -2146,6 +2146,7 @@ test('a customer signing up gets a welcome email and the owner is told where the
     assert.match(welcome.html, /monthly invoicing/, 'businesses hear about accounts');
     assert.match(welcome.html, /#\/orders\/new/);
     assert.doesNotMatch(welcome.html, /949-7034/, 'no phone number');
+    assert.doesNotMatch(welcome.html, /husband|wife/i);
 
     mails.length = 0;
     r = await call('POST', '/auth/signup', { body: { name: 'Jo Solo', email: 'jo@solo.test', password: 'password1' } });

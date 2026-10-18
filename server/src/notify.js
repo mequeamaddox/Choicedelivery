@@ -211,7 +211,7 @@ async function welcomeShipper({ user, company }) {
     const p = (t) => `<p>${t}</p>`;
     const li = (t) => `<li style="margin-bottom:6px">${t}</li>`;
     const body = business ? [
-      p(`Thanks for signing up with Choice Delivery SC! We're a husband-and-wife team right here in Columbia, and we're glad to have ${esc(company)} on board.`),
+      p(`Thanks for signing up with Choice Delivery SC! We're a locally owned courier right here in Columbia, and we're glad to have ${esc(company)} on board.`),
       p('<strong>Booking your first delivery takes about 2 minutes:</strong>'),
       `<ol style="padding-left:20px">${[
         'Log in and tap <strong>New order</strong>.',
@@ -228,7 +228,7 @@ async function welcomeShipper({ user, company }) {
       ].map(li).join('')}</ul>`,
       p('Questions, or a delivery that needs special handling? Just reply to this email and we\'ll get back to you.'),
     ] : [
-      p("Thanks for signing up with Choice Delivery SC! We're a husband-and-wife team right here in Columbia."),
+      p("Thanks for signing up with Choice Delivery SC! We're a locally owned courier right here in Columbia."),
       p("Whenever you need something picked up and delivered today, log in, tap <strong>New order</strong> and enter both addresses. You'll see your price right away, can track your driver live on the map, and get a photo when it's delivered."),
       p('Picking up something you bought on Facebook Marketplace? Pay the seller first, put their address as the pickup with their name and phone number, and have someone there to help load.'),
       p('Questions? Just reply to this email.'),
