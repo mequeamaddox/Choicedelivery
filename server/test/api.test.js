@@ -2123,7 +2123,7 @@ test('API keys: customers make them; a key books and tracks only its own company
   assert.equal(r.status, 401);
 });
 
-test('a customer signing up emails the owner, with where they came from', async () => {
+test('a customer signing up gets a welcome email and the owner is told where they came from', async () => {
   const mailer = require('../src/mailer');
   const mails = [];
   mailer.setSender(async (m) => { mails.push(m); });
@@ -2139,6 +2139,13 @@ test('a customer signing up emails the owner, with where they came from', async 
     assert.match(alert.html, /803-555-0100/);
     assert.match(alert.html, /Facebook \/ Instagram/);
     assert.match(alert.html, /Fall promo/);
+    const welcome = mails.find((m) => m.to === 'dana@ferguson.test');
+    assert.match(welcome.subject, /Welcome to Choice Delivery, Dana/);
+    assert.equal(welcome.replyTo, 'info@choicedeliverysc.com', 'replies reach the owner');
+    assert.match(welcome.html, /Ferguson Plumbing/);
+    assert.match(welcome.html, /monthly invoicing/, 'businesses hear about accounts');
+    assert.match(welcome.html, /#\/orders\/new/);
+    assert.doesNotMatch(welcome.html, /949-7034/, 'no phone number');
 
     mails.length = 0;
     r = await call('POST', '/auth/signup', { body: { name: 'Jo Solo', email: 'jo@solo.test', password: 'password1' } });
@@ -2148,6 +2155,9 @@ test('a customer signing up emails the owner, with where they came from', async 
     assert.match(solo.subject, /Jo Solo/);
     assert.match(solo.html, /Shipping for themselves/);
     assert.match(solo.html, /Direct/);
+    const soloWelcome = mails.find((m) => m.to === 'jo@solo.test');
+    assert.match(soloWelcome.html, /Marketplace/, 'individuals get the short version');
+    assert.doesNotMatch(soloWelcome.html, /monthly invoicing/);
   } finally {
     mailer.setSender(null);
   }

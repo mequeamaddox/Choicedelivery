@@ -200,6 +200,58 @@ async function alertStaffOfSignup({ user, company, phone, attribution }) {
   }
 }
 
+// Welcome email to a customer who just signed up on their own: how to book, and (for businesses) the
+// account features. Replies go to the support inbox. Never blocks the signup.
+async function welcomeShipper({ user, company }) {
+  try {
+    const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+    const support = process.env.SUPPORT_EMAIL || 'info@choicedeliverysc.com';
+    const first = esc((user.name || '').split(' ')[0] || 'there');
+    const business = company && company !== user.name;
+    const p = (t) => `<p>${t}</p>`;
+    const li = (t) => `<li style="margin-bottom:6px">${t}</li>`;
+    const body = business ? [
+      p(`Thanks for signing up with Choice Delivery SC! We're a husband-and-wife team right here in Columbia, and we're glad to have ${esc(company)} on board.`),
+      p('<strong>Booking your first delivery takes about 2 minutes:</strong>'),
+      `<ol style="padding-left:20px">${[
+        'Log in and tap <strong>New order</strong>.',
+        "Enter the pickup and drop-off addresses. You'll see your exact price right away.",
+        'Choose <strong>Standard</strong> (same day) or <strong>Rush</strong> (first in line and driven straight there, about 2 hours around Columbia), pick a car, minivan or pickup truck, and pay securely.',
+      ].map(li).join('')}</ol>`,
+      p("Once it's booked, you'll get a tracking link to follow your driver on the map, plus a photo and signature when it's delivered."),
+      p('<strong>A few things that make it easier:</strong>'),
+      `<ul style="padding-left:20px">${[
+        'Save quotes and book them later.',
+        'Add coworkers to your account so your whole team can book.',
+        `Print a free shipping label with a barcode from the <a href="${base}/#/shipping-form" style="color:#0f766e">shipping form</a>. No label printer needed.`,
+        'Sending deliveries often? Reply to this email and ask about a business account with monthly invoicing.',
+      ].map(li).join('')}</ul>`,
+      p('Questions, or a delivery that needs special handling? Just reply to this email and we\'ll get back to you.'),
+    ] : [
+      p("Thanks for signing up with Choice Delivery SC! We're a husband-and-wife team right here in Columbia."),
+      p("Whenever you need something picked up and delivered today, log in, tap <strong>New order</strong> and enter both addresses. You'll see your price right away, can track your driver live on the map, and get a photo when it's delivered."),
+      p('Picking up something you bought on Facebook Marketplace? Pay the seller first, put their address as the pickup with their name and phone number, and have someone there to help load.'),
+      p('Questions? Just reply to this email.'),
+    ];
+    await sendMail({
+      to: user.email,
+      replyTo: support,
+      subject: `Welcome to Choice Delivery, ${(user.name || '').split(' ')[0] || 'and thanks for signing up'}!`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827;line-height:1.5">
+  <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong></div>
+  <div style="border:1px solid #e5e7eb;border-top:0;padding:20px;border-radius:0 0 10px 10px">
+    <p>Hi ${first},</p>
+    ${body.join('\n    ')}
+    <p><a href="${base}/#/orders/new" style="background:#0f766e;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:bold">Book a delivery</a></p>
+    <p>We look forward to delivering for you!<br>The Choice Delivery team<br>
+      <a href="https://choicedeliverysc.com" style="color:#0f766e">choicedeliverysc.com</a></p>
+  </div></div>`,
+    });
+  } catch (e) {
+    console.error('Welcome email failed:', e.message);
+  }
+}
+
 // Payment request for an order dispatch booked: a "Pay by card" button that opens Stripe's secure
 // checkout (a fresh one each time, so the link never expires) until the order is paid.
 async function emailPaymentRequest(orderId) {
@@ -227,4 +279,4 @@ async function emailPaymentRequest(orderId) {
   return true;
 }
 
-module.exports = { emailShipper, alertStaffOfBooking, alertStaffOfSignup, emailPaymentRequest };
+module.exports = { emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest };
