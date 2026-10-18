@@ -168,6 +168,38 @@ async function alertStaffOfBooking(orderId) {
   }
 }
 
+// Emails the owner/dispatch when a customer signs up on their own, with where they came from.
+// Never blocks the signup.
+const CHANNEL_LABELS = { facebook: 'Facebook / Instagram', google_ads: 'Google Ads', bing_ads: 'Bing Ads', direct: 'Direct (typed the address or no source)' };
+async function alertStaffOfSignup({ user, company, phone, attribution }) {
+  try {
+    const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+    const source = attribution?.channel ? (CHANNEL_LABELS[attribution.channel] || attribution.channel) : CHANNEL_LABELS.direct;
+    const forSelf = !company || company === user.name;
+    const rows = [
+      ['Name', esc(user.name || '—')],
+      [forSelf ? 'Account' : 'Company', forSelf ? 'Shipping for themselves' : esc(company)],
+      ['Email', `<a href="mailto:${esc(user.email)}">${esc(user.email)}</a>`],
+      ['Phone', phone ? esc(phone) : '—'],
+      ['Came from', `${esc(source)}${attribution?.utm_campaign ? ` · campaign "${esc(attribution.utm_campaign)}"` : ''}${attribution?.landingPage ? ` · landed on ${esc(attribution.landingPage)}` : ''}`],
+    ];
+    await sendMail({
+      to: staffInbox(),
+      subject: `New customer signup: ${forSelf ? (user.name || user.email) : company}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
+  <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong> · New customer</div>
+  <div style="border:1px solid #e5e7eb;border-top:0;padding:20px;border-radius:0 0 10px 10px">
+    <p>Someone just created a customer account.</p>
+    <table style="border-collapse:collapse;font-size:14px">${rows.map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#6b7280;vertical-align:top">${k}</td><td style="padding:4px 0">${v}</td></tr>`).join('')}</table>
+    <p style="color:#4b5563;font-size:13px">A quick welcome email from you can turn a signup into a first booking.</p>
+    <p><a href="${base}/#/companies" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Open Companies</a></p>
+  </div></div>`,
+    });
+  } catch (e) {
+    console.error('New signup alert failed:', e.message);
+  }
+}
+
 // Payment request for an order dispatch booked: a "Pay by card" button that opens Stripe's secure
 // checkout (a fresh one each time, so the link never expires) until the order is paid.
 async function emailPaymentRequest(orderId) {
@@ -195,4 +227,4 @@ async function emailPaymentRequest(orderId) {
   return true;
 }
 
-module.exports = { emailShipper, alertStaffOfBooking, emailPaymentRequest };
+module.exports = { emailShipper, alertStaffOfBooking, alertStaffOfSignup, emailPaymentRequest };

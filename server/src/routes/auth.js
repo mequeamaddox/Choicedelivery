@@ -7,6 +7,7 @@ const { publicUser, getUser, createUser, setVehicle, mergeDriverProfile } = requ
 const driverEmails = require('../driver-emails');
 const { rateLimit } = require('../rate-limit');
 const { sendMail } = require('../mailer');
+const { alertStaffOfSignup } = require('../notify');
 const { asyncH, HttpError, str } = require('../util');
 const { cleanAttribution, logEvent } = require('../attribution');
 
@@ -48,6 +49,7 @@ router.post('/signup', asyncH(async (req, res) => {
     return u;
   });
   logEvent('signup', attribution, { userId: user.id, organizationId: user.organization_id });
+  alertStaffOfSignup({ user, company: companyName, phone: str(phoneNumber), attribution });
   res.status(201).json({ token: signToken(user), user: publicUser(user) });
 }));
 

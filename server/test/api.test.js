@@ -2122,3 +2122,33 @@ test('API keys: customers make them; a key books and tracks only its own company
   r = await call('GET', '/orders', { token: 'cd_live_notarealkey' });
   assert.equal(r.status, 401);
 });
+
+test('a customer signing up emails the owner, with where they came from', async () => {
+  const mailer = require('../src/mailer');
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); });
+  try {
+    let r = await call('POST', '/auth/signup', { body: { companyName: 'Ferguson Plumbing', name: 'Dana', email: 'dana@ferguson.test',
+      password: 'password1', phoneNumber: '803-555-0100', attribution: { fbclid: 'IwAR9', utm_campaign: 'Fall promo', landingPage: '/', at: new Date().toISOString() } } });
+    assert.equal(r.status, 201);
+    await new Promise((done) => setTimeout(done, 100));
+    const alert = mails.find((m) => m.to === 'info@choicedeliverysc.com' && /New customer signup/.test(m.subject));
+    assert.ok(alert, 'the owner is emailed');
+    assert.match(alert.subject, /Ferguson Plumbing/);
+    assert.match(alert.html, /dana@ferguson\.test/);
+    assert.match(alert.html, /803-555-0100/);
+    assert.match(alert.html, /Facebook \/ Instagram/);
+    assert.match(alert.html, /Fall promo/);
+
+    mails.length = 0;
+    r = await call('POST', '/auth/signup', { body: { name: 'Jo Solo', email: 'jo@solo.test', password: 'password1' } });
+    assert.equal(r.status, 201);
+    await new Promise((done) => setTimeout(done, 100));
+    const solo = mails.find((m) => /New customer signup/.test(m.subject));
+    assert.match(solo.subject, /Jo Solo/);
+    assert.match(solo.html, /Shipping for themselves/);
+    assert.match(solo.html, /Direct/);
+  } finally {
+    mailer.setSender(null);
+  }
+});
