@@ -1,13 +1,14 @@
 import {
   html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
   trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText, bookingDraft, clearBookingDraft,
+  attribution,
 } from './lib.js';
 import {
-  Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge,
+  Layout, PageHeader, Alert, Spinner, Empty, Field, StatusBadge, StopTimeline, RouteSummary, ActionButton, AddressInput, DemoBadge, Logo,
   LiveMap,
   LegalLinks,
 } from './components.js';
-import { trackPurchase } from './pixel.js';
+import { trackPurchase, trackPixel } from './pixel.js';
 
 const FILTERS = [
   { key: 'active', label: 'In progress', statuses: ['pending', ...ACTIVE_STATUSES] },
@@ -206,16 +207,29 @@ function StopEditor({ stops, setStops }) {
     </div>`;
 }
 
-export function NewOrderPage() {
-  const user = getUser();
-  const staff = isStaff(user);
+// Guest checkout (#/book): the same form for someone without an account, in a simple page with no menu.
+function GuestShell({ children }) {
+  return html`
+    <div class="track">
+      <header class="track-header guest-header"><${Logo} /><a class="small" href="#/login">Log in</a></header>
+      <main class="page">${children}</main>
+    </div>`;
+}
+
+// guest: booking without an account (#/book). Card payment only; contact details go on the order.
+export function NewOrderPage({ guest = false }) {
+  const user = guest ? null : getUser();
+  const staff = !guest && isStaff(user);
   const companies = useApi(staff ? '/organizations' : null);
   const pricing = useApi('/public/pricing');
   const [stops, setStops] = useState([blankStop('pickup'), blankStop('dropoff')]);
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '', customerName: '', customerEmail: '', sendPayLink: true,
+    customerPhone: '', agreeTerms: false,
   });
+  const [guestDone, setGuestDone] = useState(null); // a guest request sent for review
+  const [shownCents, setShownCents] = useState(null); // new price after "the price changed"
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   // "Book a delivery for this shipment" from a shipping form: fill in its details, and use its code
@@ -250,6 +264,7 @@ export function NewOrderPage() {
   }, []);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
   const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType);
+  useEffect(() => { setShownCents(null); }, [quote?.totalCents]); // a fresh price on screen replaces "the price changed"
   const fees = pricing.data?.fees;
   const vehicles = fees ? Object.entries(fees.vehicles).filter(([, x]) => x.enabled) : [];
   const lbs = v.weightLbs === '' ? null : Number(v.weightLbs);
@@ -267,7 +282,7 @@ export function NewOrderPage() {
       ? `${lbs} lbs in ${piecesN} piece${piecesN === 1 ? '' : 's'} means at least one is over ${pieceLimit} lbs, which we can't take.` : null;
   const toggleAddOn = (k) => setV({ ...v, addOns: v.addOns.includes(k) ? v.addOns.filter((x) => x !== k) : [...v.addOns, k] });
   const payments = useApi('/payments/config');
-  const payByCard = !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
+  const payByCard = guest ? !!payments.data?.enabled : !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
 
   // Books the order, or with saveAsQuote keeps it as a quote to book (and pay for) later.
   const submit = async (e, saveAsQuote = false) => {
@@ -280,6 +295,34 @@ export function NewOrderPage() {
       return;
     }
     setBusy(true);
+    if (guest) {
+      try {
+        const r = await api('/public/book', { method: 'POST', body: {
+          serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
+          addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
+          maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
+          scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
+          stops,
+          expectedCents: shownCents ?? (quote && !quote.needsReview ? quote.totalCents : undefined),
+          customerName: v.customerName.trim(), customerEmail: v.customerEmail.trim(), customerPhone: v.customerPhone.trim(),
+          agreeTerms: v.agreeTerms, attribution: attribution(),
+        } });
+        if (r.status === 'checkout') {
+          trackPixel('InitiateCheckout', { content_name: 'Guest booking' });
+          window.location.href = r.checkoutUrl;
+          return;
+        }
+        setGuestDone(r);
+        window.scrollTo(0, 0);
+      } catch (err) {
+        if (err.data?.priceChanged) setShownCents(err.data.totalCents);
+        setError(err);
+        window.scrollTo(0, 0);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     try {
       const body = {
         serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
@@ -323,9 +366,23 @@ export function NewOrderPage() {
     }
   };
 
+  const Shell = guest ? GuestShell : Layout;
+  if (guestDone) {
+    return html`<${Shell}>
+      <section class="card stack narrow-card">
+        <h1>Request received</h1>
+        <p>Thanks! Your request <strong>${guestDone.orderNumber}</strong> needs a quick check by our team (a far-away pickup or a
+          shipment we price by hand). We'll email you, usually within a business hour, with the price and a link to pay.
+          Nothing is charged until then.</p>
+        <p><a class="btn" href="https://choicedeliverysc.com">Back to the website</a></p>
+      </section>
+    <//>`;
+  }
   return html`
-    <${Layout}>
-      <${PageHeader} title="New order" subtitle="Drivers are notified as soon as you book." />
+    <${Shell}>
+      <${PageHeader} title=${guest ? 'Book a delivery' : 'New order'} subtitle=${guest
+        ? html`No account needed. Pay by card and get email updates and a live tracking link. Book often? <a href="#/signup">Create a free account</a>.`
+        : 'Drivers are notified as soon as you book.'} />
       ${fromQuote && html`<${Alert} tone="success">Your quote's addresses are filled in. Pick each address from the suggestions so the driver gets a map pin, add contact names and a pickup time, then book.<//>`}
       ${formCode && html`<${Alert} tone="success">Filled in from shipping form ${formCode}. Its barcode is this order's reference number. Check the addresses, then book.<//>`}
       <form class="form-layout" onSubmit=${submit}>
@@ -390,7 +447,7 @@ export function NewOrderPage() {
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
             ${payByCard && html`<p class="small"><strong>Payment:</strong> you'll pay by card on Stripe's secure page after booking. Drivers are notified once it's paid.</p>`}
-            ${!needsReview && html`<p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this order under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>`}
+            ${!needsReview && !guest && html`<p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this order under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>`}
           </div>
         </section>
         <section class="card">
@@ -408,9 +465,9 @@ export function NewOrderPage() {
             <//>
           </div>
           <${Field} label="What are we moving?"><textarea rows="3" placeholder="Boxes of files, parts, small furniture, fragile items…" ...${bind('description')}></textarea><//>
-          <${Field} label="Your reference / tracking number" hint="Optional. If your packages have a barcode label, drivers can scan it at pickup to double-check.">
+          ${!guest && html`<${Field} label="Your reference / tracking number" hint="Optional. If your packages have a barcode label, drivers can scan it at pickup to double-check.">
             <input ...${bind('trackingNumber')} />
-          <//>
+          <//>`}
         </section>
         ${staff && html`
           <section class="card">
@@ -434,11 +491,24 @@ export function NewOrderPage() {
                 <input type="checkbox" checked=${v.sendPayLink} onChange=${(e) => setV({ ...v, sendPayLink: e.target.checked })} />
                 Email them a link to pay by card</label>`}`}
           </section>`}
+        ${guest && html`
+          <section class="card">
+            <h2>Your contact info</h2>
+            <p class="small muted">For your confirmation, receipt and delivery updates. We'll only reach out about this delivery.</p>
+            <div class="grid-2">
+              <${Field} label="Your name"><input required autocomplete="name" ...${bind('customerName')} /><//>
+              <${Field} label="Email"><input type="email" required autocomplete="email" ...${bind('customerEmail')} /><//>
+              <${Field} label="Phone"><input type="tel" required autocomplete="tel" ...${bind('customerPhone')} /><//>
+            </div>
+          </section>`}
         ${fees && html`<${ChargesNotice} fees=${fees} />`}
-        <p class="small muted">By booking you agree to our <${LegalLinks} />.</p>
+        ${guest
+          ? html`<label class="check-row small"><input type="checkbox" required checked=${v.agreeTerms}
+              onChange=${(e) => setV({ ...v, agreeTerms: e.target.checked })} /><span>I agree to the <${LegalLinks} />.</span></label>`
+          : html`<p class="small muted">By booking you agree to our <${LegalLinks} />.</p>`}
         <div class="form-actions">
-          <a class="btn" href="#/orders">Cancel</a>
-          ${!needsReview && html`<button type="button" class="btn" disabled=${busy || !!pieceProblem} onClick=${(e) => submit(e, true)}
+          <a class="btn" href=${guest ? 'https://choicedeliverysc.com' : '#/orders'}>Cancel</a>
+          ${!needsReview && !guest && html`<button type="button" class="btn" disabled=${busy || !!pieceProblem} onClick=${(e) => submit(e, true)}
             title="Keep this price and book it later from Orders → Quotes">Save quote</button>`}
           <button class="btn primary" disabled=${busy || !!pieceProblem}>${busy ? 'Sending…' : needsReview ? 'Request a price' : needsApproval ? 'Request approval' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
         </div>

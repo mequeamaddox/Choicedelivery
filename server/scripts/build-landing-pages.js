@@ -54,7 +54,7 @@ function page(p) {
     <meta property="og:url" content="${SITE}/${p.slug}">
     <script type="application/ld+json">${JSON.stringify(schema)}</script>
     <link rel="icon" type="image/png" href="favicon.png">
-    <link rel="stylesheet" href="/site.css?v=6">
+    <link rel="stylesheet" href="/site.css?v=8">
     <style>
         :root { --choice-teal: #0f766e; --choice-mint: #5eead4; --choice-mint-light: #a7f3d0; }
         .bg-choice-teal { background-color: var(--choice-teal); }

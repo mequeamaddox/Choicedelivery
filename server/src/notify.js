@@ -29,7 +29,11 @@ const MESSAGES = {
     quote: true,
     button: 'View request',
   }),
-  price_ready: (o) => ({
+  price_ready: (o) => (o.is_guest ? {
+    subject: `Approved: ${o.order_number} ${money(o.price_cents)}`,
+    line: `We reviewed your delivery request and it's approved. The price is <strong>${money(o.price_cents)}</strong>.
+      Pay below to book it; drivers are notified as soon as payment goes through.`,
+  } : {
     subject: `Approved: ${o.order_number} ${money(o.price_cents)}`,
     line: `We reviewed your delivery request and it's approved. The price is <strong>${money(o.price_cents)}</strong>.
       Open it to book${o.payment_status === 'unpaid' ? ' and pay' : ''}.`,
@@ -55,7 +59,8 @@ const MESSAGES = {
   }),
   delivered: (o, extra) => ({
     subject: `Delivered: ${o.order_number}`,
-    line: `Your shipment was delivered${extra?.printedName ? ` and signed for by ${esc(extra.printedName)}` : ''}. Proof of delivery is on the order page.`,
+    line: `Your shipment was delivered${extra?.printedName ? ` and signed for by ${esc(extra.printedName)}` : ''}. ${o.creator_role === 'shipper'
+      ? 'Proof of delivery is on the order page.' : "Reply to this email if you'd like a copy of the delivery photo."}`,
   }),
   charge_added: (o, { charge }) => ({
     subject: `Additional charge on ${o.order_number}: ${money(charge.cents)}`,
@@ -78,10 +83,11 @@ async function emailShipper(orderId, kind, extra = {}) {
               (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS first_address,
               (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address
        FROM orders o
-       JOIN users u ON u.id = o.created_by
+       LEFT JOIN users u ON u.id = o.created_by
        LEFT JOIN users d ON d.id = o.driver_id
        WHERE o.id = $1`, [orderId]);
     if (!o || o.is_demo || !MESSAGES[kind]) return;
+    if (!o.created_by && !o.is_guest) return;
     // Booked by the customer: their account email (unless they turned updates off). Booked by dispatch
     // for someone without an account: the customer email entered on the order.
     const byCustomer = o.creator_role === 'shipper';
@@ -92,9 +98,12 @@ async function emailShipper(orderId, kind, extra = {}) {
     const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
     const track = `${base}/#/track/${o.public_token}`;
     const page = `${base}/#/orders/${o.id}`;
-    if (!byCustomer && o.payment_requested_at && o.payment_status !== 'paid' && ['booked', 'driver_assigned'].includes(kind)) {
+    if (!byCustomer && (o.payment_requested_at || o.is_guest) && o.payment_status === 'unpaid'
+      && ['booked', 'driver_assigned', 'price_ready'].includes(kind)) {
       Object.assign(extra, { payLink: true });
     }
+    // A guest's request waiting for review has nothing to track yet.
+    const trackable = o.status !== 'quote' && kind !== 'review_requested';
     await sendMail({
       to,
       subject,
@@ -105,7 +114,7 @@ async function emailShipper(orderId, kind, extra = {}) {
     <p>${line}</p>
     <p style="color:#4b5563"><strong>${esc(o.order_number)}</strong><br>${esc(o.first_address)} &rarr; ${esc(o.last_address)}</p>
     ${!byCustomer
-    ? `<p><a href="${track}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Track delivery</a></p>
+    ? `${trackable ? `<p><a href="${track}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Track delivery</a></p>` : ''}
        ${extra.payLink ? `<p>Amount due: <strong>${money(o.price_cents)}</strong></p>
        <p><a href="${base}/public/pay/${o.public_token}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Pay ${money(o.price_cents)} by card</a></p>` : ''}`
     : quote
@@ -137,16 +146,18 @@ async function alertStaffOfBooking(orderId) {
               (SELECT count(*) FROM stops WHERE order_id = o.id)::int AS stop_count,
               (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS first_address,
               (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address
-       FROM orders o JOIN users u ON u.id = o.created_by LEFT JOIN organizations org ON org.id = o.organization_id
+       FROM orders o LEFT JOIN users u ON u.id = o.created_by LEFT JOIN organizations org ON org.id = o.organization_id
        WHERE o.id = $1`, [orderId]);
-    if (!o || o.is_demo || o.creator_role !== 'shipper') return;
+    if (!o || o.is_demo || (o.creator_role !== 'shipper' && !o.is_guest)) return;
     const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
     const when = o.scheduled_at
       ? new Date(o.scheduled_at).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
       : 'As soon as possible';
     const paid = o.payment_status === 'paid' ? `paid by card` : o.payment_status === 'invoice' ? 'billed to account' : esc(o.payment_status);
     const rows = [
-      ['Customer', `${esc(o.company || o.shipper_name)}${o.company && o.shipper_name ? ` (${esc(o.shipper_name)})` : ''} · ${esc(o.shipper_email)}`],
+      o.is_guest
+        ? ['Customer', `<strong>Guest</strong>: ${esc(o.customer_name)} · ${esc(o.customer_email)}${o.customer_phone ? ` · ${esc(o.customer_phone)}` : ''}`]
+        : ['Customer', `${esc(o.company || o.shipper_name)}${o.company && o.shipper_name ? ` (${esc(o.shipper_name)})` : ''} · ${esc(o.shipper_email)}`],
       ['Route', `${esc(o.first_address)} &rarr; ${esc(o.last_address)}${o.stop_count > 2 ? ` (${o.stop_count} stops)` : ''}`],
       ['Pickup', esc(when)],
       ['Service', `${o.service_level === 'rush' ? '<strong>RUSH</strong>' : 'Standard'} · ${esc(o.vehicle_type || '')}${o.distance_miles != null ? ` · about ${Number(o.distance_miles)} mi` : ''}`],
@@ -154,7 +165,7 @@ async function alertStaffOfBooking(orderId) {
     ];
     await sendMail({
       to: staffInbox(),
-      subject: `New ${o.service_level === 'rush' ? 'RUSH ' : ''}order ${o.order_number}: ${money(o.price_cents)}${o.company ? ` · ${o.company}` : ''}`,
+      subject: `New ${o.service_level === 'rush' ? 'RUSH ' : ''}${o.is_guest ? 'guest ' : ''}order ${o.order_number}: ${money(o.price_cents)}${o.company ? ` · ${o.company}` : o.is_guest ? ` · ${o.customer_name}` : ''}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
   <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong> · New order</div>
   <div style="border:1px solid #e5e7eb;border-top:0;padding:20px;border-radius:0 0 10px 10px">
@@ -252,6 +263,22 @@ async function welcomeShipper({ user, company }) {
   }
 }
 
+// Tells dispatch (LEADS_EMAIL) that an order is waiting for a manual price.
+function notifyStaffOfReview(order) {
+  const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+  const bd = order.priceBreakdown || {};
+  const reasons = bd.needsReview ? (bd.reviewReasons || []) : [bd.approvalReason].filter(Boolean);
+  const approval = !bd.needsReview && bd.needsApproval;
+  const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  sendMail({
+    to: process.env.LEADS_EMAIL || 'info@choicedeliverysc.com',
+    subject: `${approval ? 'Approval needed' : 'Price review needed'}: ${order.orderNumber}${order.organization ? ` (${order.organization.name})` : order.isGuest ? ` (guest: ${order.customerName})` : ''}`,
+    html: `<p><strong>${esc(order.orderNumber)}</strong> ${approval ? `needs your approval (quoted ${money(order.priceCents)})` : 'needs a price'}: ${esc(reasons.join('; '))}.</p>
+      <p>${esc(order.vehicleType)} · ${esc(order.weight)} · ${esc(order.stops[0]?.address)} &rarr; ${esc(order.stops[order.stops.length - 1]?.address)}</p>
+      <p><a href="${base}/#/orders/${order.id}">${approval ? 'Open the order to approve it or change the price' : 'Open the order and set the price'}</a></p>`,
+  }).catch((e) => console.error('Review email failed:', e.message));
+}
+
 // Payment request for an order dispatch booked: a "Pay by card" button that opens Stripe's secure
 // checkout (a fresh one each time, so the link never expires) until the order is paid.
 async function emailPaymentRequest(orderId) {
@@ -279,4 +306,4 @@ async function emailPaymentRequest(orderId) {
   return true;
 }
 
-module.exports = { emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest };
+module.exports = { emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };

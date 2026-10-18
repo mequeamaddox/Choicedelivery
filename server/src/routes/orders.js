@@ -8,30 +8,13 @@ const {
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
-const { emailShipper, alertStaffOfBooking, emailPaymentRequest } = require('../notify');
-const { sendMail } = require('../mailer');
+const { emailShipper, alertStaffOfBooking, emailPaymentRequest, notifyStaffOfReview } = require('../notify');
 const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
 
 const router = express.Router();
 const money = (c) => `$${(c / 100).toFixed(2)}`;
 router.use(requireAuth);
-
-// Tells dispatch (LEADS_EMAIL) that an order is waiting for a manual price.
-function notifyStaffOfReview(order) {
-  const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
-  const bd = order.priceBreakdown || {};
-  const reasons = bd.needsReview ? (bd.reviewReasons || []) : [bd.approvalReason].filter(Boolean);
-  const approval = !bd.needsReview && bd.needsApproval;
-  const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  sendMail({
-    to: process.env.LEADS_EMAIL || 'info@choicedeliverysc.com',
-    subject: `${approval ? 'Approval needed' : 'Price review needed'}: ${order.orderNumber}${order.organization ? ` (${order.organization.name})` : ''}`,
-    html: `<p><strong>${esc(order.orderNumber)}</strong> ${approval ? `needs your approval (quoted ${money(order.priceCents)})` : 'needs a price'}: ${esc(reasons.join('; '))}.</p>
-      <p>${esc(order.vehicleType)} · ${esc(order.weight)} · ${esc(order.stops[0]?.address)} &rarr; ${esc(order.stops[order.stops.length - 1]?.address)}</p>
-      <p><a href="${base}/#/orders/${order.id}">${approval ? 'Open the order to approve it or change the price' : 'Open the order and set the price'}</a></p>`,
-  }).catch((e) => console.error('Review email failed:', e.message));
-}
 
 const driverOnly = (req, res, next) => {
   if (req.user.role !== 'driver') return next(new HttpError(403, 'Only drivers can do this'));
@@ -227,6 +210,12 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
     if (current.reviewStatus === 'needed' && b.priceCents != null && isStaff(req.user)) {
       await client.query("UPDATE orders SET review_status = 'done' WHERE id = $1", [current.id]);
       await recordEvent(client, current.id, req.user.id, 'price_set', { cents: Number(b.priceCents) });
+      // A guest can't log in to book it, so approving books it; the email has their payment link and
+      // drivers are notified once it's paid.
+      if (current.isGuest) {
+        await client.query("UPDATE orders SET status = 'pending', booked_at = now() WHERE id = $1 AND status = 'quote'", [current.id]);
+        await recordEvent(client, current.id, req.user.id, 'created');
+      }
     }
   });
   const updated = await getOrderFor(req.user, current.id);

@@ -1,4 +1,5 @@
-import { html, useState, useEffect, api, login, signup, driverSignup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink, VEHICLE_TYPES, bookingDraft } from './lib.js';
+import { html, useState, useEffect, api, login, signup, driverSignup, createOwner, navigate, useApi, formatDate, timeAgo, mapsLink, VEHICLE_TYPES, bookingDraft, formatMoney } from './lib.js';
+import { trackPurchase } from './pixel.js';
 import { AuthShell, Alert, Field, Spinner, StatusBadge, StopTimeline, Logo, LiveMap, LegalLinks } from './components.js';
 
 function useForm(initial) {
@@ -206,8 +207,12 @@ export function ResetPage({ token }) {
 }
 
 // Public tracking page for customers/recipients: no login.
-export function TrackPage({ token }) {
+export function TrackPage({ token: raw }) {
+  const [token, query] = String(raw).split('?');
+  const justPaid = new URLSearchParams(query || '').get('paid') === '1';
   const { data, error, loading } = useApi(`/track/${encodeURIComponent(token)}`, { pollMs: 15000 });
+  // Back from the payment page: count the booking once (Meta Pixel).
+  useEffect(() => { if (justPaid && data?.paid) trackPurchase({ id: data.orderNumber, priceCents: data.paid.amountCents }); }, [justPaid, !!data?.paid]);
   return html`
     <div class="track">
       <header class="track-header"><${Logo} /></header>
@@ -224,6 +229,11 @@ export function TrackPage({ token }) {
               <div><p>Your driver is <strong>${data.driver.name}</strong>${data.driver.vehicle ? html`, driving a <strong>${data.driver.vehicle}</strong>` : ''}.</p></div></div>
               <p>
               ${data.driver.location && html` Last seen ${timeAgo(data.driver.locationUpdatedAt)}${' · '}<a href=${mapsLink(data.driver.location)} target="_blank" rel="noopener">view on map</a>`}</p>`}
+            ${justPaid && data.paid && html`<${Alert} tone="success">Thanks! Your payment went through and your delivery is booked.
+              We emailed your confirmation, and this page updates as your driver picks up and delivers.<//>`}
+            ${justPaid && !data.paid && data.paymentDue && html`<${Alert} tone="success">Thanks! We're confirming your payment; this page updates in a moment.<//>`}
+            ${!justPaid && data.paymentDue && html`<div class="alert warn" role="status"><strong>Payment needed:</strong> this delivery is booked
+              once it's paid. <a class="btn primary small" href=${`/public/pay/${encodeURIComponent(token)}`}>Pay ${formatMoney(data.paymentDue.amountCents)} by card</a></div>`}
             ${data.completedAt && html`<p>Delivered ${formatDate(data.completedAt)}.</p>`}
             ${data.status !== 'cancelled' && html`<${LiveMap} stops=${data.stops} driver=${data.driver} />`}
             ${data.driver?.location && html`<p class="muted small">The map updates on its own while the driver is on the way.</p>`}

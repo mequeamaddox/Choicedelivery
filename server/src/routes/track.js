@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.get('/:token', asyncH(async (req, res) => {
   const { rows } = await db.query(
-    `SELECT o.id, o.order_number, o.status, o.completed_at, o.created_at,
+    `SELECT o.id, o.order_number, o.status, o.completed_at, o.created_at, o.payment_status, o.price_cents, o.paid_cents,
             d.id AS driver_id, d.name AS driver_name, d.last_location, d.location_updated_at,
             (SELECT concat_ws(' ', NULLIF(v.color, ''), NULLIF(v.make, ''), NULLIF(v.model, '')) FROM vehicles v
              WHERE v.driver_id = d.id ORDER BY v.created_at LIMIT 1) AS driver_vehicle,
@@ -24,6 +24,9 @@ router.get('/:token', asyncH(async (req, res) => {
     status: o.status,
     createdAt: o.created_at,
     completedAt: o.completed_at,
+    // A card order that hasn't been paid yet (e.g. a guest who left the payment page) can be paid from here.
+    paymentDue: o.payment_status === 'unpaid' && o.status !== 'cancelled' ? { amountCents: o.price_cents } : null,
+    paid: o.payment_status === 'paid' ? { amountCents: o.paid_cents } : null,
     driver: o.driver_name ? {
       name: o.driver_name.split(' ')[0],
       vehicle: o.driver_vehicle || null,

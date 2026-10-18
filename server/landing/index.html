@@ -59,7 +59,7 @@
     <link rel="icon" type="image/png" href="favicon.png">
     
     <!-- Tailwind CSS, compiled (npm run build:landing-css) -->
-    <link rel="stylesheet" href="/site.css?v=7">
+    <link rel="stylesheet" href="/site.css?v=8">
     
     <!-- Custom CSS -->
     <style>
@@ -216,8 +216,8 @@
                                 <details class="text-left mt-2"><summary class="text-sm text-choice-teal font-semibold cursor-pointer">See price details</summary><ul id="quote-breakdown" class="text-sm text-gray-700 mt-2 space-y-1"></ul></details>
                                 <div id="quote-note" class="text-sm text-gray-600 mt-2"></div>
                                 <p id="quote-extras" class="text-xs text-gray-500 mt-2 text-left">Waiting more than 15 minutes at a stop, return trips and failed attempts are added to the total if they happen. Please have someone to load and unload.</p>
-                                <a id="quote-book" href="https://app.choicedeliverysc.com/#/signup" class="block mt-4 bg-choice-teal text-white py-3 rounded-lg font-semibold text-lg hover:opacity-90">Book This Delivery</a>
-                                <p id="quote-book-hint" class="text-xs text-gray-500 mt-2">Book and pay online in about 2 minutes. Your addresses carry over. Already have an account? <a id="quote-login" href="https://app.choicedeliverysc.com/#/login" class="text-choice-teal underline">Log in</a></p>
+                                <a id="quote-book" href="https://app.choicedeliverysc.com/#/book" class="block mt-4 bg-choice-teal text-white py-3 rounded-lg font-semibold text-lg hover:opacity-90">Book This Delivery</a>
+                                <p id="quote-book-hint" class="text-xs text-gray-500 mt-2">No account needed: book and pay by card in about 2 minutes. Your addresses carry over. Book often? <a id="quote-signup" href="https://app.choicedeliverysc.com/#/signup" class="text-choice-teal underline">Create a free account</a> or <a id="quote-login" href="https://app.choicedeliverysc.com/#/login" class="text-choice-teal underline">log in</a>.</p>
                                 <!-- Not ready to book: the quote is emailed to them and lands in Leads (POST /public/email-quote) -->
                                 <form id="email-quote-form" class="mt-4 pt-4 border-t border-gray-200 text-left" novalidate>
                                     <label for="email-quote" class="block text-sm font-medium text-gray-700 mb-1">Not ready to book? Email me this quote</label>
@@ -542,7 +542,7 @@
                 </details>
                 <details class="faq bg-white rounded-xl shadow p-5">
                     <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">Do I need an account?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
-                    <p class="text-gray-600 mt-3">Not to get a quote. To book, create a free account at <a href="https://app.choicedeliverysc.com" class="text-choice-teal underline">app.choicedeliverysc.com</a>. It takes about a minute, and you can save quotes, book again quickly and see all your deliveries in one place. Businesses can add coworkers to the same account.</p>
+                    <p class="text-gray-600 mt-3">No. Get your instant price, tap <strong>Book This Delivery</strong> and check out as a guest: just your name, email and phone, then pay by card. You'll get email updates and a live tracking link. If you deliver often, a free account at <a href="https://app.choicedeliverysc.com/#/signup" class="text-choice-teal underline">app.choicedeliverysc.com</a> lets you save quotes, book again quickly, see all your deliveries in one place and add coworkers.</p>
                 </details>
                 <details class="faq bg-white rounded-xl shadow p-5">
                     <summary class="font-semibold text-lg cursor-pointer flex items-center justify-between gap-4">How do I pay?<span class="faq-icon text-choice-teal text-2xl leading-none" aria-hidden="true">+</span></summary>
@@ -868,7 +868,8 @@
             };
             // "Book This Delivery" opens the app with these details filled in (web/static/lib.js reads ?book=).
             const bookLink = (route) => `${APP_URL || ''}/?book=${encodeURIComponent(JSON.stringify(lastQuote))}#/${route}`;
-            document.getElementById('quote-book').href = bookLink('signup');
+            document.getElementById('quote-book').href = bookLink('book');
+            document.getElementById('quote-signup').href = bookLink('signup');
             document.getElementById('quote-login').href = bookLink('login');
             document.getElementById('email-quote-status').classList.add('hidden');
             try {

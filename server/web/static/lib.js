@@ -56,7 +56,7 @@ export function bookingDraft() {
   } catch { return null; }
 }
 export const clearBookingDraft = () => storage.remove(BOOK_KEY);
-function attribution() {
+export function attribution() {
   try {
     const v = JSON.parse(storage.get(ATTR_KEY));
     return v && Date.now() - Date.parse(v.at) < 30 * 24 * 60 * 60 * 1000 ? v : {};

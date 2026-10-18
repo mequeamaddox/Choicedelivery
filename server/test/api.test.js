@@ -2163,3 +2163,111 @@ test('a customer signing up gets a welcome email and the owner is told where the
     mailer.setSender(null);
   }
 });
+
+test('guest checkout: book and pay without an account; drivers are alerted once paid; far pickups wait for approval', async () => {
+  const stripe = require('../src/stripe');
+  const mailer = require('../src/mailer');
+  const crypto = require('crypto');
+  const guest = { customerName: 'Gina Guest', customerEmail: 'Gina@Guest.test', customerPhone: '803-555-0199', agreeTerms: true };
+  const book = (extra = {}) => call('POST', '/public/book', { body: { ...orderBody(), ...guest, ...extra } });
+  let r = await book();
+  assert.equal(r.status, 409, 'card payment has to be set up for guests');
+
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+  const stripeCalls = [];
+  stripe.setFetch(async (url, opts) => {
+    const body = new URLSearchParams(opts.body || '');
+    stripeCalls.push({ url, body });
+    if (url.endsWith('/checkout/sessions')) return { ok: true, json: async () => ({ id: `cs_guest_${stripeCalls.length}`, url: 'https://checkout.stripe.com/pay/guest' }) };
+    if (url.includes('/expire')) return { ok: true, json: async () => ({}) };
+    return { ok: false, status: 404, json: async () => ({ error: { message: 'unexpected' } }) };
+  });
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); });
+  const webhook = (event) => {
+    const payload = JSON.stringify(event);
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', 'whsec_test').update(`${ts}.${payload}`).digest('hex');
+    return fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload,
+      headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
+  };
+  const settle = () => new Promise((done) => setTimeout(done, 150));
+  try {
+    assert.equal((await book({ customerPhone: '' })).status, 400, 'name, email and phone are required');
+    assert.equal((await book({ agreeTerms: false })).status, 400, 'they must agree to the terms');
+    assert.equal((await book({ maxPieceLbs: undefined })).status, 400, 'the heaviest piece is required');
+    const ordersBefore = (await db.query('SELECT count(*)::int AS n FROM orders')).rows[0].n;
+    r = await book({ expectedCents: 1 });
+    assert.equal(r.status, 409);
+    assert.ok(r.data.priceChanged && r.data.totalCents > 1, 'a changed price is shown, not booked');
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, ordersBefore, 'and nothing is left behind');
+
+    r = await book({ priceCents: 1, organizationId: ids.acmeOrg });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    assert.equal(r.data.status, 'checkout');
+    assert.equal(r.data.checkoutUrl, 'https://checkout.stripe.com/pay/guest');
+    const { rows: [o] } = await db.query('SELECT * FROM orders WHERE order_number = $1', [r.data.orderNumber]);
+    assert.equal(o.is_guest, true);
+    assert.equal(o.created_by, null);
+    assert.equal(o.organization_id, null, 'guests cannot book onto a company');
+    assert.equal(o.price_is_custom, false, 'or set their own price');
+    assert.equal(o.payment_status, 'unpaid');
+    assert.equal(o.customer_email, 'gina@guest.test');
+    assert.equal(o.customer_phone, '803-555-0199');
+    const session = stripeCalls.filter((c) => c.url.endsWith('/checkout/sessions')).pop().body;
+    assert.equal(session.get('line_items[0][price_data][unit_amount]'), String(o.price_cents));
+    assert.match(session.get('success_url'), new RegExp(`#/track/${o.public_token}\\?paid=1$`));
+
+    r = await call('GET', '/orders?status=pending', { token: t.d1 });
+    assert.ok(!r.data.some((x) => x.id === o.id), 'drivers do not see it until it is paid');
+    await settle();
+    const booked = mails.find((m) => m.to === 'gina@guest.test');
+    assert.match(booked.subject, /booked/);
+    assert.match(booked.html, new RegExp(`/public/pay/${o.public_token}`), 'the email has a pay link in case they leave the payment page');
+    r = await call('GET', `/track/${o.public_token}`);
+    assert.equal(r.data.paymentDue.amountCents, o.price_cents);
+    r = await call('GET', `/orders/${o.id}`, { token: t.dispatcher });
+    assert.equal(r.data.isGuest, true);
+    assert.equal(r.data.customerPhone, '803-555-0199');
+
+    mails.length = 0;
+    const res = await webhook({ type: 'checkout.session.completed', data: { object: {
+      id: o.stripe_session_id, payment_status: 'paid', amount_total: o.price_cents, payment_intent: 'pi_guest', metadata: { order_id: o.id } } } });
+    assert.equal(res.status, 200);
+    await settle();
+    r = await call('GET', '/orders?status=pending', { token: t.d1 });
+    assert.ok(r.data.some((x) => x.id === o.id), 'paid: drivers see the job');
+    const alert = mails.find((m) => m.to === 'info@choicedeliverysc.com');
+    assert.match(alert.subject, /guest order/);
+    assert.match(alert.html, /Gina Guest/);
+    r = await call('GET', `/track/${o.public_token}`);
+    assert.equal(r.data.paymentDue, null);
+    assert.equal(r.data.paid.amountCents, o.price_cents);
+
+    // A pickup far from Columbia: received, then approved by dispatch, which books it with a pay link.
+    mails.length = 0;
+    const far = orderBody();
+    far.stops[0] = { ...far.stops[0], address: 'King St, Charleston', location: { lat: 32.78, lng: -79.93 } };
+    r = await call('POST', '/public/book', { body: { ...far, ...guest, customerEmail: 'far@guest.test' } });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.status, 'review');
+    const { rows: [farOrder] } = await db.query('SELECT id, status, public_token FROM orders WHERE order_number = $1', [r.data.orderNumber]);
+    assert.equal(farOrder.status, 'quote');
+    await settle();
+    assert.ok(mails.some((m) => m.to === 'far@guest.test' && /confirming/.test(m.subject)), 'the guest hears it is being checked');
+    assert.ok(mails.some((m) => /Approval needed/.test(m.subject) && /guest: Gina Guest/.test(m.subject)), 'dispatch is asked to approve');
+    mails.length = 0;
+    r = await call('PATCH', `/orders/${farOrder.id}`, { token: t.dispatcher, body: { priceCents: 15000 } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.status, 'pending', 'approving a guest request books it');
+    await settle();
+    const approved = mails.find((m) => m.to === 'far@guest.test');
+    assert.match(approved.subject, /Approved/);
+    assert.match(approved.html, new RegExp(`/public/pay/${farOrder.public_token}`), 'with a link to pay');
+  } finally {
+    mailer.setSender(null);
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});

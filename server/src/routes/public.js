@@ -141,11 +141,59 @@ router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(as
     orderId: o.id, orderNumber: o.order_number, amountCents: o.price_cents,
     description: `${o.first_address} → ${o.last_address}`.slice(0, 450),
     customerEmail: o.customer_email || undefined,
-    successUrl: `${base}/#/track/${o.public_token}`,
+    successUrl: `${base}/#/track/${o.public_token}?paid=1`,
     cancelUrl: `${base}/#/track/${o.public_token}`,
   });
   await db.query('UPDATE orders SET stripe_session_id = $2, updated_at = now() WHERE id = $1', [o.id, session.id]);
   res.redirect(303, session.url);
+}));
+
+// Guest checkout: book and pay for a delivery without an account (from the app's #/book page, which the
+// website's "Book This Delivery" opens). Same order form and price checks as account customers; card
+// payment only, so drivers are alerted once the payment clears (Stripe webhook). Body: the order fields
+// plus customerName, customerEmail, customerPhone, agreeTerms and the website's attribution.
+// Returns { status: 'checkout', checkoutUrl } or { status: 'review' } when dispatch must price or approve it.
+const limitGuestBookings = rateLimit({ windowMs: 10 * 60 * 1000, max: 10 }); // room to fix typos in the form
+const STAFF_VIEW = Object.freeze({ id: null, role: 'dispatcher' });
+router.post('/book', limitGuestBookings, asyncH(async (req, res) => {
+  const stripe = require('../stripe');
+  const { GUEST, createOrder, getOrderFor } = require('../orders');
+  const { emailShipper, notifyStaffOfReview } = require('../notify');
+  const b = req.body || {};
+  if (str(b.website)) return res.status(201).json({ status: 'review' }); // bot-filled honeypot
+  if (!stripe.enabled()) {
+    throw new HttpError(409, "Online booking isn't available right now. Email info@choicedeliverysc.com and we'll book it for you.");
+  }
+  if (b.agreeTerms !== true) throw new HttpError(400, 'Please agree to the Terms & Conditions to book');
+  const { priceCents, organizationId, saveAsQuote, trackingNumber, ...fields } = b;
+  const id = await db.withTx((client) => createOrder(client, GUEST, fields));
+  const order = await getOrderFor(STAFF_VIEW, id);
+  logEvent('guest_booking', cleanAttribution(b.attribution), { orderId: id, totalCents: order.priceCents });
+  if (order.reviewStatus === 'needed') {
+    emailShipper(id, 'review_requested');
+    notifyStaffOfReview(order);
+    return res.status(201).json({ status: 'review', orderNumber: order.orderNumber });
+  }
+  // The price changed while they filled in the form: nothing is booked; show them the new price.
+  if (order.status === 'quote') {
+    await db.query('DELETE FROM orders WHERE id = $1', [id]);
+    return res.status(409).json({
+      message: `The price is now $${(order.priceCents / 100).toFixed(2)} (you were shown $${(Number(b.expectedCents) / 100).toFixed(2)}) because of the time of day, demand or weather. Check it and book again.`,
+      priceChanged: true, totalCents: order.priceCents,
+    });
+  }
+  const base = String(process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  const track = `${base}/#/track/${order.trackingUrlToken}`;
+  const session = await stripe.createCheckoutSession({
+    orderId: id, orderNumber: order.orderNumber, amountCents: order.priceCents,
+    description: `${order.stops[0]?.address} → ${order.stops[order.stops.length - 1]?.address}`.slice(0, 450),
+    customerEmail: order.customerEmail,
+    successUrl: `${track}?paid=1`,
+    cancelUrl: track,
+  });
+  await db.query('UPDATE orders SET stripe_session_id = $2, updated_at = now() WHERE id = $1', [id, session.id]);
+  emailShipper(id, 'booked'); // includes a pay link, in case they leave the payment page
+  res.status(201).json({ status: 'checkout', checkoutUrl: session.url, orderNumber: order.orderNumber });
 }));
 
 // Instant quote using the same formula orders are priced with.

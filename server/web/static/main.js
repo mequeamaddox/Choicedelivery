@@ -32,6 +32,12 @@ function App() {
   }
   if (!ready) return html`<div class="page"><${Spinner} /></div>`;
 
+  // Guest checkout from the website's "Book This Delivery"; signed-in customers get the normal form.
+  if (path.split('?')[0] === '/book') {
+    if (!user) return html`<${NewOrderPage} guest=${true} />`;
+    navigate('/orders/new');
+    return null;
+  }
   if (!user) {
     const Page = PUBLIC[path];
     if (Page) return html`<${Page} />`;
