@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Choice Delivery Promo Pieces</title>
+<!-- Low-cost promo pieces, 100px per inch. ?n=magnet (24x12 car door magnet), postcard-front / postcard-back (9x6),
+     tearoff (8.5x11 bulletin-board flyer, print at home), counter (5x7 supply-house counter card). -->
+<style>
+  :root { --teal: #0f766e; --teal-dark: #115e59; --mint: #5eead4; --mint-light: #ccfbf1; --ink: #111827; --muted: #4b5563; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { margin: 0; }
+  html, body { background: #fff; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .piece { position: relative; overflow: hidden; }
+  .piece:not(.on) { display: none; }
+  .grad { background: linear-gradient(135deg, var(--mint) -40%, var(--teal) 60%, var(--teal-dark) 100%); color: #fff; }
+  .qr { background: #fff; border-radius: 12px; padding: 8px; display: block; }
+
+  /* Car door magnet, 24 x 12 in. Readable from a parked or slow car: few words, huge. */
+  .magnet { width: 1200px; height: 600px; padding: 56px 64px; display: flex; flex-direction: column; justify-content: space-between; }
+  .magnet .logo { width: 560px; }
+  .magnet h1 { font-size: 92px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+  .magnet .row { display: flex; justify-content: space-between; align-items: flex-end; }
+  .magnet .url { font-size: 64px; font-weight: 800; color: var(--mint-light); letter-spacing: -1px; }
+
+  /* Postcard, 9 x 6 in (USPS EDDM-friendly). */
+  .pc { width: 900px; height: 600px; }
+  .pcf { padding: 48px 56px; }
+  .pcf .logo { width: 330px; }
+  .pcf h1 { font-size: 64px; font-weight: 800; line-height: 1.02; letter-spacing: -1.5px; margin-top: 34px; }
+  .pcf h1 span { color: var(--mint); }
+  .pcf .uses { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; max-width: 620px; }
+  .pcf .uses div { background: rgba(255,255,255,.15); border: 2px solid rgba(255,255,255,.35); border-radius: 999px; padding: 8px 18px; font-size: 21px; font-weight: 700; }
+  .pcf .qrbox { position: absolute; right: 52px; bottom: 48px; text-align: center; font-size: 17px; font-weight: 700; }
+  .pcf .qrbox .qr { width: 170px; height: 170px; margin-bottom: 8px; }
+  .pcb { background: #fff; display: grid; grid-template-columns: 1fr 1fr; }
+  .pcb .left { padding: 44px 40px 40px 52px; border-right: 2px dashed #d1d5db; }
+  .pcb .left .logo { width: 220px; }
+  .pcb .offer { margin-top: 22px; background: var(--mint-light); border-radius: 16px; padding: 18px 20px; }
+  .pcb .offer b { display: block; font-size: 34px; color: var(--teal); font-weight: 800; line-height: 1.05; }
+  .pcb .offer span { font-size: 17px; color: var(--teal-dark); font-weight: 600; }
+  .pcb ul { list-style: none; margin-top: 20px; font-size: 20px; line-height: 1.6; }
+  .pcb li::before { content: "✓ "; color: var(--teal); font-weight: 800; }
+  .pcb .url { margin-top: 18px; font-size: 26px; font-weight: 800; color: var(--teal); }
+  .pcb .right { padding: 40px; position: relative; }
+  .pcb .stamp { position: absolute; top: 34px; right: 34px; width: 120px; height: 84px; border: 2px solid #9ca3af; font-size: 13px; color: var(--muted); display: flex; align-items: center; justify-content: center; text-align: center; }
+  .pcb .addr { position: absolute; left: 50px; bottom: 120px; font-size: 18px; color: var(--muted); line-height: 1.6; }
+
+  /* Tear-off flyer, 8.5 x 11 in, for apartment boards, laundromats, coffee shops. */
+  .tear { width: 850px; height: 1100px; display: flex; flex-direction: column; }
+  .tear .top { padding: 52px 60px 0; flex: 1; }
+  .tear .logo { width: 330px; }
+  .tear h1 { font-size: 82px; font-weight: 800; line-height: 1; letter-spacing: -2px; color: var(--teal); margin-top: 34px; }
+  .tear .sub { font-size: 30px; margin-top: 18px; line-height: 1.3; }
+  .tear .list { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 30px; }
+  .tear .list div { background: var(--mint-light); color: var(--teal-dark); border-radius: 16px; padding: 16px 20px; font-size: 24px; font-weight: 700; }
+  .tear .mid { display: flex; gap: 28px; align-items: center; margin-top: 30px; }
+  .tear .mid .qr { width: 190px; height: 190px; border: 3px solid var(--teal); }
+  .tear .mid p { font-size: 26px; line-height: 1.35; }
+  .tear .mid b { color: var(--teal); }
+  .tear .tabs { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); height: 250px; border-top: 3px dashed #9ca3af; margin-top: 30px; }
+  .tear .tab { border-right: 2px dashed #9ca3af; display: flex; align-items: center; justify-content: center; }
+  .tear .tab:last-child { border-right: 0; }
+  .tear .tab span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-size: 17px; font-weight: 800; color: var(--teal); line-height: 1.3; }
+  .tear .tab span small { display: block; font-size: 14px; color: var(--ink); font-weight: 600; text-align: center; }
+
+  /* Supply-house counter card, 5 x 7 in, in a $3 acrylic stand by the register. */
+  .counter { width: 500px; height: 700px; display: flex; flex-direction: column; }
+  .counter .head { padding: 36px 36px 30px; }
+  .counter .logo { width: 230px; }
+  .counter h1 { font-size: 40px; font-weight: 800; line-height: 1.04; letter-spacing: -1px; margin-top: 22px; }
+  .counter h1 span { color: var(--mint); }
+  .counter .body { background: #fff; color: var(--ink); flex: 1; padding: 26px 36px; }
+  .counter ul { list-style: none; font-size: 21px; line-height: 1.55; }
+  .counter li::before { content: "✓ "; color: var(--teal); font-weight: 800; }
+  .counter .foot { display: flex; gap: 18px; align-items: center; margin-top: 18px; }
+  .counter .foot .qr { width: 130px; height: 130px; border: 3px solid var(--teal); padding: 6px; }
+  .counter .foot b { display: block; font-size: 22px; color: var(--teal); }
+  .counter .foot span { font-size: 17px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="piece grad magnet" id="magnet">
+  <img class="logo" src="logo-white.png" alt="Choice Delivery SC">
+  <h1>Same-day courier<br>Columbia &amp; the Midlands</h1>
+  <div class="row"><div class="url">choicedeliverysc.com</div><img class="qr" src="quote-qr.svg" alt="" style="width:150px;height:150px"></div>
+</div>
+
+<div class="piece pc grad pcf" id="postcard-front">
+  <img class="logo" src="logo-white.png" alt="Choice Delivery SC">
+  <h1>Need it there<br><span>today?</span></h1>
+  <div class="uses"><div>Marketplace finds</div><div>Parts to the jobsite</div><div>Office equipment</div><div>Documents</div><div>Store pickups</div></div>
+  <div class="qrbox"><img class="qr" src="quote-qr.svg" alt="QR code for an instant quote">Scan for your price</div>
+</div>
+
+<div class="piece pc pcb" id="postcard-back">
+  <div class="left">
+    <img class="logo" src="logo-teal.png" alt="Choice Delivery SC">
+    <div class="offer"><b>Instant price.<br>No account needed.</b><span>Book and pay online in about two minutes.</span></div>
+    <ul><li>Car, minivan or pickup truck</li><li>Live tracking on your phone</li><li>Photo &amp; signature at drop-off</li><li>Open 8 AM–10 PM, 7 days</li></ul>
+    <div class="url">choicedeliverysc.com</div>
+  </div>
+  <div class="right">
+    <div class="stamp">POSTAGE<br>(EDDM indicia)</div>
+    <div class="addr">Local Postal Customer<br>Columbia, SC</div>
+  </div>
+</div>
+
+<div class="piece tear" id="tearoff">
+  <div class="top">
+    <img class="logo" src="logo-teal.png" alt="Choice Delivery SC">
+    <h1>Bought it.<br>Can't haul it?</h1>
+    <p class="sub">We pick it up and bring it to your door, same day. No truck, no favors, no account needed.</p>
+    <div class="list"><div>🛋️ Marketplace buys</div><div>📺 TVs &amp; electronics</div><div>🪑 Furniture pieces</div><div>📦 Store pickups</div></div>
+    <div class="mid">
+      <img class="qr" src="quote-qr.svg" alt="QR code for an instant quote">
+      <p>Scan for an <b>instant price</b>.<br>Car, minivan or pickup truck.<br>Live tracking + photo at drop-off.<br><b>choicedeliverysc.com</b></p>
+    </div>
+  </div>
+  <div class="tabs">
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+    <div class="tab"><span>choicedeliverysc.com<small>Same-day delivery</small></span></div>
+  </div>
+</div>
+
+<div class="piece counter" id="counter">
+  <div class="head grad">
+    <img class="logo" src="logo-white.png" alt="Choice Delivery SC">
+    <h1>Crew waiting<br>on a part?<br><span>We'll run it.</span></h1>
+  </div>
+  <div class="body">
+    <ul><li>Counter to jobsite, same day</li><li>Pickup truck for pipe, fittings &amp; boxes</li><li>Rush: you're first in line</li><li>Photo proof when it lands</li></ul>
+    <div class="foot">
+      <img class="qr" src="quote-qr.svg" alt="QR code for an instant quote">
+      <div><b>choicedeliverysc.com</b><span>Instant price · book in 2 minutes<br>Open 7 days a week</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const n = new URLSearchParams(location.search).get('n') || 'magnet';
+  document.getElementById(n).classList.add('on');
+</script>
+</body>
+</html>
