@@ -8,6 +8,11 @@ const { sendMail } = require('./mailer');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (c) => (c == null ? '' : `$${(c / 100).toFixed(2)}`);
 
+// Adds a customer email to the order's History (shown to dispatch only), so there's a record of what was sent.
+const logOrderEmail = (orderId, type, data) => db.query(
+  'INSERT INTO order_events (order_id, actor_id, type, data) VALUES ($1, NULL, $2, $3)', [orderId, type, JSON.stringify(data)])
+  .catch((e) => console.error('Order email log failed:', e.message));
+
 const MESSAGES = {
   quote_saved: (o) => ({
     subject: `Your quote ${o.order_number}: ${money(o.price_cents)}`,
@@ -77,6 +82,7 @@ const MESSAGES = {
 };
 
 async function emailShipper(orderId, kind, extra = {}) {
+  let sent = null;
   try {
     const { rows: [o] } = await db.query(
       `SELECT o.*, u.email, u.name AS shipper_name, u.role AS creator_role, u.email_updates, d.name AS driver_name,
@@ -104,6 +110,7 @@ async function emailShipper(orderId, kind, extra = {}) {
     }
     // A guest's request waiting for review has nothing to track yet.
     const trackable = o.status !== 'quote' && kind !== 'review_requested';
+    sent = { orderId: o.id, to, subject, kind, payLink: !!extra.payLink };
     await sendMail({
       to,
       subject,
@@ -128,8 +135,14 @@ async function emailShipper(orderId, kind, extra = {}) {
     ${byCustomer ? '<p style="color:#6b7280;font-size:12px">To stop these emails, turn off "Email updates" on your Account page.</p>' : ''}
   </div></div>`,
     });
+    const { orderId: id, ...data } = sent;
+    await logOrderEmail(id, 'email_sent', data);
   } catch (e) {
     console.error(`Order email (${kind}) failed:`, e.message);
+    if (sent) {
+      const { orderId: id, ...data } = sent;
+      await logOrderEmail(id, 'email_failed', { ...data, error: String(e.message).slice(0, 300) });
+    }
   }
 }
 
@@ -303,6 +316,7 @@ async function emailPaymentRequest(orderId) {
       <a href="${base}/#/track/${o.public_token}" style="color:#0f766e">Track your delivery</a></p>
   </div></div>`,
   });
+  await logOrderEmail(o.id, 'email_sent', { to: o.customer_email, subject: `Payment for your delivery ${o.order_number}: ${money(o.price_cents)}`, kind: 'payment_request', payLink: true });
   return true;
 }
 

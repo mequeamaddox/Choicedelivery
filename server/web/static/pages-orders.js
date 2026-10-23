@@ -541,6 +541,9 @@ const EVENT_LABELS = {
   updated: 'Order updated',
   note_added: 'Note added',
   imported: 'Imported from the old system',
+  email_sent: 'Emailed',
+  email_failed: 'Email FAILED',
+  terms_accepted: 'Customer agreed to the Terms & Conditions',
 };
 
 function describeEvent(e) {
@@ -552,6 +555,12 @@ function describeEvent(e) {
   }
   if (e.type === 'cancelled' && e.data?.reason) return `${base}: ${e.data.reason}`;
   if (e.type === 'marked_delivered' && e.data?.reason) return `${base}: ${e.data.reason}`;
+  if (e.type === 'email_sent' || e.type === 'email_failed') {
+    return `${base} to ${e.data?.to || 'the customer'}: "${e.data?.subject || e.data?.kind}"${e.data?.payLink ? ' (with pay link)' : ''}`;
+  }
+  if (e.type === 'terms_accepted') {
+    return e.data?.method === 'checkbox' ? `${base} (ticked the box at checkout)` : `${base} (by booking; the notice is shown above the Book button)`;
+  }
   return base;
 }
 

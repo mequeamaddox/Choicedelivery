@@ -2265,6 +2265,18 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
     const approved = mails.find((m) => m.to === 'far@guest.test');
     assert.match(approved.subject, /Approved/);
     assert.match(approved.html, new RegExp(`/public/pay/${farOrder.public_token}`), 'with a link to pay');
+
+    // Dispatch sees in the order's history what the customer was sent and that they agreed to the Terms.
+    r = await call('GET', `/orders/${farOrder.id}`, { token: t.dispatcher });
+    const types = r.data.events.map((e) => e.type);
+    assert.ok(types.includes('terms_accepted'));
+    assert.equal(r.data.events.find((e) => e.type === 'terms_accepted').data.method, 'checkbox');
+    const sent = r.data.events.filter((e) => e.type === 'email_sent');
+    assert.deepEqual(sent.map((e) => e.data.kind).sort(), ['price_ready', 'review_requested']);
+    assert.ok(sent.every((e) => e.data.to === 'far@guest.test'));
+    assert.equal(sent.find((e) => e.data.kind === 'price_ready').data.payLink, true);
+    r = await call('GET', `/track/${farOrder.public_token}`);
+    assert.ok(!JSON.stringify(r.data).includes('email_sent'), 'the public tracking page does not show it');
   } finally {
     mailer.setSender(null);
     delete process.env.STRIPE_SECRET_KEY;

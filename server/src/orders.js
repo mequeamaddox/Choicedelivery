@@ -147,6 +147,10 @@ async function createOrder(client, actor, body) {
   await assertPieceWeights(client, orderId);
   await insertStops(client, orderId, await locateStops(stops));
   await repriceOrder(client, orderId, { fresh: true });
+  // Customers agree to the Terms when they book: guests tick a box, account customers see the notice above the button.
+  if (!isQuote && (actor.role === 'guest' || actor.role === 'shipper')) {
+    await recordEvent(client, orderId, actor.id, 'terms_accepted', { method: actor.role === 'guest' ? 'checkbox' : 'booking' });
+  }
   // Too heavy, over capacity, etc.: held as a quote until dispatch prices it by hand. A pickup far from
   // Columbia is quoted, but held until dispatch approves it (dispatch's own bookings skip that).
   const { rows: [priced] } = await client.query('SELECT price_breakdown, price_is_custom FROM orders WHERE id = $1', [orderId]);
@@ -207,6 +211,7 @@ async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
     `UPDATE orders SET status = 'pending', booked_at = now(), payment_status = $2, updated_at = now() WHERE id = $1`,
     [orderId, paymentStatus]);
   await recordEvent(client, orderId, actor.id, 'created', { fromQuote: true });
+  if (actor.role === 'shipper') await recordEvent(client, orderId, actor.id, 'terms_accepted', { method: 'booking' });
   return { booked: true, priceCents: priced.price_cents };
 }
 
@@ -372,7 +377,8 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
   if (charges) out.charges = charges.map(serializeCharge);
   if (events) {
     // Driver pay is between dispatch and the driver; customers don't see it in the timeline.
-    const shown = user && user.role === 'shipper' ? events.filter((e) => !STAFF_DRIVER_EVENTS.includes(e.type)) : events;
+    const shown = user && isStaff(user) ? events
+      : events.filter((e) => !STAFF_ONLY_EVENTS.includes(e.type) && (user?.role !== 'shipper' || !STAFF_DRIVER_EVENTS.includes(e.type)));
     out.events = shown.map((e) => ({
       type: e.type,
       // Dispatch's note on a hand-marked delivery is internal.
@@ -391,6 +397,8 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
 }
 
 const STAFF_DRIVER_EVENTS = ['driver_pay_set', 'driver_paid'];
+// Records for dispatch only: which emails the customer was sent and when they agreed to the Terms.
+const STAFF_ONLY_EVENTS = ['email_sent', 'email_failed', 'terms_accepted'];
 
 // Drivers see what they earn, never what the customer pays.
 const PRICE_FIELDS = ['priceBreakdown', 'priceIsCustom', 'priceCents', 'currency', 'paidCents', 'paidAt', 'paymentMethod',
