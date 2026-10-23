@@ -231,12 +231,18 @@ export async function startCheckout(orderId) {
 }
 
 export const SERVICE_LEVEL_LABELS = { standard: 'Standard', rush: 'Rush' };
-// Rush is "about 2 hours" only for local trips (up to 50 miles); longer ones take as long as the drive.
-export function rushTimeText(miles) {
+// Rush is "about 2 hours" only when the whole drive (Columbia to the pickup, then the trip) is local, up
+// to 50 miles; longer ones take as long as the drive. Same rule as rushEstimate on the server.
+export function rushTimeText(miles, travelMiles = 0) {
   if (miles == null) return 'About 2 hours for local trips';
-  if (miles <= 50) return 'About 2 hours';
-  return `About ${Math.ceil(((30 + (miles / 45) * 60) / 60) * 2) / 2} hours for this ${Math.round(miles)}-mile trip`;
+  const total = miles + (travelMiles || 0);
+  if (total <= 50) return 'About 2 hours';
+  const hours = Math.ceil(((30 + (total / 45) * 60) / 60) * 2) / 2;
+  return travelMiles > 25 ? `About ${hours} hours, including our drive to the pickup` : `About ${hours} hours for this ${Math.round(miles)}-mile trip`;
 }
+
+// A stop address needs its city or ZIP ("10 Melissa Ct" alone could be anywhere).
+export const hasCityOrZip = (address) => /\b\d{5}\b/.test(address || '') || /,\s*[A-Za-z]/.test(address || '');
 
 export const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Pickup Truck'];
 

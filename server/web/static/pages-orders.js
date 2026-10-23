@@ -1,6 +1,6 @@
 import {
   html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
-  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText, bookingDraft, clearBookingDraft,
+  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText, hasCityOrZip, bookingDraft, clearBookingDraft,
   attribution,
 } from './lib.js';
 import {
@@ -294,6 +294,13 @@ export function NewOrderPage({ guest = false }) {
       setError(new Error('The first stop must be a pickup and the last stop a drop-off.'));
       return;
     }
+    const vague = staff ? -1 : stops.findIndex((st) => !hasCityOrZip(st.address));
+    if (vague >= 0) {
+      const which = vague === 0 ? 'pickup' : vague === stops.length - 1 ? 'drop-off' : `stop ${vague + 1}`;
+      setError(new Error(`Add the city or ZIP to the ${which} address (for example "10 Melissa Ct, Spartanburg, SC 29301"), or pick it from the suggestions.`));
+      window.scrollTo(0, 0);
+      return;
+    }
     setBusy(true);
     if (guest) {
       try {
@@ -399,7 +406,7 @@ export function NewOrderPage({ guest = false }) {
                 <input type="radio" name="serviceLevel" value=${l.id} checked=${v.serviceLevel === l.id}
                   onChange=${() => setV({ ...v, serviceLevel: l.id })} />
                 <span><strong>${l.id === 'rush' ? 'Rush delivery' : 'Standard delivery'}</strong>
-                  <span class="muted small">${l.id === 'rush' ? `Goes to the front of the line and is driven straight there. ${rushTimeText(quote?.distanceMiles)}.` : 'Delivered today'}</span></span>
+                  <span class="muted small">${l.id === 'rush' ? `Goes to the front of the line and is driven straight there. ${rushTimeText(quote?.distanceMiles, quote?.pickupTravelMiles)}.` : 'Delivered today'}</span></span>
                 ${l.feeCents ? html`<span class="price push">${l.id === 'rush' && quote?.serviceLevel === 'rush' && quote.rushFeeCents
                   ? `+${formatMoney(quote.rushFeeCents)}` : `${l.feeFrom ? 'from ' : ''}+${formatMoney(l.feeCents)}`}</span>` : ''}
               </label>`)}
@@ -443,7 +450,7 @@ export function NewOrderPage({ guest = false }) {
               ${farPickupForStaff && html`<div class="alert warn" role="status"><strong>Far pickup:</strong>
                 ${' '}${quote.approvalReason}. The drive out from Columbia is included in this price (Travel to pickup:
                 ${formatMoney(quote.travelCents)}). Booking it here approves it.</div>`}<${PriceBreakdown} q=${quote} open=${!!quote.travelCents && staff} />
-              <p class="muted small">${quote.note}</p>`
+              ${!needsApproval && html`<p class="muted small">${quote.note}</p>`}`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
             ${payByCard && html`<p class="small"><strong>Payment:</strong> you'll pay by card on Stripe's secure page after booking. Drivers are notified once it's paid.</p>`}

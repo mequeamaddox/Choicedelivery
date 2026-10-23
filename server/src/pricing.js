@@ -322,11 +322,13 @@ const SERVICE_LEVELS = {
 // promised in about 2 hours; longer ones take as long as the drive (30 min to get to the pickup, then
 // about 45 mph), rounded up to the half hour. A 200-mile rush is about 5 hours, never "2 hours".
 const RUSH_LOCAL_MILES = 50;
-function rushEstimate(miles) {
+// travelMiles: the drive from Columbia to the pickup, which a far pickup adds before the trip starts.
+function rushEstimate(miles, travelMiles = 0) {
   if (miles == null) return { local: null, hours: null, text: 'About 2 hours for local trips; longer trips take as long as the drive' };
-  if (miles <= RUSH_LOCAL_MILES) return { local: true, hours: 2, text: 'About 2 hours' };
-  const hours = Math.ceil(((30 + (miles / 45) * 60) / 60) * 2) / 2;
-  return { local: false, hours, text: `About ${hours} hours for this ${Math.round(miles)}-mile trip` };
+  const total = miles + (travelMiles || 0);
+  if (total <= RUSH_LOCAL_MILES) return { local: true, hours: 2, text: 'About 2 hours' };
+  const hours = Math.ceil(((30 + (total / 45) * 60) / 60) * 2) / 2;
+  return { local: false, hours, text: travelMiles > 25 ? `About ${hours} hours, including our drive to the pickup` : `About ${hours} hours for this ${Math.round(miles)}-mile trip` };
 }
 
 // Monthly business plans: each included delivery is standard service covering the first
@@ -458,7 +460,7 @@ function calculatePrice({
     longMileageCents,
     serviceLevel: level,
     rushFeeCents,
-    rushEstimate: rushEstimate(miles),
+    rushEstimate: rushEstimate(miles, travelMiles),
     surcharges,
     weightLbs: lbs != null && Number.isFinite(lbs) ? lbs : null,
     weightTier,

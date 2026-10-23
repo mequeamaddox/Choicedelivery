@@ -1840,6 +1840,11 @@ test("rush only promises about 2 hours on local trips", () => {
   assert.equal(far.hours, 5, '200 miles: 30 min to pickup + about 4.5 hours of driving');
   assert.match(far.text, /About 5 hours for this 200-mile trip/);
   assert.equal(calculatePrice({ distanceMiles: 120, serviceLevel: 'rush' }).rushEstimate.local, false);
+  // A far pickup adds our drive out from Columbia: no "about 2 hours" for a short trip 100 miles away.
+  const farPickup = rushEstimate(7, 103);
+  assert.equal(farPickup.local, false);
+  assert.match(farPickup.text, /including our drive to the pickup/);
+  assert.equal(rushEstimate(5, 8).text, 'About 2 hours');
 });
 
 test('miles past 100 cost 50% more per mile, and drivers share it', () => {
@@ -2169,7 +2174,9 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
   const mailer = require('../src/mailer');
   const crypto = require('crypto');
   const guest = { customerName: 'Gina Guest', customerEmail: 'Gina@Guest.test', customerPhone: '803-555-0199', agreeTerms: true };
-  const book = (extra = {}) => call('POST', '/public/book', { body: { ...orderBody(), ...guest, ...extra } });
+  // Guests have to give each address's city or ZIP.
+  const withCities = (body) => ({ ...body, stops: body.stops.map((st) => ({ ...st, address: `${st.address}, Columbia, SC` })) });
+  const book = (extra = {}) => call('POST', '/public/book', { body: { ...withCities(orderBody()), ...guest, ...extra } });
   let r = await book();
   assert.equal(r.status, 409, 'card payment has to be set up for guests');
 
@@ -2249,6 +2256,10 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
     mails.length = 0;
     const far = orderBody();
     far.stops[0] = { ...far.stops[0], address: 'King St, Charleston', location: { lat: 32.78, lng: -79.93 } };
+    r = await call('POST', '/public/book', { body: { ...far, ...guest, customerEmail: 'far@guest.test' } });
+    assert.equal(r.status, 400, 'a drop-off with no city or ZIP is refused');
+    assert.match(r.data.message, /city or ZIP to the drop-off/);
+    far.stops[1] = { ...far.stops[1], address: '2 Oak Ave, Spartanburg, SC 29301' };
     r = await call('POST', '/public/book', { body: { ...far, ...guest, customerEmail: 'far@guest.test' } });
     assert.equal(r.status, 201);
     assert.equal(r.data.status, 'review');

@@ -165,6 +165,13 @@ router.post('/book', limitGuestBookings, asyncH(async (req, res) => {
     throw new HttpError(409, "Online booking isn't available right now. Email info@choicedeliverysc.com and we'll book it for you.");
   }
   if (b.agreeTerms !== true) throw new HttpError(400, 'Please agree to the Terms & Conditions to book');
+  // The same check as the booking form: "10 Melissa Ct" alone could be anywhere.
+  const stopList = Array.isArray(b.stops) ? b.stops : [];
+  const vague = stopList.findIndex((st) => !/\b\d{5}\b/.test(st?.address || '') && !/,\s*[A-Za-z]/.test(st?.address || ''));
+  if (vague >= 0) {
+    const which = vague === 0 ? 'pickup' : vague === stopList.length - 1 ? 'drop-off' : `stop ${vague + 1}`;
+    throw new HttpError(400, `Add the city or ZIP to the ${which} address (for example "10 Melissa Ct, Spartanburg, SC 29301")`);
+  }
   const { priceCents, organizationId, saveAsQuote, trackingNumber, ...fields } = b;
   const id = await db.withTx((client) => createOrder(client, GUEST, fields));
   const order = await getOrderFor(STAFF_VIEW, id);
