@@ -129,9 +129,9 @@ function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleTy
 }
 
 // Itemized price, tucked behind "See price details" so the total is what stands out.
-export function PriceBreakdown({ q, open = false }) {
+export function PriceBreakdown({ q, open = false, summary = 'See price details' }) {
   if (!q) return null;
-  return html`<details class="breakdown-details" open=${open}><summary>See price details</summary>
+  return html`<details class="breakdown-details" open=${open}><summary>${summary}</summary>
     <dl class="breakdown">
       <dt>${q.vehicleType || 'Car'} delivery</dt><dd>${formatMoney(q.baseFeeCents)}</dd>
       ${q.extraMileageCents - (q.longMileageCents || 0) > 0 && html`<dt>Distance</dt><dd>+${formatMoney(q.extraMileageCents - (q.longMileageCents || 0))}</dd>`}
@@ -978,7 +978,10 @@ export function OrderPage({ id }) {
               <dt>Distance</dt><dd>${order.distanceMiles != null ? `about ${order.distanceMiles} mi` : '—'}</dd>
               <dt>Price</dt><dd>${awaitingPrice ? 'Waiting for our price' : `${formatMoney(order.priceCents)}${order.priceIsCustom ? ' (set by dispatch)' : ''}`}</dd>
             </dl>
-            ${order.priceBreakdown && !order.priceIsCustom && !awaitingPrice && html`<${PriceBreakdown} q=${order.priceBreakdown} />`}
+            ${staff && order.priceBreakdown && !order.priceBreakdown.needsReview && html`
+              <${PriceBreakdown} q=${order.priceBreakdown} summary="Price breakdown (only dispatch sees this)" />
+              ${order.priceIsCustom && order.priceBreakdown.totalCents !== order.priceCents && html`<p class="muted small">That's the formula price.
+                The customer is charged the ${formatMoney(order.priceCents)} set by dispatch.</p>`}`}
             ${order.description && html`<p class="small">${order.description}</p>`}
           </section>
           <section class="card">
