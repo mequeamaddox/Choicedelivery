@@ -30,6 +30,8 @@
   .back .qr span { display: block; font-size: 6pt; color: var(--muted); margin-top: 0.03in; }
   .back .info { flex: 1; min-width: 0; }
   .back .logo { width: 1.1in; display: block; margin-bottom: 0.05in; }
+  .back .name { font-size: 10pt; font-weight: 800; color: var(--ink); line-height: 1.1; }
+  .back .role { font-size: 6.6pt; color: var(--muted); margin-bottom: 0.06in; }
   .back .big { font-size: 9.6pt; font-weight: 800; color: var(--teal); line-height: 1.15; }
   .back ul { list-style: none; margin-top: 0.05in; font-size: 6.6pt; line-height: 1.45; color: var(--ink); }
   .back ul li::before { content: "✓ "; color: var(--teal); font-weight: 700; }
@@ -48,19 +50,20 @@
 <template id="front">
   <div class="card front"><div class="safe"><div class="inner">
     <img src="logo-white.png" alt="Choice Delivery SC">
-    <div class="tag">Same-day courier · Columbia, SC</div>
-    <div class="sub">Rush, local &amp; statewide delivery · 7 days a week</div>
+    <div class="tag">Same-day runs for supply houses,<br>contractors &amp; medical offices</div>
+    <div class="sub">Columbia, SC · 7 days a week</div>
   </div></div></div>
 </template>
 <template id="back">
   <div class="card back"><div class="safe">
     <div class="inner">
-      <div class="qr"><img src="card-qr.svg" alt="QR code for an instant quote"><span>Scan for a quote</span></div>
+      <div class="qr"><img src="card-qr.svg" alt="QR code for an instant quote"><span>Scan for your price<br>in 30 seconds</span></div>
       <div class="info">
-        <img class="logo" src="logo-teal.png" alt="Choice Delivery SC">
+        <div class="name">Mequea Maddox</div>
+        <div class="role">Owner · Choice Delivery</div>
         <div class="big">Instant price online.<br>Delivered today.</div>
-        <ul><li>Live tracking &amp; photo proof</li><li>Supplies, equipment &amp; documents</li></ul>
-        <div class="contact"><strong>choicedeliverysc.com</strong><br>info@choicedeliverysc.com<br>(803) 949-7034</div>
+        <ul><li>Live tracking &amp; photo proof of delivery</li><li>Job-site, supply &amp; medical runs</li></ul>
+        <div class="contact"><strong>Text: (803) 949-7034</strong><br>choicedeliverysc.com<br>info@choicedeliverysc.com</div>
       </div>
     </div>
   </div><div class="bar"></div></div>
