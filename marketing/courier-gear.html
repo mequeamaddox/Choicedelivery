@@ -100,6 +100,14 @@
 <script>
   const item = new URLSearchParams(location.search).get('item') || 'badge-front';
   document.getElementById('out').appendChild(document.getElementById(item).content.cloneNode(true));
+  // ?type=regular: the everyday delivery badge (no medical wording or certifications).
+  if (new URLSearchParams(location.search).get('type') === 'regular') {
+    const band = document.querySelector('.band');
+    if (band) { band.textContent = 'DELIVERY COURIER'; band.style.background = 'var(--ink)'; }
+    document.querySelectorAll('.cert, .certs').forEach((el) => el.remove());
+    const who = document.querySelector('.who');
+    if (who) who.style.top = '2.74in';
+  }
 </script>
 </body>
 </html>
