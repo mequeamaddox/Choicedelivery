@@ -88,11 +88,13 @@ async function insertStops(client, orderId, stops) {
 const TEMPERATURES = ['ambient', 'refrigerated', 'frozen'];
 const sealKey = (v) => String(v || '').replace(/[\s-]/g, '').toUpperCase();
 
-// Chain of custody (medical and other sensitive deliveries): the driver confirms the piece count, and the
-// seal number if there is one, at every handoff. A seal number turns it on. current: the saved order, for edits.
-function custodyFields(body, current = {}) {
+// Chain of custody: every order from a medical facility has it. The driver confirms the piece count, and
+// the seal number if there is one, at every handoff. Other orders ignore the custody fields.
+// current: the saved order, for edits.
+function custodyFields(body, current = {}, medical = !!current.custodyRequired) {
+  if (!medical) return { required: false, seal: null, temperature: null };
   const seal = body.sealNumber === undefined ? current.sealNumber || null : str(body.sealNumber).slice(0, 40) || null;
-  const required = (body.custodyRequired === undefined ? !!current.custodyRequired : body.custodyRequired === true) || !!seal;
+  const required = true;
   const temperature = body.temperature === undefined ? current.temperature || null : str(body.temperature).toLowerCase() || null;
   if (temperature && !TEMPERATURES.includes(temperature)) {
     throw new HttpError(400, 'temperature must be "ambient", "refrigerated" or "frozen"');
@@ -143,7 +145,10 @@ async function createOrder(client, actor, body) {
     throw new HttpError(400, 'Please enter your name, email and phone number so we can reach you about this delivery');
   }
 
-  const custody = custodyFields(body);
+  const { rows: [org] } = organizationId
+    ? await client.query('SELECT is_medical FROM organizations WHERE id = $1', [organizationId]).catch(() => ({ rows: [] }))
+    : { rows: [] };
+  const custody = custodyFields(body, {}, !!org?.is_medical);
 
   let rows;
   try {

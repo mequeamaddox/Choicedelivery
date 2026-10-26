@@ -2133,13 +2133,33 @@ test('chain of custody: counts and seals at every handoff, exceptions flagged, p
   const mails = [];
   mailer.setSender(async (m) => { mails.push(m); return 'sent'; });
   const settle = () => new Promise((r) => setTimeout(r, 150));
+  const acmeOrg = (await call('GET', '/organizations', { token: t.acme })).data[0].id;
   try {
-    let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ custodyRequired: true, numberOfPieces: '' }) });
+    // Only medical facilities get chain of custody; anyone else's custody fields are ignored.
+    let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '2', sealNumber: 'X1', custodyRequired: true }) });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.custodyRequired, false);
+    assert.equal(r.data.sealNumber, null);
+    r = await call('PATCH', `/organizations/${acmeOrg}`, { token: t.acme, body: { isMedical: true } });
+    assert.equal(r.status, 403, 'a customer cannot mark itself medical');
+    r = await call('PATCH', `/organizations/${acmeOrg}`, { token: t.dispatcher, body: { isMedical: true } });
+    assert.equal(r.data.isMedical, true);
+    r = await call('GET', '/auth/me', { token: t.acme });
+    assert.equal(r.data.user.organization.isMedical, true, 'the booking form knows');
+
+    // The medical facility sign-up page marks the new company medical, and the owner's alert says so.
+    r = await call('POST', '/auth/signup', { body: { name: 'Lab Lead', email: 'lead@midlab.test', password: 'password1', companyName: 'Midlands Lab', medical: true } });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.user.organization.isMedical, true);
+    await settle();
+    assert.ok(mails.some((m) => /New medical facility signup: Midlands Lab/.test(m.subject)));
+
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '' }) });
     assert.equal(r.status, 400, 'a count is needed to check against');
     assert.match(r.data.message, /number of pieces/);
     r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '3', sealNumber: 'TB-4471', temperature: 'refrigerated', trackingNumber: 'LAB-77' }) });
     assert.equal(r.status, 201);
-    assert.equal(r.data.custodyRequired, true, 'a seal number turns chain of custody on');
+    assert.equal(r.data.custodyRequired, true, 'every medical facility order has chain of custody');
     assert.equal(r.data.sealNumber, 'TB-4471');
     assert.equal(r.data.temperature, 'refrigerated');
     const id = r.data.id;
@@ -2169,7 +2189,7 @@ test('chain of custody: counts and seals at every handoff, exceptions flagged, p
     assert.match(alert.html, /Counted 2 of 3 pieces/);
 
     // An older driver app with no count box: the handoff goes through, flagged for dispatch.
-    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '1', custodyRequired: true }) });
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '1' }) });
     const oldApp = r.data.id;
     r = await call('POST', `/orders/${oldApp}/accept`, { token: t.d1 });
     await call('POST', `/orders/${oldApp}/stops/${r.data.stops[0].id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
@@ -2207,6 +2227,7 @@ test('chain of custody: counts and seals at every handoff, exceptions flagged, p
     assert.ok(r.data.events.some((e) => e.type === 'email_sent' && e.data.kind === 'custody_report'));
   } finally {
     mailer.setSender(null);
+    await call('PATCH', `/organizations/${acmeOrg}`, { token: t.dispatcher, body: { isMedical: false } });
   }
 });
 

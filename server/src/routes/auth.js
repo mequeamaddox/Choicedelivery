@@ -35,21 +35,23 @@ router.get('/me', requireAuth, asyncH(async (req, res) => {
 // Self-serve signup for shipping customers: creates their company and their first user.
 router.post('/signup', asyncH(async (req, res) => {
   const { name, email, password, phoneNumber } = req.body || {};
+  // From the medical facility sign-up page: their orders get chain of custody.
+  const medical = req.body?.medical === true;
   // People shipping for themselves leave the business name blank; their account is named after them.
   const companyName = str(req.body?.companyName) || str(name);
   if (!companyName) throw new HttpError(400, 'Please enter your name');
   const attribution = cleanAttribution(req.body?.attribution);
   const user = await db.withTx(async (client) => {
     const { rows } = await client.query(
-      'INSERT INTO organizations (name, phone, billing_email) VALUES ($1, $2, lower($3)) RETURNING id',
-      [companyName, str(phoneNumber), str(email)]
+      'INSERT INTO organizations (name, phone, billing_email, is_medical) VALUES ($1, $2, lower($3), $4) RETURNING id',
+      [companyName, str(phoneNumber), str(email), medical]
     );
     const u = await createUser({ email, password, name, phoneNumber, role: 'shipper', organizationId: rows[0].id }, client);
     if (attribution) await client.query('UPDATE users SET attribution = $2 WHERE id = $1', [u.id, attribution]);
     return u;
   });
   logEvent('signup', attribution, { userId: user.id, organizationId: user.organization_id });
-  alertStaffOfSignup({ user, company: companyName, phone: str(phoneNumber), attribution });
+  alertStaffOfSignup({ user, company: companyName, phone: str(phoneNumber), attribution, medical });
   welcomeShipper({ user, company: companyName });
   res.status(201).json({ token: signToken(user), user: publicUser(user) });
 }));

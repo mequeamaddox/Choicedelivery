@@ -195,7 +195,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
     }
     if (['weight', 'numberOfPieces', 'maxPieceLbs'].some((k) => b[k] !== undefined)) await assertPieceWeights(client, current.id);
     // Chain of custody settings, while nothing has been picked up yet.
-    if (['custodyRequired', 'sealNumber', 'temperature', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
+    if (current.custodyRequired && ['sealNumber', 'temperature', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
       const custody = custodyFields(b, current);
       const changed = custody.required !== current.custodyRequired || custody.seal !== current.sealNumber || custody.temperature !== current.temperature;
       if (changed && current.stops.some((s) => s.status === 'completed')) {

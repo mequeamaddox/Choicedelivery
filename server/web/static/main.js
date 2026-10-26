@@ -8,7 +8,8 @@ import { DriverMileagePage } from './pages-mileage.js';
 import { ShippingFormPage, ShippingLabelPage } from './pages-shipping.js';
 import { CustodyPage } from './pages-custody.js';
 
-const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
+const MedicalSignupPage = () => html`<${SignupPage} medical=${true} />`;
+const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/signup/medical': MedicalSignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
 
 function App() {
   const path = useRoute();

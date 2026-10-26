@@ -323,7 +323,7 @@ export function CompaniesPage() {
       ${loading ? html`<${Spinner} />` : !data?.length ? html`<${Empty} title="No companies yet" />` : html`
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Company</th><th>Phone</th><th>Billing email</th><th>Billing</th><th>Since</th></tr></thead>
+            <thead><tr><th>Company</th><th>Phone</th><th>Billing email</th><th>Billing</th><th>Medical</th><th>Since</th></tr></thead>
             <tbody>${data.map((c) => html`
               <tr>
                 <td data-label="Company"><strong>${c.name}</strong><${DemoBadge} on=${c.isDemo} />${c.address && html`<div class="muted small">${c.address}</div>`}</td>
@@ -335,6 +335,12 @@ export function CompaniesPage() {
                     <option value="card">Card per order</option>
                     <option value="invoice">Monthly account (invoice)</option>
                   </select>
+                </td>
+                <td data-label="Medical">
+                  <label class="check-row small" title="Chain of custody on every order"><input type="checkbox" checked=${c.isMedical}
+                    aria-label=${`${c.name} is a medical facility`}
+                    onChange=${async (e) => { await api(`/organizations/${c.id}`, { method: 'PATCH', body: { isMedical: e.target.checked } }); reload(); }} />
+                    <span>Chain of custody</span></label>
                 </td>
                 <td data-label="Since" class="muted small">${new Date(c.createdAt).toLocaleDateString()}</td>
               </tr>`)}</tbody>

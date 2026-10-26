@@ -9,7 +9,7 @@ router.use(requireAuth);
 
 const serialize = (o) => ({
   id: o.id, name: o.name, phone: o.phone, billingEmail: o.billing_email, address: o.address,
-  createdAt: o.created_at, isDemo: o.is_demo, billingMode: o.billing_mode,
+  createdAt: o.created_at, isDemo: o.is_demo, billingMode: o.billing_mode, isMedical: !!o.is_medical,
 });
 
 function canAccess(user, orgId) {
@@ -45,7 +45,10 @@ router.get('/:id', asyncH(async (req, res) => {
 
 router.patch('/:id', asyncH(async (req, res) => {
   if (!canAccess(req.user, req.params.id)) throw new HttpError(404, 'Organization not found');
-  const { name, phone, billingEmail, address, billingMode } = req.body || {};
+  const { name, phone, billingEmail, address, billingMode, isMedical } = req.body || {};
+  if (isMedical !== undefined && (!isStaff(req.user) || typeof isMedical !== 'boolean')) {
+    throw new HttpError(isStaff(req.user) ? 400 : 403, 'Only dispatch can mark a company as a medical facility');
+  }
   if (billingMode !== undefined) {
     if (!isStaff(req.user)) throw new HttpError(403, 'Only dispatch can change how a company is billed');
     if (!['card', 'invoice'].includes(billingMode)) throw new HttpError(400, 'billingMode must be card or invoice');
@@ -53,9 +56,9 @@ router.patch('/:id', asyncH(async (req, res) => {
   const { rows } = await db.query(
     `UPDATE organizations SET name = COALESCE(NULLIF($2, ''), name), phone = COALESCE($3, phone),
        billing_email = COALESCE(lower($4), billing_email), address = COALESCE($5, address),
-       billing_mode = COALESCE($6, billing_mode), updated_at = now()
+       billing_mode = COALESCE($6, billing_mode), is_medical = COALESCE($7, is_medical), updated_at = now()
      WHERE id = $1 RETURNING *`,
-    [req.params.id, str(name), phone ?? null, billingEmail ?? null, address ?? null, billingMode ?? null]
+    [req.params.id, str(name), phone ?? null, billingEmail ?? null, address ?? null, billingMode ?? null, isMedical ?? null]
   );
   if (!rows[0]) throw new HttpError(404, 'Organization not found');
   res.json(serialize(rows[0]));

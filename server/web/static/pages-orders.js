@@ -226,8 +226,11 @@ export function NewOrderPage({ guest = false }) {
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '', customerName: '', customerEmail: '', sendPayLink: true,
-    customerPhone: '', agreeTerms: false, custodyRequired: false, sealNumber: '', temperature: '',
+    customerPhone: '', agreeTerms: false, sealNumber: '', temperature: '',
   });
+  // Medical facilities' orders have chain of custody (seal number, temperature, counts at every handoff).
+  const medical = guest ? false : staff ? !!(companies.data || []).find((c) => c.id === v.organizationId)?.isMedical
+    : !!user?.organization?.isMedical;
   const [guestDone, setGuestDone] = useState(null); // a guest request sent for review
   const [shownCents, setShownCents] = useState(null); // new price after "the price changed"
   const [error, setError] = useState(null);
@@ -308,7 +311,7 @@ export function NewOrderPage({ guest = false }) {
           serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
           addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
           maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
-          custodyRequired: v.custodyRequired, sealNumber: v.custodyRequired ? v.sealNumber.trim() || undefined : undefined, temperature: v.custodyRequired ? v.temperature || undefined : undefined,
+          ...(medical ? { sealNumber: v.sealNumber.trim() || undefined, temperature: v.temperature || undefined } : {}),
           scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
           stops,
           expectedCents: shownCents ?? (quote && !quote.needsReview ? quote.totalCents : undefined),
@@ -336,7 +339,7 @@ export function NewOrderPage({ guest = false }) {
         serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
         addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
         maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
-        custodyRequired: v.custodyRequired, sealNumber: v.custodyRequired ? v.sealNumber.trim() || undefined : undefined, temperature: v.custodyRequired ? v.temperature || undefined : undefined,
+        ...(medical ? { sealNumber: v.sealNumber.trim() || undefined, temperature: v.temperature || undefined } : {}),
         trackingNumber: v.trackingNumber || undefined,
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
@@ -468,27 +471,27 @@ export function NewOrderPage({ guest = false }) {
             <${Field} label="Total weight (lbs)" hint=${fees?.offerHelp ? 'Weight only adds to the price if our driver loads or carries the shipment (Loading help or Inside delivery).' : 'Used to pick a vehicle that fits. You load and unload the shipment.'}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
             <//>
-            <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" required=${v.custodyRequired}
-              pattern=${v.custodyRequired ? '[0-9]+' : undefined} ...${bind('numberOfPieces')} /><//>
+            <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" required=${medical}
+              pattern=${medical ? '[0-9]+' : undefined} ...${bind('numberOfPieces')} /><//>
             <${Field} label="Heaviest single piece (lbs)" hint=${pieceLimit ? `Each piece must be ${pieceLimit} lbs or less.` : undefined}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder=${pieceLimit ? `up to ${pieceLimit}` : ''} ...${bind('maxPieceLbs')} />
             <//>
           </div>
           <${Field} label="What are we moving?"><textarea rows="3" placeholder="Boxes of files, parts, small furniture, fragile items…" ...${bind('description')}></textarea><//>
-          <label class="check-row small"><input type="checkbox" checked=${v.custodyRequired}
-            onChange=${(e) => setV({ ...v, custodyRequired: e.target.checked })} />
-            <span><strong>Chain of custody</strong> (medical specimens, legal documents and other sensitive items): the driver
-              counts the pieces and checks the seal at every handoff, and you get a signed, time-stamped custody record.</span></label>
-          ${v.custodyRequired && html`<div class="grid-2">
-            <${Field} label="Seal or bag number" hint="Optional. The number on the tamper-evident seal; the driver checks it at each stop.">
-              <input maxlength="40" ...${bind('sealNumber')} /><//>
-            <${Field} label="Temperature">
-              <select value=${v.temperature} onChange=${(e) => setV({ ...v, temperature: e.target.value })}>
-                <option value="">Not specified</option><option value="ambient">Room temperature</option>
-                <option value="refrigerated">Refrigerated</option><option value="frozen">Frozen</option>
-              </select><//>
-          </div>
-          <p class="small muted">Please don't put patient names or health information in this order; use your lab or reference number.</p>`}
+          ${medical && html`<div class="custody-box">
+            <p class="small"><strong>Chain of custody is on</strong> for your facility's deliveries: the driver counts the pieces and
+              checks the seal at every handoff, and you get a signed, time-stamped custody record.</p>
+            <div class="grid-2">
+              <${Field} label="Seal or bag number" hint="Optional. The number on the tamper-evident seal.">
+                <input maxlength="40" ...${bind('sealNumber')} /><//>
+              <${Field} label="Temperature">
+                <select value=${v.temperature} onChange=${(e) => setV({ ...v, temperature: e.target.value })}>
+                  <option value="">Not specified</option><option value="ambient">Room temperature</option>
+                  <option value="refrigerated">Refrigerated</option><option value="frozen">Frozen</option>
+                </select><//>
+            </div>
+            <p class="small muted">Please don't put patient names or health information in this order; use your lab or reference number.</p>
+          </div>`}
           ${!guest && html`<${Field} label="Your reference / tracking number" hint="Optional. If your packages have a barcode label, drivers can scan it at pickup to double-check.">
             <input ...${bind('trackingNumber')} />
           <//>`}
@@ -936,7 +939,7 @@ export function OrderPage({ id }) {
           ${link && html`
             <a class="btn primary" href=${link} target="_blank" rel="noopener">${ACTIVE_STATUSES.includes(order.status) ? 'Track driver' : 'Tracking page'}</a>
             <button class="btn" onClick=${shareLink}>${copied ? 'Link copied ✓' : 'Share link'}</button>`}
-          ${!isQuote && html`<a class="btn" href=${`#/orders/${order.id}/custody`}>Chain of custody</a>`}
+          ${!isQuote && order.custodyRequired && html`<a class="btn" href=${`#/orders/${order.id}/custody`}>Chain of custody</a>`}
           ${!isQuote && order.status !== 'cancelled' && html`<${ActionButton} class="btn" onError=${setError}
             onClick=${async () => navigate(`/shipping-forms/${(await api(`/shipping-forms/from-order/${order.id}`, { method: 'POST' })).code}`)}>
             Print shipping label<//>`}

@@ -70,29 +70,38 @@ function LoginForm() {
     <//>`;
 }
 
-export function SignupPage() {
+// medical: the medical facility sign-up (#/signup/medical): the company's orders get chain of custody.
+export function SignupPage({ medical = false }) {
   const [v, bind] = useForm({ companyName: '', name: '', phoneNumber: '', email: '', password: '' });
   const booking = bookingDraft(); // came from "Book This Delivery" on the website
   const { onSubmit, error, busy } = useSubmit(async () => {
-    await signup(v);
+    await signup({ ...v, ...(medical ? { medical: true } : {}) });
     navigate('/orders/new');
   });
   return html`
-    <${AuthShell} title=${booking ? 'Almost there: create your account' : 'Ship with Choice Delivery'}
-      subtitle=${booking ? "Then you'll pick a time and pay. Your quote's addresses are already filled in."
+    <${AuthShell} title=${medical ? 'Medical facility account' : booking ? 'Almost there: create your account' : 'Ship with Choice Delivery'}
+      subtitle=${medical ? 'For labs, clinics, pharmacies and practices. Every delivery comes with a chain-of-custody record.'
+        : booking ? "Then you'll pick a time and pay. Your quote's addresses are already filled in."
         : 'Book and track deliveries for yourself or your business.'}>
+      ${medical && html`<ul class="small custody-perks">
+        <li>Pieces counted and the seal checked at every handoff</li>
+        <li>Signatures, GPS-verified times and photos at pickup and delivery</li>
+        <li>A printable chain-of-custody record for every order</li>
+      </ul>`}
       <form onSubmit=${onSubmit} class="stack">
         <${Alert} error=${error} />
         <${Field} label="Your name"><input required autocomplete="name" ...${bind('name')} /><//>
         <${Field} label="Email"><input type="email" required autocomplete="email" ...${bind('email')} /><//>
         <${Field} label="Phone"><input type="tel" autocomplete="tel" ...${bind('phoneNumber')} /><//>
-        <${Field} label="Business name (optional)" hint="Leave blank if you're shipping for yourself.">
-          <input autocomplete="organization" ...${bind('companyName')} /><//>
+        ${medical ? html`<${Field} label="Facility name"><input required autocomplete="organization" ...${bind('companyName')} /><//>`
+        : html`<${Field} label="Business name (optional)" hint="Leave blank if you're shipping for yourself.">
+          <input autocomplete="organization" ...${bind('companyName')} /><//>`}
         <${Field} label="Password" hint="At least 8 characters."><input type="password" required minlength="8" autocomplete="new-password" ...${bind('password')} /><//>
         <p class="small muted">By creating an account you agree to our <${LegalLinks} />.</p>
         <button class="btn primary block" disabled=${busy}>${busy ? 'Creating account…' : 'Create account'}</button>
       </form>
       <p class="auth-links">Already have an account? <a href="#/login">Log in</a>${booking ? ' and your quote will be waiting.' : ''}</p>
+      ${!medical && !booking && html`<p class="auth-links small">Lab, clinic or pharmacy? <a href="#/signup/medical">Open a medical facility account</a></p>`}
     <//>`;
 }
 

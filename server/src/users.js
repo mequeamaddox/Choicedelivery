@@ -4,7 +4,7 @@ const { ROLES } = require('./auth');
 const { HttpError, str } = require('./util');
 
 const USER_SELECT = `
-  SELECT u.*, o.name AS organization_name, o.billing_mode AS organization_billing_mode,
+  SELECT u.*, o.name AS organization_name, o.billing_mode AS organization_billing_mode, o.is_medical AS organization_is_medical,
          veh.type AS vehicle_type, veh.make AS vehicle_make, veh.model AS vehicle_model, veh.year AS vehicle_year,
          veh.color AS vehicle_color, veh.plate AS vehicle_plate, docs.kinds AS doc_kinds, docs.photo_at
   FROM users u
@@ -92,7 +92,7 @@ function publicUser(u, { includeLocation = false } = {}) {
     name: u.name,
     role: u.role,
     organization: u.organization_id
-      ? { id: u.organization_id, name: u.organization_name, billingMode: u.organization_billing_mode } : null,
+      ? { id: u.organization_id, name: u.organization_name, billingMode: u.organization_billing_mode, isMedical: !!u.organization_is_medical } : null,
     phoneNumber: u.phone_number,
     vehicleType: u.vehicle_type || '',
     profilePictureUrl: u.profile_picture_url,

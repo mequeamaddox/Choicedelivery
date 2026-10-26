@@ -195,7 +195,7 @@ async function alertStaffOfBooking(orderId) {
 // Emails the owner/dispatch when a customer signs up on their own, with where they came from.
 // Never blocks the signup.
 const CHANNEL_LABELS = { facebook: 'Facebook / Instagram', google_ads: 'Google Ads', bing_ads: 'Bing Ads', direct: 'Direct (typed the address or no source)' };
-async function alertStaffOfSignup({ user, company, phone, attribution }) {
+async function alertStaffOfSignup({ user, company, phone, attribution, medical = false }) {
   try {
     const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
     const source = attribution?.channel ? (CHANNEL_LABELS[attribution.channel] || attribution.channel) : CHANNEL_LABELS.direct;
@@ -203,13 +203,14 @@ async function alertStaffOfSignup({ user, company, phone, attribution }) {
     const rows = [
       ['Name', esc(user.name || '—')],
       [forSelf ? 'Account' : 'Company', forSelf ? 'Shipping for themselves' : esc(company)],
+      ...(medical ? [['Type', '<strong>Medical facility</strong> (chain of custody on every order)']] : []),
       ['Email', `<a href="mailto:${esc(user.email)}">${esc(user.email)}</a>`],
       ['Phone', phone ? esc(phone) : '—'],
       ['Came from', `${esc(source)}${attribution?.utm_campaign ? ` · campaign "${esc(attribution.utm_campaign)}"` : ''}${attribution?.landingPage ? ` · landed on ${esc(attribution.landingPage)}` : ''}`],
     ];
     await sendMail({
       to: staffInbox(),
-      subject: `New customer signup: ${forSelf ? (user.name || user.email) : company}`,
+      subject: `New ${medical ? 'medical facility' : 'customer'} signup: ${forSelf ? (user.name || user.email) : company}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
   <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong> · New customer</div>
   <div style="border:1px solid #e5e7eb;border-top:0;padding:20px;border-radius:0 0 10px 10px">

@@ -439,6 +439,9 @@ fieldset.card { margin: 0; min-width: 0; }
 @media (max-width: 640px) { .label-parties { grid-template-columns: 1fr; } .ship-label { padding: .2in; font-size: 11pt; } }
 
 /* Chain-of-custody record */
+.custody-box { margin-top: .75rem; padding: .75rem .9rem; border: 1px solid var(--border); border-left: 4px solid var(--teal, #0f766e); border-radius: 10px; }
+.custody-box > p:first-child { margin-top: 0; }
+.custody-perks { margin: 0 0 1rem; padding-left: 1.2rem; line-height: 1.6; text-align: left; }
 .custody-bar { margin-bottom: .75rem; }
 .custody-head { display: flex; gap: 1rem; align-items: center; border-bottom: 2px solid var(--teal, #0f766e); padding-bottom: .75rem; margin-bottom: .75rem; }
 .custody-head .logo, .custody-head img { height: 44px; width: auto; }
