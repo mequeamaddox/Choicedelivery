@@ -2147,12 +2147,8 @@ test('chain of custody: counts and seals at every handoff, exceptions flagged, p
     assert.equal(r.data.sealNumber, 'TB-4471', 'the driver sees the seal to check');
     const [pickup, dropoff] = r.data.stops;
     await call('POST', `/orders/${id}/stops/${pickup.id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
-    r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
-    assert.equal(r.status, 400, 'no count, no handoff');
-    assert.match(r.data.message, /Count the pieces/);
-    r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP, pieceCount: 3 } });
-    assert.equal(r.status, 400);
-    assert.match(r.data.message, /seal number/);
+    r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP, pieceCount: 'three' } });
+    assert.equal(r.status, 400, 'a count has to be a number');
     r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1,
       body: { signature: 'data:x', printedName: 'Lab Tech', location: AT_PICKUP, pieceCount: 3, sealNumber: 'tb 4471' } });
     assert.equal(r.status, 200, 'the seal matches ignoring case and spaces');
@@ -2171,6 +2167,15 @@ test('chain of custody: counts and seals at every handoff, exceptions flagged, p
     const alert = mails.find((m) => /Chain of custody exception/.test(m.subject));
     assert.ok(alert, 'dispatch is emailed');
     assert.match(alert.html, /Counted 2 of 3 pieces/);
+
+    // An older driver app with no count box: the handoff goes through, flagged for dispatch.
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '1', custodyRequired: true }) });
+    const oldApp = r.data.id;
+    r = await call('POST', `/orders/${oldApp}/accept`, { token: t.d1 });
+    await call('POST', `/orders/${oldApp}/stops/${r.data.stops[0].id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
+    r = await call('POST', `/orders/${oldApp}/stops/${r.data.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
+    assert.equal(r.status, 200);
+    assert.ok(r.data.events.some((e) => e.type === 'custody_exception' && /not counted/.test(e.data.problems[0])));
 
     r = await call('GET', `/orders/${id}/custody`, { token: t.acme });
     assert.equal(r.status, 200, 'the customer can see the report');

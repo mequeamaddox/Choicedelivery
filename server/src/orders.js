@@ -572,20 +572,22 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
     if (!photo || !signature) throw new HttpError(400, 'A delivery photo and the receiver\'s signature are both required');
   } else if (!signature && !photo) throw new HttpError(400, 'A signature or photo is required');
   if (stop.status === 'pending') throw new HttpError(409, "Tap \"I've arrived\" at this stop first");
-  // Chain of custody: a count at every handoff, and the seal number if the order has one. A mismatch is
-  // recorded (and dispatch is emailed) rather than blocking a driver who's standing at the stop.
+  // Chain of custody: a count at every handoff, and the seal number if the order has one. A mismatch, or
+  // a check the driver's app didn't send (versions before chain of custody have no count box), is recorded
+  // and dispatch is emailed, rather than blocking a driver who's standing at the stop. The current app
+  // won't submit without them.
   let custody = null;
   if (order.custody_required) {
-    const counted = pieceCount === '' || pieceCount == null ? NaN : Number(pieceCount);
-    if (!Number.isInteger(counted) || counted < 0) {
-      throw new HttpError(400, 'Count the pieces and enter the number (chain of custody). No count box on this screen? Update the Choice Delivery app.');
-    }
+    const given = pieceCount !== '' && pieceCount != null;
+    const counted = given ? Number(pieceCount) : null;
+    if (given && (!Number.isInteger(counted) || counted < 0)) throw new HttpError(400, 'Enter the number of pieces you counted');
     const sealSeen = str(sealNumber).slice(0, 40) || null;
-    if (order.seal_number && !sealSeen) throw new HttpError(400, 'Enter the seal number on the bag (chain of custody)');
     const expected = Number.parseInt(order.number_of_pieces, 10);
     const problems = [];
-    if (Number.isFinite(expected) && counted !== expected) problems.push(`Counted ${counted} of ${expected} pieces`);
-    if (order.seal_number && sealKey(sealSeen) !== sealKey(order.seal_number)) {
+    if (!given) problems.push('Pieces not counted in the driver app');
+    else if (Number.isFinite(expected) && counted !== expected) problems.push(`Counted ${counted} of ${expected} pieces`);
+    if (order.seal_number && !sealSeen) problems.push('Seal number not checked in the driver app');
+    else if (order.seal_number && sealKey(sealSeen) !== sealKey(order.seal_number)) {
       problems.push(`Seal number ${sealSeen} doesn't match ${order.seal_number}`);
     }
     custody = { counted, sealSeen, problems };
