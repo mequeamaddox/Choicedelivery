@@ -6,6 +6,7 @@ import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDeta
 import { DriverJobsPage, DriverJobPage, DriverHistoryPage, PayoutMethodPage } from './pages-driver.js';
 import { DriverMileagePage } from './pages-mileage.js';
 import { ShippingFormPage, ShippingLabelPage } from './pages-shipping.js';
+import { CustodyPage } from './pages-custody.js';
 
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
 
@@ -75,6 +76,8 @@ function App() {
   if (path === '/shipping-form') return html`<${ShippingFormPage} />`;
   const label = match('/shipping-forms/:code', path);
   if (label) return html`<${ShippingLabelPage} key=${label.code} code=${label.code} />`;
+  const custody = user.role !== 'driver' && match('/orders/:id/custody', path);
+  if (custody) return html`<${CustodyPage} key=${custody.id} id=${custody.id} />`;
   if (order) return html`<${OrderPage} key=${order.id} id=${order.id} />`;
   if (path === '/account') return html`<${AccountPage} />`;
   if (path === '/team' && user.role === 'shipper') return html`<${TeamPage} />`;

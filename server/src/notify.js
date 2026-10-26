@@ -320,4 +320,28 @@ async function emailPaymentRequest(orderId) {
   return true;
 }
 
-module.exports = { emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };
+// Emails dispatch when a driver's count or seal check didn't match at a chain-of-custody handoff.
+async function alertStaffOfCustodyException(orderId, stopId) {
+  try {
+    const { rows: [e] } = await db.query(
+      `SELECT e.data, o.order_number, d.name AS driver_name FROM order_events e JOIN orders o ON o.id = e.order_id
+       LEFT JOIN users d ON d.id = e.actor_id
+       WHERE e.order_id = $1 AND e.type = 'custody_exception' AND e.data->>'stopId' = $2 ORDER BY e.created_at DESC LIMIT 1`,
+      [orderId, String(stopId)]);
+    if (!e) return;
+    const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+    const where = e.data.type === 'pickup' ? 'pickup' : 'drop-off';
+    await sendMail({
+      to: staffInbox(),
+      subject: `Chain of custody exception: ${e.order_number} (${where})`,
+      html: `<p><strong>${esc(e.order_number)}</strong>: at the ${where}, ${esc(e.driver_name || 'the driver')} recorded:</p>
+        <ul>${(e.data.problems || []).map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
+        <p>The handoff was still completed. Check with the driver and the customer.</p>
+        <p><a href="${base}/#/orders/${orderId}">Open the order</a></p>`,
+    });
+  } catch (err) {
+    console.error('Custody exception email failed:', err.message);
+  }
+}
+
+module.exports = { alertStaffOfCustodyException, emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };

@@ -226,7 +226,7 @@ export function NewOrderPage({ guest = false }) {
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '', customerName: '', customerEmail: '', sendPayLink: true,
-    customerPhone: '', agreeTerms: false,
+    customerPhone: '', agreeTerms: false, custodyRequired: false, sealNumber: '', temperature: '',
   });
   const [guestDone, setGuestDone] = useState(null); // a guest request sent for review
   const [shownCents, setShownCents] = useState(null); // new price after "the price changed"
@@ -308,6 +308,7 @@ export function NewOrderPage({ guest = false }) {
           serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
           addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
           maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
+          custodyRequired: v.custodyRequired, sealNumber: v.custodyRequired ? v.sealNumber.trim() || undefined : undefined, temperature: v.custodyRequired ? v.temperature || undefined : undefined,
           scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
           stops,
           expectedCents: shownCents ?? (quote && !quote.needsReview ? quote.totalCents : undefined),
@@ -335,6 +336,7 @@ export function NewOrderPage({ guest = false }) {
         serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
         addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
         maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
+        custodyRequired: v.custodyRequired, sealNumber: v.custodyRequired ? v.sealNumber.trim() || undefined : undefined, temperature: v.custodyRequired ? v.temperature || undefined : undefined,
         trackingNumber: v.trackingNumber || undefined,
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
@@ -466,12 +468,27 @@ export function NewOrderPage({ guest = false }) {
             <${Field} label="Total weight (lbs)" hint=${fees?.offerHelp ? 'Weight only adds to the price if our driver loads or carries the shipment (Loading help or Inside delivery).' : 'Used to pick a vehicle that fits. You load and unload the shipment.'}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder="e.g. 120" ...${bind('weightLbs')} />
             <//>
-            <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" ...${bind('numberOfPieces')} /><//>
+            <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" required=${v.custodyRequired}
+              pattern=${v.custodyRequired ? '[0-9]+' : undefined} ...${bind('numberOfPieces')} /><//>
             <${Field} label="Heaviest single piece (lbs)" hint=${pieceLimit ? `Each piece must be ${pieceLimit} lbs or less.` : undefined}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder=${pieceLimit ? `up to ${pieceLimit}` : ''} ...${bind('maxPieceLbs')} />
             <//>
           </div>
           <${Field} label="What are we moving?"><textarea rows="3" placeholder="Boxes of files, parts, small furniture, fragile items…" ...${bind('description')}></textarea><//>
+          <label class="check-row small"><input type="checkbox" checked=${v.custodyRequired}
+            onChange=${(e) => setV({ ...v, custodyRequired: e.target.checked })} />
+            <span><strong>Chain of custody</strong> (medical specimens, legal documents and other sensitive items): the driver
+              counts the pieces and checks the seal at every handoff, and you get a signed, time-stamped custody record.</span></label>
+          ${v.custodyRequired && html`<div class="grid-2">
+            <${Field} label="Seal or bag number" hint="Optional. The number on the tamper-evident seal; the driver checks it at each stop.">
+              <input maxlength="40" ...${bind('sealNumber')} /><//>
+            <${Field} label="Temperature">
+              <select value=${v.temperature} onChange=${(e) => setV({ ...v, temperature: e.target.value })}>
+                <option value="">Not specified</option><option value="ambient">Room temperature</option>
+                <option value="refrigerated">Refrigerated</option><option value="frozen">Frozen</option>
+              </select><//>
+          </div>
+          <p class="small muted">Please don't put patient names or health information in this order; use your lab or reference number.</p>`}
           ${!guest && html`<${Field} label="Your reference / tracking number" hint="Optional. If your packages have a barcode label, drivers can scan it at pickup to double-check.">
             <input ...${bind('trackingNumber')} />
           <//>`}
@@ -551,7 +568,10 @@ const EVENT_LABELS = {
   email_sent: 'Emailed',
   email_failed: 'Email FAILED',
   terms_accepted: 'Customer agreed to the Terms & Conditions',
+  custody_exception: 'Chain of custody exception',
 };
+
+export const TEMPERATURE_LABELS = { ambient: 'Room temperature', refrigerated: 'Refrigerated', frozen: 'Frozen' };
 
 function describeEvent(e) {
   const base = EVENT_LABELS[e.type] || e.type;
@@ -565,6 +585,7 @@ function describeEvent(e) {
   if (e.type === 'email_sent' || e.type === 'email_failed') {
     return `${base} to ${e.data?.to || 'the customer'}: "${e.data?.subject || e.data?.kind}"${e.data?.payLink ? ' (with pay link)' : ''}`;
   }
+  if (e.type === 'custody_exception') return `${base} at the ${e.data?.type === 'pickup' ? 'pickup' : 'drop-off'}: ${(e.data?.problems || []).join('; ')}`;
   if (e.type === 'terms_accepted') {
     return e.data?.method === 'checkbox' ? `${base} (ticked the box at checkout)` : `${base} (by booking; the notice is shown above the Book button)`;
   }
@@ -915,6 +936,7 @@ export function OrderPage({ id }) {
           ${link && html`
             <a class="btn primary" href=${link} target="_blank" rel="noopener">${ACTIVE_STATUSES.includes(order.status) ? 'Track driver' : 'Tracking page'}</a>
             <button class="btn" onClick=${shareLink}>${copied ? 'Link copied ✓' : 'Share link'}</button>`}
+          ${!isQuote && html`<a class="btn" href=${`#/orders/${order.id}/custody`}>Chain of custody</a>`}
           ${!isQuote && order.status !== 'cancelled' && html`<${ActionButton} class="btn" onError=${setError}
             onClick=${async () => navigate(`/shipping-forms/${(await api(`/shipping-forms/from-order/${order.id}`, { method: 'POST' })).code}`)}>
             Print shipping label<//>`}
@@ -974,6 +996,7 @@ export function OrderPage({ id }) {
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}${order.maxPieceLbs != null ? ` · heaviest ${order.maxPieceLbs} lbs` : ''}</dd>
               <dt>Pickup time</dt><dd>${order.scheduledAt ? formatDate(order.scheduledAt) : 'ASAP'}</dd>
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
+              ${order.custodyRequired && html`<dt>Custody</dt><dd>Counted at every handoff${order.sealNumber ? ` · seal ${order.sealNumber}` : ''}${order.temperature ? ` · ${TEMPERATURE_LABELS[order.temperature]}` : ''}</dd>`}
               ${order.addOns.length > 0 && html`<dt>Extras</dt><dd>${order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ')}</dd>`}
               <dt>Distance</dt><dd>${order.distanceMiles != null ? `about ${order.distanceMiles} mi` : '—'}</dd>
               <dt>Price</dt><dd>${awaitingPrice ? 'Waiting for our price' : `${formatMoney(order.priceCents)}${order.priceIsCustom ? ' (set by dispatch)' : ''}`}</dd>

@@ -438,8 +438,25 @@ fieldset.card { margin: 0; min-width: 0; }
 .label-foot { border-top: 1px solid #000; margin-top: .2in; padding-top: .08in; font-size: 9pt; text-align: center; }
 @media (max-width: 640px) { .label-parties { grid-template-columns: 1fr; } .ship-label { padding: .2in; font-size: 11pt; } }
 
+/* Chain-of-custody record */
+.custody-bar { margin-bottom: .75rem; }
+.custody-head { display: flex; gap: 1rem; align-items: center; border-bottom: 2px solid var(--teal, #0f766e); padding-bottom: .75rem; margin-bottom: .75rem; }
+.custody-head .logo, .custody-head img { height: 44px; width: auto; }
+.custody-head h1 { margin: 0; font-size: 1.4rem; }
+.custody-head p { margin: .1rem 0 0; }
+.custody-log { list-style: none; padding: 0; margin: 1rem 0; }
+.custody-log li { display: grid; grid-template-columns: 11.5rem 1fr; gap: .75rem; padding: .6rem 0; border-top: 1px solid var(--border); break-inside: avoid; }
+.custody-log li.exception { background: #fef2f2; }
+.custody-time { font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted, #6b7280); }
+.custody-flag { color: #b91c1c; font-weight: 600; }
+.custody-proof { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: .4rem; }
+.custody-sig { height: 70px; max-width: 220px; background: #fff; border: 1px solid var(--border); border-radius: 6px; object-fit: contain; }
+.custody-photo { height: 110px; max-width: 200px; border-radius: 6px; object-fit: cover; }
+@media (max-width: 600px) { .custody-log li { grid-template-columns: 1fr; gap: .2rem; } }
+
 @media print {
   .topbar, .tabbar, .no-print, .site-footer { display: none !important; }
+  .custody { box-shadow: none; border: 0; padding: 0; }
   body, .page { background: #fff !important; padding: 0 !important; margin: 0 !important; }
   .ship-label { margin: 0 auto; border-radius: 0; box-shadow: none; max-width: none; width: 100%; }
   .label-parties { grid-template-columns: 1fr 1fr; }

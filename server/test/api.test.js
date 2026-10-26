@@ -2128,6 +2128,83 @@ test('API keys: customers make them; a key books and tracks only its own company
   assert.equal(r.status, 401);
 });
 
+test('chain of custody: counts and seals at every handoff, exceptions flagged, printable and emailable report', async () => {
+  const mailer = require('../src/mailer');
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); return 'sent'; });
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  try {
+    let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ custodyRequired: true, numberOfPieces: '' }) });
+    assert.equal(r.status, 400, 'a count is needed to check against');
+    assert.match(r.data.message, /number of pieces/);
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ numberOfPieces: '3', sealNumber: 'TB-4471', temperature: 'refrigerated', trackingNumber: 'LAB-77' }) });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.custodyRequired, true, 'a seal number turns chain of custody on');
+    assert.equal(r.data.sealNumber, 'TB-4471');
+    assert.equal(r.data.temperature, 'refrigerated');
+    const id = r.data.id;
+    r = await call('POST', `/orders/${id}/accept`, { token: t.d1 });
+    assert.equal(r.data.sealNumber, 'TB-4471', 'the driver sees the seal to check');
+    const [pickup, dropoff] = r.data.stops;
+    await call('POST', `/orders/${id}/stops/${pickup.id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
+    r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
+    assert.equal(r.status, 400, 'no count, no handoff');
+    assert.match(r.data.message, /Count the pieces/);
+    r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP, pieceCount: 3 } });
+    assert.equal(r.status, 400);
+    assert.match(r.data.message, /seal number/);
+    r = await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1,
+      body: { signature: 'data:x', printedName: 'Lab Tech', location: AT_PICKUP, pieceCount: 3, sealNumber: 'tb 4471' } });
+    assert.equal(r.status, 200, 'the seal matches ignoring case and spaces');
+    assert.equal(r.data.stops[0].pieceCount, 3);
+    await settle();
+    assert.ok(!mails.some((m) => /exception/i.test(m.subject)), 'nothing to flag yet');
+    r = await call('PATCH', `/orders/${id}`, { token: t.dispatcher, body: { sealNumber: 'OTHER' } });
+    assert.equal(r.status, 409, 'custody settings are fixed after pickup');
+
+    await call('POST', `/orders/${id}/stops/${dropoff.id}/arrive`, { token: t.d1, body: {} });
+    r = await call('POST', `/orders/${id}/stops/${dropoff.id}/complete`, { token: t.d1,
+      body: { photo: 'data:image/jpeg;base64,AA', signature: 'data:s', printedName: 'Nurse Joy', pieceCount: 2, sealNumber: 'TB-4471' } });
+    assert.equal(r.status, 200, 'a short count is recorded, not blocked');
+    assert.equal(r.data.status, 'completed');
+    await settle();
+    const alert = mails.find((m) => /Chain of custody exception/.test(m.subject));
+    assert.ok(alert, 'dispatch is emailed');
+    assert.match(alert.html, /Counted 2 of 3 pieces/);
+
+    r = await call('GET', `/orders/${id}/custody`, { token: t.acme });
+    assert.equal(r.status, 200, 'the customer can see the report');
+    const c = r.data;
+    assert.equal(c.sealNumber, 'TB-4471');
+    assert.equal(c.temperature, 'Refrigerated');
+    assert.equal(c.exceptions, 1);
+    const picked = c.entries.find((x) => /^Picked up/.test(x.event));
+    assert.equal(picked.handedBy, 'Lab Tech');
+    assert.equal(picked.pieceCount, 3);
+    assert.equal(picked.signature, 'data:x');
+    const delivered = c.entries.find((x) => /^Delivered/.test(x.event));
+    assert.equal(delivered.receivedBy, 'Nurse Joy');
+    assert.ok(c.entries.findIndex((x) => /^Picked up/.test(x.event)) < c.entries.findIndex((x) => /^Delivered/.test(x.event)), 'in time order');
+    r = await call('GET', `/orders/${id}/custody`, { token: t.d1 });
+    assert.equal(r.status, 403, 'drivers do not get the report');
+    r = await call('POST', `/orders/${id}/custody/email`, { token: t.acme, body: {} });
+    assert.equal(r.status, 403, 'only dispatch emails it');
+
+    mails.length = 0;
+    r = await call('POST', `/orders/${id}/custody/email`, { token: t.dispatcher, body: { to: 'Lab@Example.com' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.to, 'lab@example.com');
+    assert.match(mails[0].subject, /Chain of custody/);
+    assert.match(mails[0].html, /Nurse Joy/);
+    assert.match(mails[0].html, /Signature on file/);
+    assert.ok(!mails[0].html.includes('data:x'), 'images stay out of the email');
+    r = await call('GET', `/orders/${id}`, { token: t.dispatcher });
+    assert.ok(r.data.events.some((e) => e.type === 'email_sent' && e.data.kind === 'custody_report'));
+  } finally {
+    mailer.setSender(null);
+  }
+});
+
 test('a customer signing up gets a welcome email and the owner is told where they came from', async () => {
   const mailer = require('../src/mailer');
   const mails = [];

@@ -27,6 +27,7 @@ export default function JobCard({ order, onPress, footer }) {
                 {formatMoney(order.driverPayCents)}
               </Text>
             ) : null}
+            {order.custodyRequired ? <Badge label="CUSTODY" tone="blue" /> : null}
             {order.serviceLevel === 'rush' ? <Badge label="RUSH" tone="red" /> : null}
             <Badge status={order.status} />
           </View>

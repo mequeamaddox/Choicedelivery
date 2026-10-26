@@ -85,6 +85,25 @@ async function insertStops(client, orderId, stops) {
   }
 }
 
+const TEMPERATURES = ['ambient', 'refrigerated', 'frozen'];
+const sealKey = (v) => String(v || '').replace(/[\s-]/g, '').toUpperCase();
+
+// Chain of custody (medical and other sensitive deliveries): the driver confirms the piece count, and the
+// seal number if there is one, at every handoff. A seal number turns it on. current: the saved order, for edits.
+function custodyFields(body, current = {}) {
+  const seal = body.sealNumber === undefined ? current.sealNumber || null : str(body.sealNumber).slice(0, 40) || null;
+  const required = (body.custodyRequired === undefined ? !!current.custodyRequired : body.custodyRequired === true) || !!seal;
+  const temperature = body.temperature === undefined ? current.temperature || null : str(body.temperature).toLowerCase() || null;
+  if (temperature && !TEMPERATURES.includes(temperature)) {
+    throw new HttpError(400, 'temperature must be "ambient", "refrigerated" or "frozen"');
+  }
+  const pieces = str(body.numberOfPieces === undefined ? current.numberOfPieces : body.numberOfPieces);
+  if (required && !(/^\d+$/.test(pieces) && Number(pieces) > 0)) {
+    throw new HttpError(400, 'Chain of custody needs the number of pieces, so the driver can count them at each handoff');
+  }
+  return { required, seal, temperature };
+}
+
 // body.saveAsQuote: save the order as a quote to book (and pay) later instead of booking it now.
 // actor is a user, or GUEST for someone booking from the website without an account (card payment only).
 const GUEST = Object.freeze({ id: null, role: 'guest', organization_id: null });
@@ -124,18 +143,23 @@ async function createOrder(client, actor, body) {
     throw new HttpError(400, 'Please enter your name, email and phone number so we can reach you about this delivery');
   }
 
+  const custody = custodyFields(body);
+
   let rows;
   try {
     ({ rows } = await client.query(
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
                            tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status,
-                           status, booked_at, add_ons, max_piece_lbs, customer_name, customer_email, customer_phone, is_guest)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15, $16, $17, $18, $19)
+                           status, booked_at, add_ons, max_piece_lbs, customer_name, customer_email, customer_phone, is_guest,
+                           custody_required, seal_number, temperature)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15, $16, $17, $18, $19,
+               $20, $21, $22)
        RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
         body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns, maxPieceLbs,
-        customerName || null, customerEmail || null, customerPhone || null, guest]
+        customerName || null, customerEmail || null, customerPhone || null, guest,
+        custody.required, custody.seal, custody.temperature]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -311,6 +335,8 @@ function serializeStop(s, { proof }) {
     // How far the driver's phone was from the address (meters); null if the address wasn't on the map.
     arrivedDistanceM: s.arrived_distance_m,
     completedDistanceM: s.completed_distance_m,
+    pieceCount: s.piece_count ?? null,
+    sealSeen: s.seal_seen || null,
   };
   if (proof) Object.assign(out, { signature: s.signature, photo: s.photo, barcode: s.barcode });
   return out;
@@ -358,6 +384,9 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     vehicleType: o.vehicle_type,
     weight: o.weight,
     numberOfPieces: o.number_of_pieces,
+    custodyRequired: !!o.custody_required,
+    sealNumber: o.seal_number || null,
+    temperature: o.temperature || null,
     description: o.description,
     trackingNumber: o.tracking_number,
     priceCents: o.price_cents,
@@ -534,7 +563,7 @@ async function arriveAtStop(client, driver, orderId, stopId, { location } = {}) 
   return applyDerivedStatus(client, order, stops);
 }
 
-async function completeStop(client, driver, orderId, stopId, { signature, photo, printedName, barcode, location }) {
+async function completeStop(client, driver, orderId, stopId, { signature, photo, printedName, barcode, location, pieceCount, sealNumber }) {
   const { order, stops } = await lockDriverOrder(client, driver.id, orderId);
   const stop = nextStop(stops);
   if (!stop || stop.id !== stopId) throw new HttpError(409, 'Stops must be completed in order; this is not the next stop');
@@ -543,25 +572,46 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
     if (!photo || !signature) throw new HttpError(400, 'A delivery photo and the receiver\'s signature are both required');
   } else if (!signature && !photo) throw new HttpError(400, 'A signature or photo is required');
   if (stop.status === 'pending') throw new HttpError(409, "Tap \"I've arrived\" at this stop first");
+  // Chain of custody: a count at every handoff, and the seal number if the order has one. A mismatch is
+  // recorded (and dispatch is emailed) rather than blocking a driver who's standing at the stop.
+  let custody = null;
+  if (order.custody_required) {
+    const counted = pieceCount === '' || pieceCount == null ? NaN : Number(pieceCount);
+    if (!Number.isInteger(counted) || counted < 0) {
+      throw new HttpError(400, 'Count the pieces and enter the number (chain of custody). No count box on this screen? Update the Choice Delivery app.');
+    }
+    const sealSeen = str(sealNumber).slice(0, 40) || null;
+    if (order.seal_number && !sealSeen) throw new HttpError(400, 'Enter the seal number on the bag (chain of custody)');
+    const expected = Number.parseInt(order.number_of_pieces, 10);
+    const problems = [];
+    if (Number.isFinite(expected) && counted !== expected) problems.push(`Counted ${counted} of ${expected} pieces`);
+    if (order.seal_number && sealKey(sealSeen) !== sealKey(order.seal_number)) {
+      problems.push(`Seal number ${sealSeen} doesn't match ${order.seal_number}`);
+    }
+    custody = { counted, sealSeen, problems };
+  }
   const at = await verifyAtStop(client, driver.id, stop, location);
   stop.status = 'completed';
   await client.query(
     `UPDATE stops SET status = 'completed', arrived_at = COALESCE(arrived_at, now()), completed_at = now(),
        signature = $2, photo = $3, printed_name = $4, barcode = COALESCE($5, barcode),
-       completed_location = $6, completed_distance_m = $7 WHERE id = $1`,
+       completed_location = $6, completed_distance_m = $7, piece_count = $8, seal_seen = $9 WHERE id = $1`,
     [stop.id, signature || null, photo || null, str(printedName) || null, barcode || null,
-      JSON.stringify(at.location), at.distanceM]
+      JSON.stringify(at.location), at.distanceM, custody ? custody.counted : null, custody ? custody.sealSeen : null]
   );
   await recordEvent(client, order.id, driver.id, 'stop_completed', {
     stopId: stop.id, type: stop.type, printedName: str(printedName) || undefined, barcode: barcode || undefined,
-    distanceM: at.distanceM,
+    distanceM: at.distanceM, pieceCount: custody ? custody.counted : undefined,
   });
+  if (custody?.problems.length) {
+    await recordEvent(client, order.id, driver.id, 'custody_exception', { stopId: stop.id, type: stop.type, problems: custody.problems });
+  }
   const status = await applyDerivedStatus(client, order, stops);
   if (status === 'completed') await recordEvent(client, order.id, driver.id, 'completed');
   return status;
 }
 
 module.exports = {
-  GUEST, ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  GUEST, ACTIVE, TEMPERATURES, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 };

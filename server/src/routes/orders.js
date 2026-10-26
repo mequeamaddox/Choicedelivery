@@ -2,13 +2,15 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
-  ACTIVE, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
-const { emailShipper, alertStaffOfBooking, emailPaymentRequest, notifyStaffOfReview } = require('../notify');
+const { emailShipper, alertStaffOfBooking, emailPaymentRequest, notifyStaffOfReview, alertStaffOfCustodyException } = require('../notify');
+const { buildCustody, custodyEmailHtml } = require('../custody');
+const { sendMail } = require('../mailer');
 const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
 
@@ -192,6 +194,18 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
       throw e;
     }
     if (['weight', 'numberOfPieces', 'maxPieceLbs'].some((k) => b[k] !== undefined)) await assertPieceWeights(client, current.id);
+    // Chain of custody settings, while nothing has been picked up yet.
+    if (['custodyRequired', 'sealNumber', 'temperature', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
+      const custody = custodyFields(b, current);
+      const changed = custody.required !== current.custodyRequired || custody.seal !== current.sealNumber || custody.temperature !== current.temperature;
+      if (changed && current.stops.some((s) => s.status === 'completed')) {
+        throw new HttpError(409, 'Chain of custody settings can no longer be changed after pickup');
+      }
+      if (changed) {
+        await client.query('UPDATE orders SET custody_required = $2, seal_number = $3, temperature = $4 WHERE id = $1',
+          [current.id, custody.required, custody.seal, custody.temperature]);
+      }
+    }
     // Stops can be replaced only before any of them has been started.
     if (b.stops !== undefined) {
       if (current.stops.some((s) => s.status !== 'pending')) throw new HttpError(409, 'Stops can no longer be changed');
@@ -553,16 +567,42 @@ router.post('/:id/stops/:stopId/arrive', driverOnly, asyncH(async (req, res) => 
 
 // Arrive and complete both take { location: { lat, lng, accuracy?, mocked? } } from the phone; the driver
 // must be near the stop's address. Complete body: { signature?, photo?, printedName?, location }:
-// drop-offs need a photo and a signature, pickups at least one of them.
+// drop-offs need a photo and a signature, pickups at least one of them. Chain-of-custody orders also need
+// pieceCount, and sealNumber when the order has a seal.
 router.post('/:id/stops/:stopId/complete', driverOnly, asyncH(async (req, res) => {
-  const { signature, photo, printedName, location } = req.body || {};
+  const { signature, photo, printedName, location, pieceCount, sealNumber } = req.body || {};
   await db.withTx((client) => completeStop(client, req.user, req.params.id, req.params.stopId,
-    { signature, photo, printedName, location }));
+    { signature, photo, printedName, location, pieceCount, sealNumber }));
   const updated = await getOrderFor(req.user, req.params.id);
+  if (updated.custodyRequired) alertStaffOfCustodyException(updated.id, req.params.stopId);
   const stop = updated.stops.find((s) => s.id === req.params.stopId);
   if (updated.status === 'completed') emailShipper(updated.id, 'delivered', { printedName: str(printedName) });
   else if (stop?.type === 'pickup' && updated.status === 'in_transit') emailShipper(updated.id, 'picked_up');
   res.json(updated);
+}));
+
+// Chain-of-custody report: every handoff with times, names, GPS, counts and seals. Dispatch and the customer
+// who placed the order can view and print it; dispatch can email it (to the customer by default).
+router.get('/:id/custody', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (req, res) => {
+  const order = await getOrderFor(req.user, req.params.id);
+  res.json(await buildCustody(order.id));
+}));
+
+router.post('/:id/custody/email', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const order = await getOrderFor(req.user, req.params.id);
+  const { rows: [o] } = await db.query(
+    'SELECT o.customer_email, u.email AS creator_email, u.role AS creator_role FROM orders o LEFT JOIN users u ON u.id = o.created_by WHERE o.id = $1',
+    [order.id]);
+  const to = str(req.body?.to).toLowerCase() || o.customer_email || (o.creator_role === 'shipper' ? o.creator_email : '');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpError(400, 'Enter the email address to send the report to');
+  const custody = await buildCustody(order.id);
+  const subject = `Chain of custody: ${custody.orderNumber}`;
+  await sendMail({
+    to, subject, replyTo: process.env.LEADS_EMAIL || 'info@choicedeliverysc.com',
+    html: custodyEmailHtml(custody, `Here is the chain-of-custody record for delivery ${custody.orderNumber}.`),
+  });
+  await recordEvent(db, order.id, null, 'email_sent', { to, subject, kind: 'custody_report' });
+  res.json({ sent: true, to });
 }));
 
 router.post('/:id/notes', asyncH(async (req, res) => {

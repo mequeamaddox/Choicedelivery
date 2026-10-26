@@ -13,6 +13,7 @@ import { Badge, Button, Card, ErrorBox, H2, Loading, Muted, Notice, Row, styles 
 import SignatureModal from '../../components/SignatureModal';
 
 const ADD_ON_LABELS = { loading_help: 'Loading/unloading help', inside_delivery: 'Inside delivery / stairs' };
+const TEMPERATURE_LABELS = { ambient: 'room temperature', refrigerated: 'refrigerated', frozen: 'frozen' };
 
 // Minutes since the driver arrived at the stop, with the free wait time from the rate card.
 function WaitTimer({ stop, freeMinutes }) {
@@ -32,6 +33,8 @@ function ProofForm({ order, stop, onDone }) {
   const [signature, setSignature] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [name, setName] = useState('');
+  const [count, setCount] = useState('');
+  const [seal, setSeal] = useState('');
   const [signing, setSigning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -43,11 +46,14 @@ function ProofForm({ order, stop, onDone }) {
   const submit = async () => {
     if (pickup && !signature && !photo) { setError(new Error('Add a signature or a photo as proof.')); return; }
     if (!pickup && (!signature || !photo)) { setError(new Error('Take a delivery photo and get the receiver\'s signature.')); return; }
+    if (order.custodyRequired && !/^\d+$/.test(count.trim())) { setError(new Error('Count the pieces and enter the number.')); return; }
+    if (order.sealNumber && !seal.trim()) { setError(new Error('Enter the seal number on the bag.')); return; }
     setBusy(true); setError(null);
     try {
       const location = await currentLocation();
       onDone(await api.complete(order.id, stop.id, {
         signature: signature || undefined, photo: photo || undefined, printedName: name.trim() || undefined, location,
+        ...(order.custodyRequired ? { pieceCount: Number(count.trim()), sealNumber: seal.trim() || undefined } : {}),
       }));
     } catch (e) { setError(e); } finally { setBusy(false); }
   };
@@ -56,6 +62,21 @@ function ProofForm({ order, stop, onDone }) {
       <H2>{pickup ? 'Confirm pickup' : 'Confirm delivery'}</H2>
       <Muted small>{pickup ? 'Add a signature or a photo.' : 'A delivery photo and the receiver\'s signature are both required.'}</Muted>
       <ErrorBox error={error} />
+      {order.custodyRequired ? (
+        <View style={{ gap: 8 }}>
+          <Notice tone="blue">Chain of custody: count every piece{order.sealNumber ? ' and read the seal number' : ''} in front of the {pickup ? 'person handing it over' : 'receiver'}. Enter what you actually see; if it doesn't match, it's flagged to dispatch.</Notice>
+          <Text style={styles.label}>Pieces counted</Text>
+          <TextInput value={count} onChangeText={setCount} style={styles.input} keyboardType="number-pad" placeholder="Number of pieces"
+            placeholderTextColor="#9CA3AF" />
+          {order.sealNumber ? (
+            <>
+              <Text style={styles.label}>Seal number on the bag</Text>
+              <TextInput value={seal} onChangeText={setSeal} style={styles.input} autoCapitalize="characters" placeholder="As printed on the seal"
+                placeholderTextColor="#9CA3AF" />
+            </>
+          ) : null}
+        </View>
+      ) : null}
       <Text style={styles.label}>{pickup ? 'Name of person handing it off' : 'Name of person receiving'}</Text>
       <TextInput value={name} onChangeText={setName} style={styles.input} autoCapitalize="words" placeholder="Printed name"
         placeholderTextColor="#9CA3AF" />
@@ -141,6 +162,12 @@ export default function Job() {
         <Row label="Distance" value={order.distanceMiles != null ? `about ${order.distanceMiles} mi` : null} />
         <Row label="Reference" value={order.trackingNumber} />
         {order.description ? <Muted>{order.description}</Muted> : null}
+        {order.custodyRequired ? (
+          <Notice tone="blue">
+            Chain of custody: count the {order.numberOfPieces} piece{order.numberOfPieces === '1' ? '' : 's'} at every handoff
+            {order.sealNumber ? ` and check seal ${order.sealNumber}` : ''}.{order.temperature ? ` Keep it ${TEMPERATURE_LABELS[order.temperature] || order.temperature}.` : ''}
+          </Notice>
+        ) : null}
         {order.addOns?.length ? (
           <Notice tone="teal">Customer booked: {order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ')}</Notice>
         ) : null}
