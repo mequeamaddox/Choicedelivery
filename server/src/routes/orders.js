@@ -193,7 +193,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
       if (['22P02', '22007', '22008'].includes(e.code)) throw new HttpError(400, 'Invalid priceCents or scheduledAt');
       throw e;
     }
-    if (['weight', 'numberOfPieces', 'maxPieceLbs'].some((k) => b[k] !== undefined)) await assertPieceWeights(client, current.id);
+    if (['weight', 'numberOfPieces', 'maxPieceLbs', 'addOns'].some((k) => b[k] !== undefined)) await assertPieceWeights(client, current.id);
     // Chain of custody settings, while nothing has been picked up yet.
     if (current.custodyRequired && ['sealNumber', 'temperature', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
       const custody = custodyFields(b, current);

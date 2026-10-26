@@ -224,7 +224,9 @@ async function priceQuote(b) {
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
   });
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
-  const pieceProblem = pieceWeightProblem({ maxPieceLbs: b.maxPieceLbs, weightLbs: quote.weightLbs, pieces: b.numberOfPieces }, fees);
+  const pieceProblem = pieceWeightProblem({
+    maxPieceLbs: b.maxPieceLbs, weightLbs: quote.weightLbs, pieces: b.numberOfPieces, addOns: fees.offerHelp ? addOns : [],
+  }, fees);
   const result = {
     ...quote,
     priceCents: quote.totalCents,

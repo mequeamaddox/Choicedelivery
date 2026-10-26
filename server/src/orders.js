@@ -16,12 +16,14 @@ function parsePieceLbs(value) {
   return n;
 }
 
-// Rejects orders with a piece over the limit (checked on create, edit and when a quote is booked).
+// Rejects orders with a piece over the limit when our driver does the lifting (checked on create, edit
+// and when a quote is booked).
 async function assertPieceWeights(client, orderId) {
   const { rows: [o] } = await client.query(
-    'SELECT max_piece_lbs, weight, number_of_pieces FROM orders WHERE id = $1', [orderId]);
+    'SELECT max_piece_lbs, weight, number_of_pieces, add_ons FROM orders WHERE id = $1', [orderId]);
   const problem = pieceWeightProblem(
-    { maxPieceLbs: o.max_piece_lbs, weightLbs: parseWeightLbs(o.weight), pieces: o.number_of_pieces }, await getFees(client));
+    { maxPieceLbs: o.max_piece_lbs, weightLbs: parseWeightLbs(o.weight), pieces: o.number_of_pieces, addOns: o.add_ons },
+    await getFees(client));
   if (problem) throw new HttpError(400, `${problem} Questions? Email info@choicedeliverysc.com.`);
 }
 

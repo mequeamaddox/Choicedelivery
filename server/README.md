@@ -93,9 +93,11 @@ booking. Dispatch can set a custom price, and clearing it returns to the formula
 charges, stored in the `fees` setting):
 - Vehicle weight limits (the biggest is a half-ton pickup; no box trucks or liftgates): Car 150 lbs,
   Minivan 500 lbs, Pickup Truck 1,000 lbs.
-- **No single piece over 75 lbs** (editable): shippers must enter the heaviest piece; orders with a heavier piece,
-  or a total weight that can't be split into the stated number of pieces under the limit, are refused on booking,
-  on edits and when a quote is booked (dispatch included).
+- **No single piece over 75 lbs when our driver lifts it** (editable): shippers must enter the heaviest piece. The
+  limit applies only to orders with Loading help or Inside delivery; when the customer loads and unloads, any piece
+  is fine as long as the order fits the vehicle. Orders with driver lifting and a heavier piece (or a total weight
+  that can't be split into the stated number of pieces under the limit) are refused on booking, on edits and when a
+  quote is booked (dispatch included).
 - Weight tiers on the declared weight: up to 50 lbs included, 51–150 +$15, 151–500 +$35, 501–1000 +$75.
 - **Manual review**: heavier than the top tier, or heavier than the chosen vehicle carries, isn't priced by the
   formula. The order is held as a quote marked "Needs price" (drivers never see it), dispatch is emailed at

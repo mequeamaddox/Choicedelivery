@@ -440,7 +440,7 @@ function FeesEditor() {
       <${Alert} error=${msg.error} /><${Alert} tone="success">${msg.ok}<//>
       <h3>Weight</h3>
       <p class="muted small">Weight fees apply only when our driver does the lifting (Loading help or Inside delivery, when offered). When the shipper loads it, weight only decides which vehicle fits.</p>
-      <${Field} label="Heaviest single piece allowed (lbs)" hint="Orders with any piece heavier than this can't be booked.">
+      <${Field} label="Heaviest single piece our driver lifts (lbs)" hint="Applies only to orders with Loading help or Inside delivery. When the customer loads and unloads, any piece is fine if it fits the vehicle.">
         <input type="number" min="1" step="1" value=${fees.maxPieceLbs} onInput=${(e) => set({ maxPieceLbs: Number(e.target.value) })} />
       <//>
       ${tiers.map((t, i) => html`

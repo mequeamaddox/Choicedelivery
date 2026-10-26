@@ -65,7 +65,7 @@ const AREAS = [
     ],
     faqs: [
       ['Do you deliver from Blythewood to Charlotte?', 'Yes. We deliver into nearby North Carolina, including the Charlotte area. Your quote shows the price and how long the drive takes.'],
-      ['What vehicles do you have?', 'Car, minivan and pickup truck, so we can take anything from an envelope to bulky items. No single piece over 75 lbs.'],
+      ['What vehicles do you have?', 'Car, minivan and pickup truck, so we can take anything from an envelope to bulky items. Heavy pieces are fine as long as you have someone to load and unload.'],
     ],
   },
 ];
@@ -112,7 +112,7 @@ const SERVICES = [
     intro: 'A car on the lift waiting on a part is money lost. We run parts between stores, warehouses, dealerships and repair shops across the Midlands, so your techs stay working instead of driving.',
     sections: [
       ['For shops, dealers and parts stores', 'Independent repair shops, body shops, dealerships, parts stores and mobile mechanics use us for same-day parts runs, store-to-store transfers and returns. Book online in a minute and track every run from your phone.'],
-      ['The right vehicle for the part', 'A car for small parts and boxes, a minivan for several boxes, and a pickup truck for bulky items like bumpers, wheels and exhaust parts. No single piece over 75 lbs.'],
+      ['The right vehicle for the part', 'A car for small parts and boxes, a minivan for several boxes, and a pickup truck for bulky items like bumpers, wheels and exhaust parts. Heavy parts are fine when your team loads and unloads them.'],
     ],
     faqs: [
       ['Can you pick up from a parts store and bring it to my shop?', 'Yes. Put the store as the pickup and your shop as the drop-off. With Rush, it goes to the front of the line.'],
@@ -129,7 +129,7 @@ const SERVICES = [
     sections: [
       ['From the counter to the job site', 'We pick up from plumbing, electrical, HVAC, roofing and building supply houses, hardware stores and equipment rental counters, and deliver straight to your job site, shop or the customer\'s house. Put your order or PO number in the instructions for the driver and we\'ll handle the will-call pickup.'],
       ['For trades and builders', 'Plumbers, electricians, HVAC techs, roofers, remodelers, general contractors, property managers and maintenance crews use same-day delivery for the part that\'s holding up the job, materials for the afternoon, or a forgotten fitting. Supply houses can also book us to deliver to their own customers.'],
-      ['The right vehicle for the load', 'A car for fittings, breakers and small boxes; a minivan for several cartons; and a pickup truck for longer and bulkier items like pipe, conduit, ductwork and fixtures. No single piece over 75 lbs, and we don\'t carry hazardous materials such as fuel or refrigerant cylinders.'],
+      ['The right vehicle for the load', 'A car for fittings, breakers and small boxes; a minivan for several cartons; and a pickup truck for longer and bulkier items like pipe, conduit, ductwork and fixtures. HVAC units, water heaters and other heavy equipment are fine when someone loads and unloads at each end, and we don\'t carry hazardous materials such as fuel or refrigerant cylinders.'],
       ['Proof at the job site', 'Job sites are busy, so every drop is confirmed with a photo, the time and the GPS location, and a signature when someone\'s there to sign. You\'ll know exactly where we left it, even if the crew was on the roof.'],
     ],
     faqs: [
@@ -149,7 +149,7 @@ const SERVICES = [
       ['Delivery and pickup, door to door', 'We take laptops, monitors, docking stations, printers, phones, chairs and other office equipment from your office, IT vendor or repair shop to an employee\'s home or a branch office, and bring equipment back the same way.'],
       ['Onboarding, swaps and returns', 'IT teams, office managers and HR use us to get a new hire set up on day one, swap out a broken laptop the same day, collect equipment when someone leaves, and move gear between offices. You can book several stops on one order.'],
       ['Signed for at every handoff', 'Every delivery and pickup is confirmed with a signature, a photo, the time and the GPS location, so you have a record of who received what and when. Add serial or asset tag numbers to the instructions for the driver for your records.'],
-      ['Handled with care', 'Equipment rides in the vehicle with the driver, not in a sorting warehouse with other packages. Pack it in its box or a padded case, and no single piece over 75 lbs. Large copiers and anything needing a liftgate are outside what we carry.'],
+      ['Handled with care', 'Equipment rides in the vehicle with the driver, not in a sorting warehouse with other packages. Pack it in its box or a padded case, and have someone to load and unload heavier pieces. Large copiers and anything needing a liftgate are outside what we carry.'],
     ],
     faqs: [
       ['Can you pick up a laptop from an employee who\'s leaving?', 'Yes. Book the employee\'s address as the pickup and your office as the drop-off. We\'ll collect it and confirm the handoff with a photo and signature.'],
@@ -166,13 +166,13 @@ const SERVICES = [
     intro: 'Found the perfect deal but have no truck, no time, or no way across town? Pay the seller, book us online (no account needed), and we\'ll pick it up and bring it straight to your door today.',
     sections: [
       ['How it works', 'Agree on the item and pay the seller through Facebook, a payment app or however you both prefer. Then book a delivery with the seller\'s address as the pickup and yours as the drop-off, and add the seller\'s name and phone number so the driver can reach them. We pick it up, drive it straight to you, and send a photo when it\'s delivered. You can follow the driver on the map the whole way.'],
-      ['What we can bring', 'Chairs, small tables, nightstands, TVs, electronics, grills, patio items, bikes, kids\' gear, tools, auto parts, boxes and décor, from Facebook Marketplace, OfferUp, Craigslist or a yard sale. Choose a car, minivan or pickup truck depending on the size. No single piece over 75 lbs.'],
+      ['What we can bring', 'Chairs, small tables, nightstands, TVs, electronics, grills, patio items, bikes, kids\' gear, tools, auto parts, boxes and décor, from Facebook Marketplace, OfferUp, Craigslist or a yard sale. Choose a car, minivan or pickup truck depending on the size, and have someone to load and unload.'],
       ['Before you book', 'Please have someone at both ends to help load and unload, since the driver handles the drive, not the heavy lifting. Make sure you\'ve paid the seller first: our drivers don\'t carry cash or collect payment for items. Measure big items so you pick a vehicle they\'ll fit in.'],
     ],
     faqs: [
       ['Do you collect the payment from the seller for me?', 'No. Pay the seller before the pickup, through Facebook, a payment app or however you agree. Our drivers don\'t handle cash or item payments.'],
       ['Can you inspect the item for me?', 'We don\'t inspect or test items, so check the photos and ask the seller questions first. We pick up exactly what the seller hands over and deliver it to you.'],
-      ['Can you move a couch or a big dresser?', 'Only if no single piece is over 75 lbs and it fits in a pickup truck, with someone to help load and unload at both ends. Heavier furniture needs a moving company.'],
+      ['Can you move a couch or a big dresser?', 'Yes, if it fits in a pickup truck and you have people to load it at pickup and unload it at drop-off. Our driver transports it but doesn\'t do the lifting.'],
     ],
   },
   {

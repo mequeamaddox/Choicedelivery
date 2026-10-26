@@ -155,8 +155,8 @@ export function ChargesNotice({ fees }) {
         <li><strong>Wait time:</strong> the first ${fees.waitFreeMinutes} minutes at each stop are free. Longer waits are added to your total,
           so please have the shipment and the receiver ready.</li>
         <li><strong>Weight:</strong> the price uses the weight you enter. If the shipment is heavier, the difference can be charged.</li>
-        <li><strong>${fees.maxPieceLbs} lbs per piece, max:</strong> we can't move any single piece heavier than that. If the driver finds
-          one at pickup, they'll decline it and a failed-attempt charge may apply.</li>
+        ${fees.offerHelp && html`<li><strong>${fees.maxPieceLbs} lbs per piece, max, when our driver lifts it:</strong> with Loading help
+          or Inside delivery, our driver can't lift any single piece heavier than that. Heavier pieces are fine when you load and unload.</li>`}
         ${fees.offerHelp
           ? html`<li><strong>Loading help and stairs:</strong> if the driver has to load, unload or carry items inside and it wasn't
           booked, it can be added to your total.</li>`
@@ -276,13 +276,16 @@ export function NewOrderPage({ guest = false }) {
   // Pickup far from Columbia: priced, but dispatch approves it first (dispatch's own bookings skip that).
   const needsApproval = !needsReview && quote?.needsApproval && !staff;
   const farPickupForStaff = !needsReview && quote?.needsApproval && staff;
-  // Same rule as the server: no single piece over the limit, and the total must fit the piece count.
-  const pieceLimit = fees?.maxPieceLbs;
+  // Same rule as the server: when our driver does the lifting (loading help / inside delivery), no single
+  // piece over the limit and the total must fit the piece count. When the customer loads, no piece limit.
+  const driverLifts = !!fees?.offerHelp && v.addOns.some((k) => k === 'loading_help' || k === 'inside_delivery');
+  const pieceLimit = driverLifts ? fees?.maxPieceLbs : null;
   const piecesN = Number.parseInt(v.numberOfPieces, 10);
   const pieceProblem = !pieceLimit ? null
-    : v.maxPieceLbs !== '' && Number(v.maxPieceLbs) > pieceLimit ? `We can't take any single piece over ${pieceLimit} lbs.`
+    : v.maxPieceLbs !== '' && Number(v.maxPieceLbs) > pieceLimit
+      ? `When our driver loads or carries it, no single piece can be over ${pieceLimit} lbs. Remove the help to load it yourself.`
     : lbs != null && piecesN > 0 && lbs > piecesN * pieceLimit
-      ? `${lbs} lbs in ${piecesN} piece${piecesN === 1 ? '' : 's'} means at least one is over ${pieceLimit} lbs, which we can't take.` : null;
+      ? `${lbs} lbs in ${piecesN} piece${piecesN === 1 ? '' : 's'} means at least one is over ${pieceLimit} lbs, too heavy for our driver to lift.` : null;
   const toggleAddOn = (k) => setV({ ...v, addOns: v.addOns.includes(k) ? v.addOns.filter((x) => x !== k) : [...v.addOns, k] });
   const payments = useApi('/payments/config');
   const payByCard = guest ? !!payments.data?.enabled : !staff && payments.data?.enabled && user.organization?.billingMode !== 'invoice';
@@ -473,7 +476,7 @@ export function NewOrderPage({ guest = false }) {
             <//>
             <${Field} label="Number of pieces"><input inputmode="numeric" placeholder="e.g. 4" required=${medical}
               pattern=${medical ? '[0-9]+' : undefined} ...${bind('numberOfPieces')} /><//>
-            <${Field} label="Heaviest single piece (lbs)" hint=${pieceLimit ? `Each piece must be ${pieceLimit} lbs or less.` : undefined}>
+            <${Field} label="Heaviest single piece (lbs)" hint=${pieceLimit ? `With our driver lifting, each piece must be ${pieceLimit} lbs or less.` : 'So the driver knows what to expect. You load and unload it.'}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder=${pieceLimit ? `up to ${pieceLimit}` : ''} ...${bind('maxPieceLbs')} />
             <//>
           </div>

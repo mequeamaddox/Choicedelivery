@@ -131,7 +131,9 @@ const DEFAULT_FEES = {
   surcharges: Object.fromEntries(Object.entries(SURCHARGES).map(([k, sc]) => [k, { cents: sc.cents, enabled: k !== 'lunch' }])),
   holidays: Object.fromEntries(Object.entries(HOLIDAYS).map(([k, h]) => [k, h.on])),
   extraHolidayDates: [], // 'YYYY-MM-DD' (Columbia time), e.g. a closure you want charged as a holiday
-  maxPieceLbs: 75, // no single piece heavier than this is accepted (one person has to lift it)
+  // No single piece heavier than this when our driver does the lifting (loading help / inside delivery).
+  // When the customer loads and unloads, the only limit is what the vehicle can carry.
+  maxPieceLbs: 75,
   extraStopCents: 1000, // each stop beyond one pickup and one drop-off
   // Loading help / inside delivery are off until we offer helpers on the platform; the switch is in
   // Account -> Fees. While off, they aren't offered, priced or chargeable, and weight adds no fee.
@@ -285,11 +287,18 @@ function weightTierLabel(tiers, index) {
   return index === 0 ? `Up to ${hi} lbs` : `${lo}–${hi} lbs`;
 }
 
-// Returns why an order can't be accepted because of piece weight, or null. Also catches a total weight
-// that couldn't be split into the given number of pieces without one going over the limit.
-function pieceWeightProblem({ maxPieceLbs, weightLbs, pieces }, fees = DEFAULT_FEES) {
+// Add-ons where our driver lifts the shipment, so the per-piece limit applies.
+const DRIVER_LIFTS = ['loading_help', 'inside_delivery'];
+const driverLifts = (addOns) => Array.isArray(addOns) && addOns.some((k) => DRIVER_LIFTS.includes(k));
+
+// Returns why an order can't be accepted because of piece weight, or null. The limit applies only when
+// our driver loads, unloads or carries it (loading help / inside delivery); when the customer loads,
+// any piece is fine as long as the order fits the vehicle. Also catches a total weight that couldn't be
+// split into the given number of pieces without one going over the limit.
+function pieceWeightProblem({ maxPieceLbs, weightLbs, pieces, addOns }, fees = DEFAULT_FEES) {
+  if (!driverLifts(addOns)) return null;
   const limit = fees.maxPieceLbs;
-  const msg = `We can't take any single piece over ${limit} lbs.`;
+  const msg = `When our driver loads or carries it, no single piece can be over ${limit} lbs.`;
   if (maxPieceLbs != null && Number(maxPieceLbs) > limit) return msg;
   const n = Number.parseInt(pieces, 10);
   if (weightLbs != null && n > 0 && Number(weightLbs) > n * limit) {
@@ -514,5 +523,5 @@ module.exports = {
   holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES,
   businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS,
-  normalizeFees, getFees, driverPayFor, rushFeeFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
+  normalizeFees, getFees, driverPayFor, rushFeeFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, driverLifts, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
 };

@@ -1212,43 +1212,63 @@ test('orders the formula cannot price are held for a manual price, then booked',
   }
 });
 
-test('no single piece over 75 lbs can be booked', async () => {
+test('the 75-lb piece limit applies only when our driver does the lifting', async () => {
   const { pieceWeightProblem } = require('../src/pricing');
-  assert.equal(pieceWeightProblem({ maxPieceLbs: 75, weightLbs: 150, pieces: 2 }), null);
-  assert.match(pieceWeightProblem({ maxPieceLbs: 80 }), /over 75 lbs/);
-  assert.match(pieceWeightProblem({ maxPieceLbs: 40, weightLbs: 200, pieces: 2 }), /at least one is heavier/);
+  const help = ['loading_help'];
+  assert.equal(pieceWeightProblem({ maxPieceLbs: 300, weightLbs: 300, pieces: 1 }), null, 'customer loads: any piece');
+  assert.equal(pieceWeightProblem({ maxPieceLbs: 75, weightLbs: 150, pieces: 2, addOns: help }), null);
+  assert.match(pieceWeightProblem({ maxPieceLbs: 80, addOns: help }), /over 75 lbs/);
+  assert.match(pieceWeightProblem({ maxPieceLbs: 80, addOns: ['inside_delivery'] }), /over 75 lbs/);
+  assert.match(pieceWeightProblem({ maxPieceLbs: 40, weightLbs: 200, pieces: 2, addOns: help }), /at least one is heavier/);
 
   let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: undefined }) });
   assert.equal(r.status, 400, 'shippers must give the heaviest piece');
-  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 90 }) });
-  assert.equal(r.status, 400);
-  assert.match(r.data.message, /single piece over 75 lbs/);
-  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 90, saveAsQuote: true }) });
-  assert.equal(r.status, 400, 'not even as a quote');
-  r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ maxPieceLbs: 120 }) });
-  assert.equal(r.status, 400, 'dispatch is held to the same limit');
-  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ weight: '400 lbs', numberOfPieces: '3', maxPieceLbs: 60 }) });
-  assert.equal(r.status, 400, 'total weight that cannot fit the piece count is caught');
 
-  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 75 }) });
-  assert.equal(r.status, 201);
-  assert.equal(r.data.maxPieceLbs, 75);
-  const id = r.data.id;
-  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { maxPieceLbs: 100 } });
-  assert.equal(r.status, 400, 'edits are checked too');
-  assert.equal((await call('GET', `/orders/${id}`, { token: t.acme })).data.maxPieceLbs, 75, 'rejected edit changed nothing');
-
-  // The limit is an owner setting.
-  const fees = (await call('GET', '/settings/fees', { token: t.admin })).data.fees;
-  await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, maxPieceLbs: 100 } });
-  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { maxPieceLbs: 100 } });
-  assert.equal(r.status, 200);
-  await call('PUT', '/settings/fees', { token: t.admin, body: fees });
+  // Customer loads and unloads (the default): a 300-lb air handler in the pickup is fine.
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({
+    vehicleType: 'Pickup Truck', weight: '300 lbs', numberOfPieces: '1', maxPieceLbs: 300 }) });
+  assert.equal(r.status, 201, r.data?.message);
+  assert.equal(r.data.maxPieceLbs, 300);
+  await call('POST', `/orders/${r.data.id}/cancel`, { token: t.acme });
   r = await call('POST', '/public/quote', { body: {
-    stops: [{ address: 'a', location: { lat: 34, lng: -81 } }, { address: 'b', location: { lat: 34.1, lng: -81 } }], maxPieceLbs: 80 } });
-  assert.match(r.data.pieceProblem, /over 75 lbs/);
-  assert.equal(r.data.maxPieceLbs, 75);
-  await call('POST', `/orders/${id}/cancel`, { token: t.acme });
+    stops: [{ address: 'a', location: { lat: 34, lng: -81 } }, { address: 'b', location: { lat: 34.1, lng: -81 } }], maxPieceLbs: 300 } });
+  assert.equal(r.data.pieceProblem, null, 'quote: no piece limit when the customer loads');
+
+  // With loading help offered and booked, the limit is back.
+  const fees = (await call('GET', '/settings/fees', { token: t.admin })).data.fees;
+  await call('PUT', '/settings/fees', { token: t.admin, body: { ...fees, offerHelp: true } });
+  try {
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 90, addOns: help }) });
+    assert.equal(r.status, 400);
+    assert.match(r.data.message, /single piece can be over 75 lbs/);
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 90, addOns: help, saveAsQuote: true }) });
+    assert.equal(r.status, 400, 'not even as a quote');
+    r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ maxPieceLbs: 120, addOns: help }) });
+    assert.equal(r.status, 400, 'dispatch is held to the same limit');
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ weight: '400 lbs', numberOfPieces: '3', maxPieceLbs: 60, addOns: help }) });
+    assert.equal(r.status, 400, 'total weight that cannot fit the piece count is caught');
+
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody({ maxPieceLbs: 75, addOns: help }) });
+    assert.equal(r.status, 201);
+    const id = r.data.id;
+    r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { maxPieceLbs: 100 } });
+    assert.equal(r.status, 400, 'edits are checked too');
+    assert.equal((await call('GET', `/orders/${id}`, { token: t.acme })).data.maxPieceLbs, 75, 'rejected edit changed nothing');
+    r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { maxPieceLbs: 100, addOns: [] } });
+    assert.equal(r.status, 200, 'dropping the help lifts the limit');
+
+    // A heavy-piece order can't add loading help afterwards.
+    r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { addOns: help } });
+    assert.equal(r.status, 400, 'adding help to a heavy piece is refused');
+
+    r = await call('POST', '/public/quote', { body: {
+      stops: [{ address: 'a', location: { lat: 34, lng: -81 } }, { address: 'b', location: { lat: 34.1, lng: -81 } }], maxPieceLbs: 80, addOns: help } });
+    assert.match(r.data.pieceProblem, /over 75 lbs/);
+    assert.equal(r.data.maxPieceLbs, 75);
+    await call('POST', `/orders/${id}/cancel`, { token: t.acme });
+  } finally {
+    await call('PUT', '/settings/fees', { token: t.admin, body: fees });
+  }
 });
 
 test('drivers apply, finish their profile, get reviewed and are emailed at each step', async () => {
