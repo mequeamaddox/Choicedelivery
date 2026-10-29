@@ -120,6 +120,45 @@ const simplePage = (title, text) => `<!doctype html><html lang="en"><head><meta 
 min-height:100vh;align-items:center;justify-content:center;box-sizing:border-box}main{background:#fff;border-radius:16px;
 padding:28px;max-width:420px;box-shadow:0 10px 30px rgba(15,118,110,.12);text-align:center}h1{color:#0f766e;margin:0 0 12px}
 p{line-height:1.6;color:#374151}</style></head><body><main><h1>${title}</h1><p>${text}</p></main></body></html>`;
+// A company's invoice: the printable page, a CSV of its lines, and card payment. The link is the invoice's token.
+router.get('/invoice/:token', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
+  const inv = require('../invoices');
+  res.set('Cache-Control', 'no-store');
+  const invoice = /^[0-9a-f-]{36}$/i.test(req.params.token) ? await inv.getInvoice('public_token', req.params.token) : null;
+  if (!invoice) return res.status(404).type('html').send(simplePage('Invoice not found', 'Check the link in your email, or email info@choicedeliverysc.com.'));
+  res.type('html').send(inv.invoicePage(invoice, await inv.payInstructions(), { paidNow: req.query.paid === '1' }));
+}));
+
+router.get('/invoice/:token/csv', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
+  const inv = require('../invoices');
+  const invoice = /^[0-9a-f-]{36}$/i.test(req.params.token) ? await inv.getInvoice('public_token', req.params.token) : null;
+  if (!invoice) return res.status(404).type('text').send('Invoice not found');
+  res.set('Content-Disposition', `attachment; filename="${invoice.invoiceNumber}.csv"`).type('text/csv').send(inv.invoiceCsv(invoice));
+}));
+
+router.get('/invoice/:token/pay', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(async (req, res) => {
+  const inv = require('../invoices');
+  const stripe = require('../stripe');
+  res.set('Cache-Control', 'no-store');
+  const invoice = /^[0-9a-f-]{36}$/i.test(req.params.token) ? await inv.getInvoice('public_token', req.params.token) : null;
+  if (!invoice) return res.status(404).type('html').send(simplePage('Invoice not found', 'Check the link in your email, or email info@choicedeliverysc.com.'));
+  const page = inv.invoiceUrl(invoice);
+  if (invoice.status !== 'open') return res.redirect(303, page);
+  if (!stripe.enabled() || invoice.totalCents < 50) {
+    return res.type('html').send(simplePage('Card payment unavailable', `Please pay invoice ${escapeHtml(invoice.invoiceNumber)} by check or bank transfer, or email info@choicedeliverysc.com.`));
+  }
+  const { rows: [{ stripe_session_id: previous }] } = await db.query('SELECT stripe_session_id FROM invoices WHERE id = $1', [invoice.id]);
+  if (previous) await stripe.expireCheckoutSession(previous).catch(() => {});
+  const session = await stripe.createCheckoutSession({
+    orderId: invoice.id, orderNumber: invoice.invoiceNumber, amountCents: invoice.totalCents,
+    name: `Choice Delivery invoice ${invoice.invoiceNumber}`, description: `${invoice.company} · ${invoice.lines.length} line${invoice.lines.length === 1 ? '' : 's'}`,
+    customerEmail: invoice.billingEmail || undefined, successUrl: `${page}?paid=1`, cancelUrl: page,
+    metadata: { kind: 'invoice', invoice_id: invoice.id },
+  });
+  await db.query('UPDATE invoices SET stripe_session_id = $2 WHERE id = $1', [invoice.id, session.id]);
+  res.redirect(303, session.url);
+}));
+
 router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(async (req, res) => {
   const stripe = require('../stripe');
   res.set('Cache-Control', 'no-store');

@@ -10,6 +10,7 @@ router.use(requireAuth);
 const serialize = (o) => ({
   id: o.id, name: o.name, phone: o.phone, billingEmail: o.billing_email, address: o.address,
   createdAt: o.created_at, isDemo: o.is_demo, billingMode: o.billing_mode, isMedical: !!o.is_medical,
+  paymentTermsDays: o.payment_terms_days,
 });
 
 function canAccess(user, orgId) {
@@ -45,7 +46,11 @@ router.get('/:id', asyncH(async (req, res) => {
 
 router.patch('/:id', asyncH(async (req, res) => {
   if (!canAccess(req.user, req.params.id)) throw new HttpError(404, 'Organization not found');
-  const { name, phone, billingEmail, address, billingMode, isMedical } = req.body || {};
+  const { name, phone, billingEmail, address, billingMode, isMedical, paymentTermsDays } = req.body || {};
+  if (paymentTermsDays !== undefined) {
+    if (!isStaff(req.user)) throw new HttpError(403, 'Only dispatch can change payment terms');
+    if (![0, 15, 30, 45, 60].includes(paymentTermsDays)) throw new HttpError(400, 'paymentTermsDays must be 0, 15, 30, 45 or 60');
+  }
   if (isMedical !== undefined && (!isStaff(req.user) || typeof isMedical !== 'boolean')) {
     throw new HttpError(isStaff(req.user) ? 400 : 403, 'Only dispatch can mark a company as a medical facility');
   }
@@ -56,9 +61,10 @@ router.patch('/:id', asyncH(async (req, res) => {
   const { rows } = await db.query(
     `UPDATE organizations SET name = COALESCE(NULLIF($2, ''), name), phone = COALESCE($3, phone),
        billing_email = COALESCE(lower($4), billing_email), address = COALESCE($5, address),
-       billing_mode = COALESCE($6, billing_mode), is_medical = COALESCE($7, is_medical), updated_at = now()
+       billing_mode = COALESCE($6, billing_mode), is_medical = COALESCE($7, is_medical),
+       payment_terms_days = COALESCE($8, payment_terms_days), updated_at = now()
      WHERE id = $1 RETURNING *`,
-    [req.params.id, str(name), phone ?? null, billingEmail ?? null, address ?? null, billingMode ?? null, isMedical ?? null]
+    [req.params.id, str(name), phone ?? null, billingEmail ?? null, address ?? null, billingMode ?? null, isMedical ?? null, paymentTermsDays ?? null]
   );
   if (!rows[0]) throw new HttpError(404, 'Organization not found');
   res.json(serialize(rows[0]));

@@ -438,6 +438,11 @@ fieldset.card { margin: 0; min-width: 0; }
 .label-foot { border-top: 1px solid #000; margin-top: .2in; padding-top: .08in; font-size: 9pt; text-align: center; }
 @media (max-width: 640px) { .label-parties { grid-template-columns: 1fr; } .ship-label { padding: .2in; font-size: 11pt; } }
 
+/* Invoices */
+.error-text { color: var(--red); }
+.terms-select { margin-top: .35rem; }
+.invoice-top { align-items: start; }
+
 /* Chain-of-custody record */
 .custody-box { margin-top: .75rem; padding: .75rem .9rem; border: 1px solid var(--border); border-left: 4px solid var(--teal, #0f766e); border-radius: 10px; }
 .custody-box > p:first-child { margin-top: 0; }

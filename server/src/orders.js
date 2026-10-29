@@ -158,15 +158,15 @@ async function createOrder(client, actor, body) {
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
                            tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status,
                            status, booked_at, add_ons, max_piece_lbs, customer_name, customer_email, customer_phone, is_guest,
-                           custody_required, seal_number, temperature)
+                           custody_required, seal_number, temperature, po_number)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15, $16, $17, $18, $19,
-               $20, $21, $22)
+               $20, $21, $22, $23)
        RETURNING id`,
       [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
         body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns, maxPieceLbs,
         customerName || null, customerEmail || null, customerPhone || null, guest,
-        custody.required, custody.seal, custody.temperature]
+        custody.required, custody.seal, custody.temperature, str(body.poNumber).slice(0, 60) || null]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -396,6 +396,8 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     temperature: o.temperature || null,
     description: o.description,
     trackingNumber: o.tracking_number,
+    poNumber: o.po_number || null,
+    invoiceId: o.invoice_id || null,
     priceCents: o.price_cents,
     currency: o.currency,
     scheduledAt: o.scheduled_at,

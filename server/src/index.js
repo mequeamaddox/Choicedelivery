@@ -107,6 +107,9 @@ async function start() {
 
   // Drivers with direct deposit are paid every Wednesday at 9:00 AM (Columbia time).
   require('./driver-payouts').startWeeklyBatchTimer();
+
+  // Companies billed on account get last month's invoice on the 1st (8 AM Columbia time), ready to send.
+  require('./invoices').startMonthlyTimer();
 }
 
 start();

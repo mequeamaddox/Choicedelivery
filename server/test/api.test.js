@@ -2251,6 +2251,124 @@ test('chain of custody: counts and seals at every handoff, exceptions flagged, p
   }
 });
 
+test('invoices: Net 30 accounts are billed monthly, sent, paid by check or online, and voided to fix', async () => {
+  const stripe = require('../src/stripe');
+  const mailer = require('../src/mailer');
+  const crypto = require('crypto');
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); return 'sent'; });
+  const settle = () => new Promise((done) => setTimeout(done, 150));
+  let r = await call('POST', '/auth/signup', { body: { name: 'Fern AP', email: 'ap@fergus.test', password: 'password1', companyName: 'Fergus Supply' } });
+  const tok = r.data.token;
+  const orgId = r.data.user.organization.id;
+  try {
+    r = await call('PATCH', `/organizations/${orgId}`, { token: tok, body: { paymentTermsDays: 15 } });
+    assert.equal(r.status, 403, 'customers cannot set their own terms');
+    r = await call('PATCH', `/organizations/${orgId}`, { token: t.dispatcher, body: { billingMode: 'invoice', paymentTermsDays: 30, billingEmail: 'AP@Fergus.test' } });
+    assert.equal(r.data.paymentTermsDays, 30);
+
+    // A delivered order with a PO number, plus a wait-time charge billed to the account.
+    r = await call('POST', '/orders', { token: tok, body: orderBody({ poNumber: 'PO-551' }) });
+    assert.equal(r.data.paymentStatus, 'invoice');
+    assert.equal(r.data.poNumber, 'PO-551');
+    const id = r.data.id;
+    const price = r.data.priceCents;
+    r = await call('POST', `/orders/${id}/accept`, { token: t.d1 });
+    const [pickup, dropoff] = r.data.stops;
+    await call('POST', `/orders/${id}/stops/${pickup.id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
+    await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
+    await call('POST', `/orders/${id}/stops/${dropoff.id}/arrive`, { token: t.d1, body: {} });
+    r = await call('POST', `/orders/${id}/stops/${dropoff.id}/complete`, { token: t.d1, body: { photo: 'data:p', signature: 'data:s', printedName: 'Yard' } });
+    assert.equal(r.data.status, 'completed');
+    r = await call('POST', `/orders/${id}/charges`, { token: t.dispatcher, body: { kind: 'wait_time', cents: 750, description: 'Held at the counter' } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+
+    r = await call('GET', '/invoices/accounts', { token: t.dispatcher });
+    const acct = r.data.accounts.find((a) => a.id === orgId);
+    assert.equal(acct.unbilledCents, price + 750);
+    assert.equal(acct.terms, 'Net 30');
+    assert.equal((await call('GET', '/invoices/accounts', { token: tok })).status, 403);
+
+    r = await call('POST', '/invoices', { token: t.dispatcher, body: { organizationId: orgId } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    let invoice = r.data;
+    assert.match(invoice.invoiceNumber, /^INV-\d+$/);
+    assert.equal(invoice.totalCents, price + 750);
+    assert.equal(invoice.lines.length, 2);
+    assert.ok(invoice.lines.every((l) => l.reference === 'PO-551'), 'each line carries the PO number');
+    assert.equal(invoice.terms, 'Net 30');
+    const due = new Date(`${invoice.issuedAt.slice(0, 10)}T12:00:00Z`);
+    assert.ok(Math.abs((new Date(`${invoice.dueDate}T12:00:00Z`) - due) / 864e5 - 30) <= 1, 'due 30 days after it was issued');
+    r = await call('POST', '/invoices', { token: t.dispatcher, body: { organizationId: orgId } });
+    assert.equal(r.status, 409, 'nothing is invoiced twice');
+    r = await call('PATCH', `/orders/${id}`, { token: t.dispatcher, body: { priceCents: 1 } });
+    assert.equal(r.status, 409, 'an invoiced price is locked');
+
+    // The customer sees their own invoices; other companies don't.
+    r = await call('GET', '/invoices', { token: tok });
+    assert.deepEqual(r.data.map((i) => i.id), [invoice.id]);
+    assert.equal((await call('GET', `/invoices/${invoice.id}`, { token: t.other })).status, 404);
+
+    r = await call('POST', `/invoices/${invoice.id}/send`, { token: t.dispatcher, body: {} });
+    assert.equal(r.data.sentTo, 'ap@fergus.test');
+    const sent = mails.find((m) => m.to === 'ap@fergus.test' && /^Invoice/.test(m.subject));
+    assert.match(sent.subject, new RegExp(`Invoice ${invoice.invoiceNumber}`));
+    assert.match(sent.html, /PO \/ ref: PO-551/);
+    assert.match(sent.html, new RegExp(`/public/invoice/${invoice.publicToken}/pay`));
+    let page = await fetch(`${base}/public/invoice/${invoice.publicToken}`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), new RegExp(invoice.invoiceNumber));
+    page = await fetch(`${base}/public/invoice/${invoice.publicToken}/csv`);
+    assert.match(await page.text(), /PO-551/);
+
+    // Voiding frees the lines for the next invoice.
+    r = await call('POST', `/invoices/${invoice.id}/void`, { token: t.dispatcher });
+    assert.equal(r.data.status, 'void');
+    r = await call('POST', '/invoices', { token: t.dispatcher, body: { organizationId: orgId } });
+    assert.equal(r.status, 201);
+    invoice = r.data;
+
+    r = await call('POST', `/invoices/${invoice.id}/paid`, { token: t.dispatcher, body: { method: 'check', note: 'Check #2211' } });
+    assert.equal(r.data.status, 'paid');
+    assert.equal(r.data.paidMethodLabel, 'Check');
+    r = await call('GET', `/orders/${id}`, { token: t.dispatcher });
+    assert.equal(r.data.paymentStatus, 'paid');
+    assert.ok(r.data.charges.every((c) => c.status === 'paid'));
+
+    // Paying online by card marks it paid through the Stripe webhook.
+    r = await call('POST', '/orders', { token: tok, body: orderBody() });
+    const id2 = r.data.id;
+    r = await call('POST', `/orders/${id2}/accept`, { token: t.d1 });
+    await call('POST', `/orders/${id2}/stops/${r.data.stops[0].id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
+    await call('POST', `/orders/${id2}/stops/${r.data.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
+    await call('POST', `/orders/${id2}/stops/${r.data.stops[1].id}/arrive`, { token: t.d1, body: {} });
+    await call('POST', `/orders/${id2}/stops/${r.data.stops[1].id}/complete`, { token: t.d1, body: { photo: 'data:p', signature: 'data:s' } });
+    invoice = (await call('POST', '/invoices', { token: t.dispatcher, body: { organizationId: orgId } })).data;
+    process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+    stripe.setFetch(async (url) => (url.endsWith('/checkout/sessions')
+      ? { ok: true, json: async () => ({ id: 'cs_inv_1', url: 'https://checkout.stripe.com/pay/inv' }) }
+      : { ok: true, json: async () => ({}) }));
+    const pay = await fetch(`${base}/public/invoice/${invoice.publicToken}/pay`, { redirect: 'manual' });
+    assert.equal(pay.headers.get('location'), 'https://checkout.stripe.com/pay/inv');
+    const payload = JSON.stringify({ type: 'checkout.session.completed', data: { object: {
+      id: 'cs_inv_1', payment_status: 'paid', amount_total: invoice.totalCents, metadata: { kind: 'invoice', invoice_id: invoice.id } } } });
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', 'whsec_test').update(`${ts}.${payload}`).digest('hex');
+    const wh = await fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
+    assert.equal(wh.status, 200);
+    r = await call('GET', `/invoices/${invoice.id}`, { token: t.dispatcher });
+    assert.equal(r.data.status, 'paid');
+    assert.equal(r.data.paidMethod, 'card');
+    await settle();
+  } finally {
+    mailer.setSender(null);
+    stripe.setFetch((...a) => fetch(...a));
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});
+
 test('a customer signing up gets a welcome email and the owner is told where they came from', async () => {
   const mailer = require('../src/mailer');
   const mails = [];

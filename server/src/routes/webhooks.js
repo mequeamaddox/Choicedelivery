@@ -23,6 +23,16 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
       || event.type === 'checkout.session.async_payment_succeeded';
     if (paidEvent) {
       const orderId = session.metadata?.order_id || session.client_reference_id;
+      if (session.metadata?.kind === 'invoice') {
+        // A company paying an invoice online: only that invoice's current card session, once.
+        await db.withTx(async (client) => {
+          const { rows: [open] } = await client.query(
+            "SELECT id FROM invoices WHERE id = $1 AND stripe_session_id = $2 AND status = 'open' AND total_cents = $3 FOR UPDATE",
+            [session.metadata.invoice_id, session.id, session.amount_total]);
+          if (open) await require('../invoices').markPaid(client, open.id, { method: 'card', note: 'Paid online', actorId: null });
+        });
+        return res.json({ received: true });
+      }
       if (session.metadata?.kind === 'charges') {
         // Payment for additional charges (wait time, etc.) on an order that was already paid.
         await db.withTx(async (client) => {

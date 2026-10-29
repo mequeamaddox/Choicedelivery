@@ -335,6 +335,11 @@ export function CompaniesPage() {
                     <option value="card">Card per order</option>
                     <option value="invoice">Monthly account (invoice)</option>
                   </select>
+                  ${c.billingMode === 'invoice' && html`<select aria-label=${`${c.name} payment terms`} value=${String(c.paymentTermsDays)} class="terms-select"
+                    onChange=${async (e) => { await api(`/organizations/${c.id}`, { method: 'PATCH', body: { paymentTermsDays: Number(e.target.value) } }); reload(); }}>
+                    <option value="0">Due on receipt</option><option value="15">Net 15</option><option value="30">Net 30</option>
+                    <option value="45">Net 45</option><option value="60">Net 60</option>
+                  </select>`}
                 </td>
                 <td data-label="Medical">
                   <label class="check-row small" title="Chain of custody on every order"><input type="checkbox" checked=${c.isMedical}

@@ -228,7 +228,7 @@ export function NewOrderPage({ guest = false }) {
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '', customerName: '', customerEmail: '', sendPayLink: true,
-    customerPhone: '', agreeTerms: false, sealNumber: '', temperature: '',
+    customerPhone: '', agreeTerms: false, sealNumber: '', temperature: '', poNumber: '',
   });
   // Medical facilities' orders have chain of custody (seal number, temperature, counts at every handoff).
   const medical = guest ? false : staff ? !!(companies.data || []).find((c) => c.id === v.organizationId)?.isMedical
@@ -346,6 +346,7 @@ export function NewOrderPage({ guest = false }) {
         maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
         ...(medical ? { sealNumber: v.sealNumber.trim() || undefined, temperature: v.temperature || undefined } : {}),
         trackingNumber: v.trackingNumber || undefined,
+        poNumber: v.poNumber.trim() || undefined,
         scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
         stops,
         saveAsQuote,
@@ -497,6 +498,8 @@ export function NewOrderPage({ guest = false }) {
             </div>
             <p class="small muted">Please don't put patient names or health information in this order; use your lab or reference number.</p>
           </div>`}
+          ${!guest && (staff || user?.organization?.billingMode === 'invoice') && html`<${Field} label="PO / job number" hint="Optional. Shown on your invoice next to this delivery.">
+            <input maxlength="60" ...${bind('poNumber')} /><//>`}
           ${!guest && html`<${Field} label="Your reference / tracking number" hint="Optional. If your packages have a barcode label, drivers can scan it at pickup to double-check.">
             <input ...${bind('trackingNumber')} />
           <//>`}
@@ -1004,6 +1007,8 @@ export function OrderPage({ id }) {
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}${order.maxPieceLbs != null ? ` · heaviest ${order.maxPieceLbs} lbs` : ''}</dd>
               <dt>Pickup time</dt><dd>${order.scheduledAt ? formatDate(order.scheduledAt) : 'ASAP'}</dd>
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
+              ${order.poNumber && html`<dt>PO / job</dt><dd>${order.poNumber}</dd>`}
+              ${order.invoiceId && html`<dt>Invoice</dt><dd><a href=${`#/invoices/${order.invoiceId}`}>View invoice</a></dd>`}
               ${order.custodyRequired && html`<dt>Custody</dt><dd>Counted at every handoff${order.sealNumber ? ` · seal ${order.sealNumber}` : ''}${order.temperature ? ` · ${TEMPERATURE_LABELS[order.temperature]}` : ''}</dd>`}
               ${order.addOns.length > 0 && html`<dt>Extras</dt><dd>${order.addOns.map((k) => ADD_ON_LABELS[k] || k).join(', ')}</dd>`}
               <dt>Distance</dt><dd>${order.distanceMiles != null ? `about ${order.distanceMiles} mi` : '—'}</dd>

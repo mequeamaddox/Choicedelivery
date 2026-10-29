@@ -182,11 +182,13 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
            service_level = COALESCE($12, service_level),
            add_ons = CASE WHEN $13::boolean THEN $14::text[] ELSE add_ons END,
            max_piece_lbs = CASE WHEN $15::boolean THEN $16::numeric ELSE max_piece_lbs END,
+           po_number = CASE WHEN $17::boolean THEN NULLIF($18, '') ELSE po_number END,
            updated_at = now()
          WHERE id = $1`,
         [current.id, b.vehicleType ?? null, b.weight ?? null, b.numberOfPieces ?? null, b.description ?? null,
           b.trackingNumber !== undefined, str(b.trackingNumber), b.priceCents !== undefined, b.priceCents ?? null,
-          b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null, addOns !== undefined, addOns || [], maxPieceLbs !== undefined, maxPieceLbs ?? null]
+          b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null, addOns !== undefined, addOns || [], maxPieceLbs !== undefined, maxPieceLbs ?? null,
+          b.poNumber !== undefined, str(b.poNumber).slice(0, 60)]
       );
     } catch (e) {
       if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
