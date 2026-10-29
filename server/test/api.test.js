@@ -2369,6 +2369,45 @@ test('invoices: Net 30 accounts are billed monthly, sent, paid by check or onlin
   }
 });
 
+test('dispatch sets up a company and invites its contact; customers invite coworkers; dispatch can turn a login off', async () => {
+  const mailer = require('../src/mailer');
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); return 'sent'; });
+  try {
+    let r = await call('POST', '/organizations', { token: t.dispatcher, body: { name: 'Ferg Branch 9', billingMode: 'invoice', paymentTermsDays: 30, billingEmail: 'ap@branch9.test' } });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.billingMode, 'invoice');
+    const orgId = r.data.id;
+    r = await call('POST', `/organizations/${orgId}/invite`, { token: t.dispatcher, body: { name: 'Dana Manager', email: 'Dana@Branch9.test' } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    const invite = mails.find((m) => m.to === 'dana@branch9.test');
+    assert.match(invite.subject, /Your Choice Delivery account for Ferg Branch 9/);
+    assert.match(invite.html, /invoiced monthly/);
+    const token = invite.html.match(/#\/reset\/([0-9a-f]+)/)[1];
+    assert.equal((await call('POST', '/auth/login', { body: { email: 'dana@branch9.test', password: 'password1' } })).status, 401, 'no password until they choose one');
+    r = await call('POST', '/auth/reset-password', { body: { token, password: 'password1' } });
+    assert.equal(r.status, 200);
+    r = await call('POST', '/auth/login', { body: { email: 'dana@branch9.test', password: 'password1' } });
+    assert.equal(r.status, 200);
+    const dana = r.data.token;
+    assert.equal(r.data.user.organization.id, orgId);
+
+    // Dana invites a coworker; she can't invite into another company.
+    r = await call('POST', `/organizations/${orgId}/invite`, { token: dana, body: { name: 'Sam Counter', email: 'sam@branch9.test' } });
+    assert.equal(r.status, 201);
+    assert.match(mails.find((m) => m.to === 'sam@branch9.test').html, /Dana Manager added you/);
+    assert.equal((await call('POST', `/organizations/${ids.acmeOrg}/invite`, { token: dana, body: { name: 'X', email: 'x@x.test' } })).status, 404);
+    assert.equal((await call('PATCH', `/organizations/${orgId}/users/${r.data.id}`, { token: dana, body: { isActive: false } })).status, 403);
+
+    // Dispatch turns Dana's login off: she's locked out right away.
+    r = await call('PATCH', `/organizations/${orgId}/users/${(await call('GET', '/auth/me', { token: dana })).data.user.id}`, { token: t.dispatcher, body: { isActive: false } });
+    assert.equal(r.status, 200);
+    assert.equal((await call('GET', '/orders', { token: dana })).status, 401);
+  } finally {
+    mailer.setSender(null);
+  }
+});
+
 test('a customer signing up gets a welcome email and the owner is told where they came from', async () => {
   const mailer = require('../src/mailer');
   const mails = [];

@@ -277,6 +277,32 @@ async function welcomeShipper({ user, company }) {
   }
 }
 
+// Invitation to someone added to a customer company (by dispatch setting the company up, or by a
+// coworker on their Team page): choose a password (the link works for 7 days), then book.
+async function inviteCustomer({ user, company, token, invitedBy, billing }) {
+  const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+  const support = process.env.SUPPORT_EMAIL || 'info@choicedeliverysc.com';
+  const first = esc((user.name || '').split(' ')[0] || 'there');
+  const who = invitedBy ? `${esc(invitedBy)} added you` : 'Choice Delivery SC set up an account for you';
+  await sendMail({
+    to: user.email,
+    replyTo: support,
+    subject: `Your Choice Delivery account for ${company}`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827;line-height:1.5">
+  <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong></div>
+  <div style="border:1px solid #e5e7eb;border-top:0;padding:20px;border-radius:0 0 10px 10px">
+    <p>Hi ${first},</p>
+    <p>${who} to book and track same-day deliveries for <strong>${esc(company)}</strong>. Choose your password to get started
+      (this link works for 7 days). Your login is this email address, ${esc(user.email)}.</p>
+    <p><a href="${base}/#/reset/${token}" style="background:#0f766e;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:bold">Choose your password</a></p>
+    <p>Then tap <strong>New order</strong>, enter the pickup and drop-off, and you'll see the price right away. Every delivery
+      has live tracking and a photo and signature when it's dropped off.${billing === 'invoice' ? ' Deliveries are billed to your company\'s account and invoiced monthly, so there\'s nothing to pay at booking.' : ''}</p>
+    <p>Questions? Just reply to this email.</p>
+    <p>The Choice Delivery team<br><a href="https://choicedeliverysc.com" style="color:#0f766e">choicedeliverysc.com</a></p>
+  </div></div>`,
+  });
+}
+
 // Tells dispatch (LEADS_EMAIL) that an order is waiting for a manual price.
 function notifyStaffOfReview(order) {
   const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
@@ -345,4 +371,4 @@ async function alertStaffOfCustodyException(orderId, stopId) {
   }
 }
 
-module.exports = { alertStaffOfCustodyException, emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };
+module.exports = { inviteCustomer, alertStaffOfCustodyException, emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };

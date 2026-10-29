@@ -300,17 +300,82 @@ function DriverAppLink() {
     </form>`;
 }
 
-export function CompaniesPage() {
-  const { data, error, loading, reload } = useApi('/organizations');
-  const [v, setV] = useState({ name: '', phone: '', billingEmail: '', address: '' });
-  const [formError, setFormError] = useState(null);
+// Invite someone to a company: they get an email to choose their own password.
+function InviteForm({ orgId, onInvited, title = 'Invite someone', compact = false }) {
+  const [v, setV] = useState({ name: '', email: '', phoneNumber: '' });
+  const [sent, setSent] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
   const bind = (k) => ({ value: v[k], onInput: (e) => setV({ ...v, [k]: e.target.value }) });
   const submit = async (e) => {
     e.preventDefault();
-    setFormError(null);
+    setError(null); setSent(null); setBusy(true);
     try {
-      await api('/organizations', { method: 'POST', body: v });
-      setV({ name: '', phone: '', billingEmail: '', address: '' });
+      await api(`/organizations/${orgId}/invite`, { method: 'POST', body: v });
+      setSent(v.email); setV({ name: '', email: '', phoneNumber: '' }); onInvited?.();
+    } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  return html`
+    <form class=${compact ? 'stack' : 'card stack'} onSubmit=${submit}>
+      <h2>${title}</h2>
+      <p class="small muted">They get an email to choose their own password, then they can book and track deliveries.</p>
+      <${Alert} error=${error} />
+      ${sent && html`<${Alert} tone="success">Invite sent to ${sent}.<//>`}
+      <div class="grid-2">
+        <${Field} label="Name"><input required autocomplete="off" ...${bind('name')} /><//>
+        <${Field} label="Email"><input type="email" required autocomplete="off" ...${bind('email')} /><//>
+        <${Field} label="Phone (optional)"><input type="tel" ...${bind('phoneNumber')} /><//>
+      </div>
+      <div><button class="btn primary" disabled=${busy}>${busy ? 'Sending…' : 'Send invite'}</button></div>
+    </form>`;
+}
+
+// A company's logins, for dispatch: turn one off (someone who left) or invite someone new.
+function CompanyUsers({ org }) {
+  const users = useApi(`/organizations/${org.id}/users`);
+  const [error, setError] = useState(null);
+  return html`
+    <div class="company-users stack">
+      <${Alert} error=${error || users.error} />
+      ${users.loading && !users.data ? html`<${Spinner} />` : !(users.data || []).length ? html`<p class="small muted">No logins yet. Invite their main contact below.</p>` : html`
+        <ul class="plain-list">${users.data.map((u) => html`<li key=${u.id} class=${u.isActive ? '' : 'inactive'}>
+          <span><strong>${u.name || '—'}</strong> <span class="muted small">${u.email}</span>${!u.isActive && html` <span class="badge gray">Disabled</span>`}</span>
+          <${ActionButton} class="btn small" onError=${setError}
+            confirmText=${u.isActive ? `Turn off ${u.email}'s login? They're signed out right away.` : null}
+            onClick=${async () => { await api(`/organizations/${org.id}/users/${u.id}`, { method: 'PATCH', body: { isActive: !u.isActive } }); users.reload(); }}>
+            ${u.isActive ? 'Disable' : 'Enable'}<//>
+        </li>`)}</ul>`}
+      <${InviteForm} orgId=${org.id} onInvited=${users.reload} title=${`Invite someone at ${org.name}`} compact=${true} />
+    </div>`;
+}
+
+export function CompaniesPage() {
+  const { data, error, loading, reload } = useApi('/organizations');
+  const blank = { name: '', phone: '', billingEmail: '', address: '', billingMode: 'card', paymentTermsDays: '30',
+    contactName: '', contactEmail: '', contactPhone: '' };
+  const [v, setV] = useState(blank);
+  const [formError, setFormError] = useState(null);
+  const [added, setAdded] = useState(null);
+  const [open, setOpen] = useState(null); // company whose logins are shown
+  const bind = (k) => ({ value: v[k], onInput: (e) => setV({ ...v, [k]: e.target.value }) });
+  // Creates the company, then invites its main contact (if given) to choose a password.
+  const submit = async (e) => {
+    e.preventDefault();
+    setFormError(null); setAdded(null);
+    try {
+      const org = await api('/organizations', { method: 'POST', body: {
+        name: v.name, phone: v.phone, billingEmail: v.billingEmail || v.contactEmail, address: v.address,
+        billingMode: v.billingMode, paymentTermsDays: Number(v.paymentTermsDays),
+      } });
+      let invited = null;
+      if (v.contactEmail.trim()) {
+        try {
+          await api(`/organizations/${org.id}/invite`, { method: 'POST', body: { name: v.contactName || v.contactEmail, email: v.contactEmail, phoneNumber: v.contactPhone } });
+          invited = v.contactEmail.trim();
+        } catch (err) { setFormError(new Error(`${org.name} was added, but the invite didn't go out: ${err.message} Try again from Logins on the company.`)); }
+      }
+      setAdded(invited ? `${org.name} added. Invite sent to ${invited}.` : `${org.name} added.`);
+      setV(blank);
       reload();
     } catch (err) { setFormError(err); }
   };
@@ -321,7 +386,7 @@ export function CompaniesPage() {
       ${loading ? html`<${Spinner} />` : !data?.length ? html`<${Empty} title="No companies yet" />` : html`
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Company</th><th>Phone</th><th>Billing email</th><th>Billing</th><th>Medical</th><th>Since</th></tr></thead>
+            <thead><tr><th>Company</th><th>Phone</th><th>Billing email</th><th>Billing</th><th>Medical</th><th>Since</th><th>Logins</th></tr></thead>
             <tbody>${data.map((c) => html`
               <tr>
                 <td data-label="Company"><strong>${c.name}</strong><${DemoBadge} on=${c.isDemo} />${c.address && html`<div class="muted small">${c.address}</div>`}</td>
@@ -346,19 +411,42 @@ export function CompaniesPage() {
                     <span>Chain of custody</span></label>
                 </td>
                 <td data-label="Since" class="muted small">${new Date(c.createdAt).toLocaleDateString()}</td>
-              </tr>`)}</tbody>
+                <td data-label="Logins"><button type="button" class="btn small" aria-expanded=${open === c.id}
+                  onClick=${() => setOpen(open === c.id ? null : c.id)}>${open === c.id ? 'Hide' : 'Logins & invites'}</button></td>
+              </tr>
+              ${open === c.id && html`<tr class="company-users-row"><td colspan="7"><${CompanyUsers} org=${c} /></td></tr>`}`)}</tbody>
           </table>
         </div>`}
       <form class="card stack" onSubmit=${submit}>
         <h2>Add a company</h2>
+        <p class="small muted">For a customer you're setting up yourself, like a contract account. Companies can also sign
+          themselves up at app.choicedeliverysc.com/#/signup.</p>
         <${Alert} error=${formError} />
+        ${added && html`<${Alert} tone="success">${added}<//>`}
         <div class="grid-2">
           <${Field} label="Company name"><input required ...${bind('name')} /><//>
           <${Field} label="Phone"><input type="tel" ...${bind('phone')} /><//>
-          <${Field} label="Billing email"><input type="email" ...${bind('billingEmail')} /><//>
+          <${Field} label="Billing email" hint="Where invoices go. Leave blank to use the contact's email.">
+            <input type="email" ...${bind('billingEmail')} /><//>
           <${Field} label="Address"><input ...${bind('address')} /><//>
+          <${Field} label="How they pay">
+            <select value=${v.billingMode} onChange=${(e) => setV({ ...v, billingMode: e.target.value })}>
+              <option value="card">Card per order</option><option value="invoice">Monthly account (invoice)</option>
+            </select><//>
+          ${v.billingMode === 'invoice' && html`<${Field} label="Payment terms">
+            <select value=${v.paymentTermsDays} onChange=${(e) => setV({ ...v, paymentTermsDays: e.target.value })}>
+              <option value="0">Due on receipt</option><option value="15">Net 15</option><option value="30">Net 30</option>
+              <option value="45">Net 45</option><option value="60">Net 60</option>
+            </select><//>`}
         </div>
-        <div><button class="btn primary">Add company</button></div>
+        <h3>Main contact</h3>
+        <p class="small muted">We email them an invite to choose their password. They can invite their coworkers from their Team page.</p>
+        <div class="grid-2">
+          <${Field} label="Name"><input autocomplete="off" ...${bind('contactName')} /><//>
+          <${Field} label="Email"><input type="email" autocomplete="off" ...${bind('contactEmail')} /><//>
+          <${Field} label="Phone (optional)"><input type="tel" ...${bind('contactPhone')} /><//>
+        </div>
+        <div><button class="btn primary">${v.contactEmail.trim() ? 'Add company & send invite' : 'Add company'}</button></div>
       </form>
       <${ApiKeys} staff=${true} />
     <//>`;
@@ -381,7 +469,7 @@ export function TeamPage() {
                 <td data-label="Email">${u.email}</td><td data-label="Phone">${u.phoneNumber || '—'}</td></tr>`)}</tbody>
           </table>
         </div>`}
-      <${AddAccountForm} roles=${['shipper']} fixedCompanyId=${orgId} submitPath=${`/organizations/${orgId}/users`} onCreated=${reload} />
+      <${InviteForm} orgId=${orgId} onInvited=${reload} title="Invite a coworker" />
     <//>`;
 }
 

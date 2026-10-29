@@ -438,6 +438,12 @@ fieldset.card { margin: 0; min-width: 0; }
 .label-foot { border-top: 1px solid #000; margin-top: .2in; padding-top: .08in; font-size: 9pt; text-align: center; }
 @media (max-width: 640px) { .label-parties { grid-template-columns: 1fr; } .ship-label { padding: .2in; font-size: 11pt; } }
 
+/* Companies: logins */
+.company-users { padding: .5rem 0; }
+.plain-list { list-style: none; padding: 0; margin: 0; }
+.plain-list li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid var(--border); }
+.plain-list li.inactive strong { color: var(--muted, #6b7280); }
+
 /* Invoices */
 .error-text { color: var(--red); }
 .terms-select { margin-top: .35rem; }

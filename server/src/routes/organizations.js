@@ -2,7 +2,9 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const { asyncH, HttpError, str } = require('../util');
+const crypto = require('crypto');
 const { createUser, publicUser } = require('../users');
+const { inviteCustomer } = require('../notify');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -28,11 +30,14 @@ router.get('/', asyncH(async (req, res) => {
 }));
 
 router.post('/', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
-  const { name, phone, billingEmail, address } = req.body || {};
+  const { name, phone, billingEmail, address, billingMode = 'card', paymentTermsDays = 30, isMedical = false } = req.body || {};
   if (!str(name)) throw new HttpError(400, 'name is required');
+  if (!['card', 'invoice'].includes(billingMode)) throw new HttpError(400, 'billingMode must be card or invoice');
+  if (![0, 15, 30, 45, 60].includes(paymentTermsDays)) throw new HttpError(400, 'paymentTermsDays must be 0, 15, 30, 45 or 60');
   const { rows } = await db.query(
-    'INSERT INTO organizations (name, phone, billing_email, address) VALUES ($1, $2, lower($3), $4) RETURNING *',
-    [str(name), str(phone), str(billingEmail), str(address)]
+    `INSERT INTO organizations (name, phone, billing_email, address, billing_mode, payment_terms_days, is_medical)
+     VALUES ($1, $2, lower($3), $4, $5, $6, $7) RETURNING *`,
+    [str(name), str(phone), str(billingEmail), str(address), billingMode, paymentTermsDays, isMedical === true]
   );
   res.status(201).json(serialize(rows[0]));
 }));
@@ -86,6 +91,39 @@ router.post('/:id/users', asyncH(async (req, res) => {
   const { email, password, name, phoneNumber } = req.body || {};
   const user = await createUser({ email, password, name, phoneNumber, role: 'shipper', organizationId: req.params.id });
   res.status(201).json(publicUser(user));
+}));
+
+// Invite someone to a company: dispatch adding a new company's contact, or a customer adding a coworker
+// from their Team page. They get an email to choose their own password (the link works for 7 days).
+router.post('/:id/invite', asyncH(async (req, res) => {
+  if (!canAccess(req.user, req.params.id)) throw new HttpError(404, 'Organization not found');
+  const b = req.body || {};
+  if (!str(b.name)) throw new HttpError(400, 'Enter their name');
+  const { rows: [org] } = await db.query('SELECT name, billing_mode FROM organizations WHERE id = $1', [req.params.id]);
+  if (!org) throw new HttpError(404, 'Organization not found');
+  const token = crypto.randomBytes(32).toString('hex');
+  const user = await db.withTx(async (client) => {
+    const u = await createUser({ email: b.email, password: crypto.randomBytes(24).toString('hex'), name: b.name,
+      phoneNumber: b.phoneNumber, role: 'shipper', organizationId: req.params.id }, client);
+    await client.query("UPDATE users SET reset_token_hash = $2, reset_token_expires = now() + interval '7 days' WHERE id = $1",
+      [u.id, crypto.createHash('sha256').update(token).digest('hex')]);
+    return u;
+  });
+  const { rows: [me] } = await db.query('SELECT name, email FROM users WHERE id = $1', [req.user.id]);
+  const invitedBy = isStaff(req.user) ? null : (me?.name || me?.email);
+  await inviteCustomer({ user, company: org.name, token, invitedBy, billing: org.billing_mode })
+    .catch((e) => console.error('Customer invite email failed:', e.message));
+  res.status(201).json(publicUser(user));
+}));
+
+// Dispatch turning a company's login off (someone who left) or back on.
+router.patch('/:id/users/:userId', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  if (typeof req.body?.isActive !== 'boolean') throw new HttpError(400, 'isActive must be true or false');
+  const { rows: [u] } = await db.query(
+    "UPDATE users SET is_active = $3, updated_at = now() WHERE id = $2 AND organization_id = $1 AND role = 'shipper' RETURNING id",
+    [req.params.id, req.params.userId, req.body.isActive]);
+  if (!u) throw new HttpError(404, 'User not found');
+  res.json({ id: u.id, isActive: req.body.isActive });
 }));
 
 module.exports = router;
