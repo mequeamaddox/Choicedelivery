@@ -445,6 +445,8 @@ fieldset.card { margin: 0; min-width: 0; }
 .plain-list li.inactive strong { color: var(--muted, #6b7280); }
 
 /* Invoices */
+.application { border-top: 1px solid var(--border); padding-top: .75rem; }
+.application:first-of-type { border-top: 0; padding-top: 0; }
 .error-text { color: var(--red); }
 .terms-select { margin-top: .35rem; }
 .invoice-top { align-items: start; }

@@ -46,6 +46,19 @@ router.put('/settings', staffOnly, asyncH(async (req, res) => {
   res.json({ payInstructions });
 }));
 
+// Net terms applications from customers: list, approve (with terms and an optional limit) or decline.
+router.get('/applications', staffOnly, asyncH(async (req, res) => {
+  res.json(await require('../credit').list(str(req.query.status) || null));
+}));
+
+router.post('/applications/:id/decide', staffOnly, asyncH(async (req, res) => {
+  const b = req.body || {};
+  if (typeof b.approve !== 'boolean') throw new HttpError(400, 'approve must be true or false');
+  res.json(await require('../credit').decide(req.params.id, req.user, {
+    approve: b.approve, termsDays: b.termsDays, creditLimitCents: b.creditLimitCents, note: b.note,
+  }));
+}));
+
 router.post('/', staffOnly, asyncH(async (req, res) => {
   const organizationId = str(req.body?.organizationId);
   if (!organizationId) throw new HttpError(400, 'organizationId is required');

@@ -798,7 +798,15 @@ export function AccountPage() {
           <div><button class="btn primary">Change password</button></div>
         </form>
       </div>
-      ${me.role === 'shipper' && html`<div class="account-extra stack"><${ApiKeys} /></div>`}
+      ${me.role === 'shipper' && html`<div class="account-extra stack">
+        <section class="card">
+          <h2>Billing</h2>
+          ${me.organization?.billingMode === 'invoice'
+            ? html`<p>Your company is billed monthly on account.</p><a class="btn" href="#/billing">Billing details</a> <a class="btn" href="#/invoices">Invoices</a>`
+            : html`<p>You pay by card for each delivery. Ship with us regularly? Apply to be billed monthly on Net terms instead.</p>
+              <a class="btn primary" href="#/billing">Apply for monthly invoicing</a>`}
+        </section>
+        <${ApiKeys} /></div>`}
       ${me.role === 'admin' && html`<div class="account-extra stack"><${PaymentsStatus} /><${EmailStatus} /><${DriverAppLink} /><${FeesEditor} /></div>`}
     <//>`;
 }

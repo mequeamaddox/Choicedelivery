@@ -112,7 +112,7 @@ async function listInvoices({ organizationId = null, limit = 200 } = {}) {
 async function accounts() {
   const today = localDate();
   const { rows: orgs } = await db.query(
-    `SELECT o.id, o.name, o.billing_email, o.billing_mode, o.payment_terms_days,
+    `SELECT o.id, o.name, o.billing_email, o.billing_mode, o.payment_terms_days, o.credit_limit_cents,
        COALESCE((SELECT sum(total_cents) FROM invoices WHERE organization_id = o.id AND status = 'open'), 0)::int AS open_cents,
        COALESCE((SELECT sum(total_cents) FROM invoices WHERE organization_id = o.id AND status = 'open' AND due_date < $1), 0)::int AS overdue_cents,
        (SELECT max(issued_at) FROM invoices WHERE organization_id = o.id AND status <> 'void') AS last_invoiced_at
@@ -126,7 +126,8 @@ async function accounts() {
       id: o.id, name: o.name, billingEmail: o.billing_email || null, billingMode: o.billing_mode,
       termsDays: o.payment_terms_days, terms: termsLabel(o.payment_terms_days),
       unbilledCents: totalCents, unbilledLines: lines.length, openCents: o.open_cents, overdueCents: o.overdue_cents,
-      lastInvoicedAt: o.last_invoiced_at,
+      lastInvoicedAt: o.last_invoiced_at, creditLimitCents: o.credit_limit_cents ?? null,
+      overLimit: o.credit_limit_cents != null && o.open_cents + totalCents > o.credit_limit_cents,
     });
   }
   return out;

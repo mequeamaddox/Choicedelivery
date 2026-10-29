@@ -1,6 +1,6 @@
 // Invoices for companies billed on account (#/invoices, #/invoices/:id). Dispatch sees what each company owes,
 // creates and sends invoices, and records payments; customers on an account see their own invoices.
-import { html, useState, api, useApi, getUser, isStaff, navigate, formatMoney } from './lib.js';
+import { html, useState, useEffect, api, useApi, getUser, isStaff, navigate, formatMoney, refreshUser } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton } from './components.js';
 
 const day = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—');
@@ -47,6 +47,148 @@ function PayInstructions({ initial }) {
     </section>`;
 }
 
+const termsLabel = (d) => (Number(d) === 0 ? 'Due on receipt' : `Net ${d}`);
+
+// Pending Net terms applications, for dispatch to approve (terms, optional limit) or decline.
+function Applications({ onDecided }) {
+  const apps = useApi('/invoices/applications?status=pending');
+  const [error, setError] = useState(null);
+  const [form, setForm] = useState({});
+  const f = (a) => form[a.id] || { termsDays: String(a.data.requestedTerms || 30), limit: '', note: '' };
+  const set = (a, patch) => setForm({ ...form, [a.id]: { ...f(a), ...patch } });
+  const decide = (a, approve) => async () => {
+    const v = f(a);
+    await api(`/invoices/applications/${a.id}/decide`, { method: 'POST', body: {
+      approve, termsDays: Number(v.termsDays), creditLimitCents: v.limit ? Math.round(Number(v.limit) * 100) : undefined, note: v.note,
+    } });
+    apps.reload(); onDecided?.();
+  };
+  if (!apps.data?.length) return null;
+  return html`
+    <section class="card stack">
+      <h2>Applications for Net terms <span class="badge amber">${apps.data.length}</span></h2>
+      <${Alert} error=${error} />
+      ${apps.data.map((a) => html`<div key=${a.id} class="application">
+        <h3>${a.company} <span class="muted small">· applied ${issued(a.submittedAt)}${a.submittedBy ? ` by ${a.submittedBy}` : ''}</span></h3>
+        <dl class="facts">
+          <dt>Legal name</dt><dd>${a.data.legalName}${a.data.dba ? ` (DBA ${a.data.dba})` : ''}</dd>
+          ${a.data.ein && html`<dt>EIN</dt><dd>${a.data.ein}</dd>`}
+          <dt>Address</dt><dd>${a.data.address}</dd>
+          ${a.data.yearsInBusiness && html`<dt>In business</dt><dd>${a.data.yearsInBusiness}</dd>`}
+          ${a.data.monthlyDeliveries && html`<dt>Deliveries / month</dt><dd>${a.data.monthlyDeliveries}</dd>`}
+          <dt>Accounts payable</dt><dd>${a.data.apName} · ${a.data.apEmail}${a.data.apPhone ? ` · ${a.data.apPhone}` : ''}</dd>
+          <dt>Wants</dt><dd>${termsLabel(a.data.requestedTerms)}${a.data.poRequired ? ' · PO numbers on invoices' : ''}</dd>
+          ${a.data.references.length > 0 && html`<dt>References</dt><dd>${a.data.references.map((r) => html`<div>${[r.company, r.contact, r.phone, r.email].filter(Boolean).join(' · ')}</div>`)}</dd>`}
+          ${a.data.notes && html`<dt>Notes</dt><dd>${a.data.notes}</dd>`}
+        </dl>
+        <div class="grid-2">
+          <${Field} label="Terms"><select value=${f(a).termsDays} onChange=${(e) => set(a, { termsDays: e.target.value })}>
+            <option value="0">Due on receipt</option><option value="15">Net 15</option><option value="30">Net 30</option>
+            <option value="45">Net 45</option><option value="60">Net 60</option></select><//>
+          <${Field} label="Account limit ($, optional)" hint="You'll see a warning when they owe more than this.">
+            <input type="number" min="0" step="50" inputmode="decimal" value=${f(a).limit} onInput=${(e) => set(a, { limit: e.target.value })} /><//>
+        </div>
+        <${Field} label="Note to them (optional)"><input maxlength="500" value=${f(a).note} onInput=${(e) => set(a, { note: e.target.value })} /><//>
+        <div class="inline">
+          <${ActionButton} class="btn primary" onError=${setError} confirmText=${`Approve ${a.company} for monthly invoicing on ${termsLabel(f(a).termsDays)}?`}
+            onClick=${decide(a, true)}>Approve<//>
+          <${ActionButton} class="btn danger" onError=${setError} confirmText=${`Decline ${a.company}'s application? They're emailed and keep paying by card.`}
+            onClick=${decide(a, false)}>Decline<//>
+        </div>
+      </div>`)}
+    </section>`;
+}
+
+// For customers (#/billing): how their company pays, and the application for monthly invoicing.
+export function BillingPage() {
+  const me = getUser();
+  const orgId = me.organization?.id;
+  const org = useApi(orgId ? `/organizations/${orgId}` : null);
+  const app = useApi(orgId ? `/organizations/${orgId}/credit-application` : null);
+  const [v, setV] = useState({ legalName: me.organization?.name || '', dba: '', ein: '', address: '', yearsInBusiness: '',
+    apName: '', apEmail: '', apPhone: '', monthlyDeliveries: '', requestedTerms: '30', poRequired: false, notes: '', agreed: false,
+    references: [{ company: '', contact: '', phone: '', email: '' }, { company: '', contact: '', phone: '', email: '' }] });
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const bind = (k) => ({ value: v[k], onInput: (e) => setV({ ...v, [k]: e.target.value }) });
+  const ref = (i, k) => ({ value: v.references[i][k], onInput: (e) => setV({ ...v, references: v.references.map((r, j) => (j === i ? { ...r, [k]: e.target.value } : r)) }) });
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(null); setBusy(true);
+    try {
+      await api(`/organizations/${orgId}/credit-application`, { method: 'POST', body: { ...v, requestedTerms: Number(v.requestedTerms) } });
+      app.reload(); window.scrollTo(0, 0);
+    } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  const o = org.data;
+  const a = app.data;
+  const invoiced = o?.billingMode === 'invoice';
+  // Just approved: refresh the signed-in user so the menu and booking form switch to invoicing.
+  useEffect(() => {
+    if (invoiced && me.organization?.billingMode !== 'invoice') api('/auth/me').then((r) => refreshUser(r.user)).catch(() => {});
+  }, [invoiced]);
+  return html`
+    <${Layout}>
+      <${PageHeader} title="Billing" subtitle=${me.organization?.name || ''} />
+      <${Alert} error=${org.error || app.error} />
+      ${!o || app.loading ? html`<${Spinner} />` : invoiced ? html`
+        <section class="card">
+          <h2>Monthly invoicing</h2>
+          <dl class="facts">
+            <dt>Terms</dt><dd>${termsLabel(o.paymentTermsDays)}</dd>
+            <dt>Invoices go to</dt><dd>${o.billingEmail || '—'}</dd>
+            ${o.creditLimitCents && html`<dt>Account limit</dt><dd>${formatMoney(o.creditLimitCents)}</dd>`}
+          </dl>
+          <p class="small muted">There's nothing to pay when you book. You get one invoice a month listing every delivery; pay by check, ACH or card.</p>
+          <a class="btn" href="#/invoices">See your invoices</a>
+        </section>` : a?.status === 'pending' ? html`
+        <section class="card">
+          <h2>Application received</h2>
+          <p>You applied for monthly invoicing on ${issued(a.submittedAt)}. We'll email you once it's reviewed, usually within 1–2 business days.
+            Until then, keep booking and paying by card as usual.</p>
+        </section>` : html`
+        ${a?.status === 'declined' && html`<${Alert} tone="warn">Your last application wasn't approved${a.decisionNote ? `: ${a.decisionNote}` : ''}. You're welcome to apply again.<//>`}
+        <form class="card stack" onSubmit=${submit}>
+          <h2>Apply for monthly invoicing</h2>
+          <p class="small muted">Right now you pay by card for each delivery. Businesses that ship with us regularly can be billed on
+            account instead: book without paying, then get one invoice a month (usually Net 30). Takes about 3 minutes.</p>
+          <${Alert} error=${error} />
+          <h3>Business</h3>
+          <div class="grid-2">
+            <${Field} label="Legal business name"><input required ...${bind('legalName')} /><//>
+            <${Field} label="DBA (optional)"><input ...${bind('dba')} /><//>
+            <${Field} label="Business address"><input required autocomplete="street-address" ...${bind('address')} /><//>
+            <${Field} label="EIN (optional)" hint="Your federal tax ID, if you have one."><input inputmode="numeric" maxlength="20" ...${bind('ein')} /><//>
+            <${Field} label="Years in business (optional)"><input ...${bind('yearsInBusiness')} /><//>
+            <${Field} label="Deliveries per month, roughly (optional)"><input placeholder="e.g. 20" ...${bind('monthlyDeliveries')} /><//>
+          </div>
+          <h3>Accounts payable</h3>
+          <p class="small muted">Who receives and pays the invoices.</p>
+          <div class="grid-2">
+            <${Field} label="AP contact name"><input required ...${bind('apName')} /><//>
+            <${Field} label="AP email" hint="Invoices are emailed here."><input type="email" required ...${bind('apEmail')} /><//>
+            <${Field} label="AP phone (optional)"><input type="tel" ...${bind('apPhone')} /><//>
+            <${Field} label="Terms you'd like"><select value=${v.requestedTerms} onChange=${(e) => setV({ ...v, requestedTerms: e.target.value })}>
+              <option value="15">Net 15</option><option value="30">Net 30</option><option value="45">Net 45</option></select><//>
+          </div>
+          <label class="check-row small"><input type="checkbox" checked=${v.poRequired} onChange=${(e) => setV({ ...v, poRequired: e.target.checked })} />
+            <span>We need a PO or job number on every invoice line</span></label>
+          <h3>Trade references (optional)</h3>
+          <p class="small muted">Vendors that bill you on terms. They help us approve you faster.</p>
+          ${v.references.map((_, i) => html`<div class="grid-2" key=${i}>
+            <${Field} label=${`Reference ${i + 1}: company`}><input ...${ref(i, 'company')} /><//>
+            <${Field} label="Contact"><input ...${ref(i, 'contact')} /><//>
+            <${Field} label="Their phone"><input type="tel" ...${ref(i, 'phone')} /><//>
+            <${Field} label="Their email"><input type="email" ...${ref(i, 'email')} /><//>
+          </div>`)}
+          <${Field} label="Anything else we should know? (optional)"><textarea rows="2" maxlength="1000" ...${bind('notes')}></textarea><//>
+          <label class="check-row small"><input type="checkbox" required checked=${v.agreed} onChange=${(e) => setV({ ...v, agreed: e.target.checked })} />
+            <span>We agree to pay invoices in full by their due date. Accounts with late invoices may be switched back to paying by card.</span></label>
+          <div><button class="btn primary" disabled=${busy}>${busy ? 'Sending…' : 'Submit application'}</button></div>
+        </form>`}
+    <//>`;
+}
+
 export function InvoicesPage() {
   const staff = isStaff(getUser());
   const list = useApi('/invoices');
@@ -72,6 +214,7 @@ export function InvoicesPage() {
           onClick=${runMonthly}>Invoice last month<//>`} />
       <${Alert} error=${error || list.error || acc.error} />
       ${notice && html`<${Alert} tone="success">${notice}<//>`}
+      ${staff && html`<${Applications} onDecided=${reload} />`}
       ${staff && html`
         <section class="card">
           <h2>Accounts</h2>
@@ -85,7 +228,7 @@ export function InvoicesPage() {
                 <td data-label="Company"><strong>${a.name}</strong>${!a.billingEmail && html`<div class="small error-text">No billing email</div>`}</td>
                 <td data-label="Terms">${a.terms}</td>
                 <td data-label="Not invoiced yet">${a.unbilledCents ? html`${formatMoney(a.unbilledCents)} <span class="muted small">· ${a.unbilledLines} line${a.unbilledLines === 1 ? '' : 's'}</span>` : '—'}</td>
-                <td data-label="Open">${a.openCents ? formatMoney(a.openCents) : '—'}</td>
+                <td data-label="Open">${a.openCents ? formatMoney(a.openCents) : '—'}${a.creditLimitCents && html`<div class=${`small ${a.overLimit ? 'error-text' : 'muted'}`}>${a.overLimit ? 'Over' : 'Limit'} ${formatMoney(a.creditLimitCents)}</div>`}</td>
                 <td data-label="Overdue">${a.overdueCents ? html`<strong class="error-text">${formatMoney(a.overdueCents)}</strong>` : '—'}</td>
                 <td>${a.unbilledCents > 0 && html`<${ActionButton} class="btn small" onError=${setError}
                   confirmText=${`Invoice ${a.name} for ${formatMoney(a.unbilledCents)} (everything delivered through today)?`}

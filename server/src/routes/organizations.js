@@ -12,7 +12,7 @@ router.use(requireAuth);
 const serialize = (o) => ({
   id: o.id, name: o.name, phone: o.phone, billingEmail: o.billing_email, address: o.address,
   createdAt: o.created_at, isDemo: o.is_demo, billingMode: o.billing_mode, isMedical: !!o.is_medical,
-  paymentTermsDays: o.payment_terms_days,
+  paymentTermsDays: o.payment_terms_days, creditLimitCents: o.credit_limit_cents ?? null,
 });
 
 function canAccess(user, orgId) {
@@ -114,6 +114,18 @@ router.post('/:id/invite', asyncH(async (req, res) => {
   await inviteCustomer({ user, company: org.name, token, invitedBy, billing: org.billing_mode })
     .catch((e) => console.error('Customer invite email failed:', e.message));
   res.status(201).json(publicUser(user));
+}));
+
+// Applying for Net terms (customers billed on account instead of by card). Dispatch reviews it on the
+// Invoices page.
+router.get('/:id/credit-application', asyncH(async (req, res) => {
+  if (!canAccess(req.user, req.params.id)) throw new HttpError(404, 'Organization not found');
+  res.json(await require('../credit').latestFor(req.params.id));
+}));
+
+router.post('/:id/credit-application', asyncH(async (req, res) => {
+  if (!canAccess(req.user, req.params.id)) throw new HttpError(404, 'Organization not found');
+  res.status(201).json(await require('../credit').submit(req.params.id, req.user, req.body));
 }));
 
 // Dispatch turning a company's login off (someone who left) or back on.

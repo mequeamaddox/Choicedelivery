@@ -2408,6 +2408,65 @@ test('dispatch sets up a company and invites its contact; customers invite cowor
   }
 });
 
+test('net terms: a card customer applies, dispatch approves or declines, approval switches them to monthly invoices', async () => {
+  const mailer = require('../src/mailer');
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); return 'sent'; });
+  const settle = () => new Promise((done) => setTimeout(done, 150));
+  try {
+    let r = await call('POST', '/auth/signup', { body: { name: 'Rae Owner', email: 'rae@hvacpros.test', password: 'password1', companyName: 'HVAC Pros' } });
+    const tok = r.data.token;
+    const orgId = r.data.user.organization.id;
+    assert.equal(r.data.user.organization.billingMode, 'card', 'everyone starts paying by card');
+    const form = { legalName: 'HVAC Pros LLC', address: '10 Shop Rd, Columbia, SC 29209', apName: 'Lee AP', apEmail: 'AP@hvacpros.test',
+      requestedTerms: 30, poRequired: true, references: [{ company: 'Johnstone Supply', phone: '803-555-0100' }], agreed: true };
+    r = await call('POST', `/organizations/${orgId}/credit-application`, { token: tok, body: { ...form, agreed: false } });
+    assert.equal(r.status, 400, 'they have to agree to pay on time');
+    r = await call('POST', `/organizations/${orgId}/credit-application`, { token: tok, body: form });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    assert.equal(r.data.status, 'pending');
+    r = await call('POST', `/organizations/${orgId}/credit-application`, { token: tok, body: form });
+    assert.equal(r.status, 409, 'one application at a time');
+    await settle();
+    assert.ok(mails.some((m) => /Net terms application: HVAC Pros \(Net 30\)/.test(m.subject)), 'the owner is told');
+    assert.ok(mails.some((m) => m.to === 'rae@hvacpros.test' && /We got your application/.test(m.subject)));
+    assert.equal((await call('GET', '/invoices/applications', { token: tok })).status, 403);
+    assert.equal((await call('GET', `/organizations/${orgId}/credit-application`, { token: t.other })).status, 404);
+
+    // Declined: they keep paying by card and can apply again.
+    r = await call('GET', '/invoices/applications?status=pending', { token: t.dispatcher });
+    let app = r.data.find((a) => a.organizationId === orgId);
+    assert.equal(app.data.legalName, 'HVAC Pros LLC');
+    r = await call('POST', `/invoices/applications/${app.id}/decide`, { token: t.dispatcher, body: { approve: false, note: 'Please add a trade reference' } });
+    assert.equal(r.data.status, 'declined');
+    assert.equal((await call('GET', `/organizations/${orgId}`, { token: tok })).data.billingMode, 'card');
+    r = await call('POST', `/organizations/${orgId}/credit-application`, { token: tok, body: form });
+    assert.equal(r.status, 201, 'they can apply again');
+
+    // Approved: monthly invoices on the terms dispatch chose, billed to their AP contact.
+    mails.length = 0;
+    r = await call('POST', `/invoices/applications/${r.data.id}/decide`, { token: t.dispatcher, body: { approve: true, termsDays: 15, creditLimitCents: 200000 } });
+    assert.equal(r.data.status, 'approved');
+    assert.equal(r.data.terms, 'Net 15');
+    r = await call('GET', `/organizations/${orgId}`, { token: tok });
+    assert.equal(r.data.billingMode, 'invoice');
+    assert.equal(r.data.paymentTermsDays, 15);
+    assert.equal(r.data.billingEmail, 'ap@hvacpros.test');
+    assert.equal(r.data.creditLimitCents, 200000);
+    await settle();
+    const approved = mails.find((m) => /Approved: HVAC Pros is now billed monthly \(Net 15\)/.test(m.subject));
+    assert.ok(approved && [].concat(approved.to).includes('ap@hvacpros.test'));
+    r = await call('POST', '/orders', { token: tok, body: orderBody() });
+    assert.equal(r.data.paymentStatus, 'invoice', 'new orders go on the account');
+    r = await call('POST', `/organizations/${orgId}/credit-application`, { token: tok, body: form });
+    assert.equal(r.status, 409, 'already on account');
+    r = await call('GET', '/invoices/accounts', { token: t.dispatcher });
+    assert.equal(r.data.accounts.find((a) => a.id === orgId).creditLimitCents, 200000);
+  } finally {
+    mailer.setSender(null);
+  }
+});
+
 test('a customer signing up gets a welcome email and the owner is told where they came from', async () => {
   const mailer = require('../src/mailer');
   const mails = [];

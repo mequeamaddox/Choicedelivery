@@ -7,7 +7,7 @@ import { DriverJobsPage, DriverJobPage, DriverHistoryPage, PayoutMethodPage } fr
 import { DriverMileagePage } from './pages-mileage.js';
 import { ShippingFormPage, ShippingLabelPage } from './pages-shipping.js';
 import { CustodyPage } from './pages-custody.js';
-import { InvoicesPage, InvoicePage } from './pages-invoices.js';
+import { InvoicesPage, InvoicePage, BillingPage } from './pages-invoices.js';
 
 const MedicalSignupPage = () => html`<${SignupPage} medical=${true} />`;
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/signup/medical': MedicalSignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
@@ -79,6 +79,7 @@ function App() {
   const label = match('/shipping-forms/:code', path);
   if (label) return html`<${ShippingLabelPage} key=${label.code} code=${label.code} />`;
   if (path === '/invoices') return html`<${InvoicesPage} />`;
+  if (path === '/billing' && user.role === 'shipper') return html`<${BillingPage} />`;
   const invoice = match('/invoices/:id', path);
   if (invoice) return html`<${InvoicePage} key=${invoice.id} id=${invoice.id} />`;
   const custody = user.role !== 'driver' && match('/orders/:id/custody', path);

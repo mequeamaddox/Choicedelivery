@@ -249,7 +249,7 @@ async function welcomeShipper({ user, company }) {
         'Save quotes and book them later.',
         'Add coworkers to your account so your whole team can book.',
         `Print a free shipping label with a barcode from the <a href="${base}/#/shipping-form" style="color:#0f766e">shipping form</a>. No label printer needed.`,
-        'Sending deliveries often? Reply to this email and ask about a business account with monthly invoicing.',
+        `Sending deliveries often? <a href="${base}/#/billing" style="color:#0f766e">Apply for monthly invoicing</a> (Net 30) instead of paying by card for each order.`,
       ].map(li).join('')}</ul>`,
       p('Questions, or a delivery that needs special handling? Just reply to this email and we\'ll get back to you.'),
     ] : [
