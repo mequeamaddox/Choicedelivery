@@ -2564,6 +2564,9 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
     assert.equal(r.status, 201, JSON.stringify(r.data));
     assert.equal(r.data.status, 'checkout');
     assert.equal(r.data.checkoutUrl, 'https://checkout.stripe.com/pay/guest');
+    const orderCheckout = stripeCalls.find((c) => c.url.endsWith('/checkout/sessions')).body;
+    assert.deepEqual([orderCheckout.get('payment_method_types[0]'), orderCheckout.get('payment_method_types[1]')], ['card', 'link'],
+      'orders: card or Link, nothing that takes days to clear');
     const { rows: [o] } = await db.query('SELECT * FROM orders WHERE order_number = $1', [r.data.orderNumber]);
     assert.equal(o.is_guest, true);
     assert.equal(o.created_by, null);

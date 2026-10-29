@@ -32,15 +32,30 @@ async function stripeRequest(method, path, params, { idempotencyKey, account } =
   if (!res.ok) {
     const err = new Error(data.error?.message || `Stripe error ${res.status}`);
     err.status = 502;
+    err.stripeStatus = res.status;
     err.code = data.error?.code;
     throw err;
   }
   return data;
 }
 
-function createCheckoutSession({
-  orderId, orderNumber, amountCents, description, customerEmail, successUrl, cancelUrl, name, metadata = {},
-  paymentMethodTypes, // e.g. ['card', 'us_bank_account'] for invoices; omitted: the methods turned on in the Stripe dashboard
+// Orders are paid by card (Apple Pay and Google Pay come with it) or Link: they're same-day jobs, so nothing
+// that takes days to clear (bank debits) and no buy-now-pay-later. Invoices pass their own list.
+const ORDER_PAYMENT_METHODS = ['card', 'link'];
+
+async function createCheckoutSession(params) {
+  const types = params.paymentMethodTypes || ORDER_PAYMENT_METHODS;
+  try {
+    return await checkoutSession({ ...params, paymentMethodTypes: types });
+  } catch (e) {
+    // A method that isn't turned on for the account: card always is.
+    if (types.length > 1 && e.stripeStatus === 400) return checkoutSession({ ...params, paymentMethodTypes: ['card'] });
+    throw e;
+  }
+}
+
+function checkoutSession({
+  orderId, orderNumber, amountCents, description, customerEmail, successUrl, cancelUrl, name, metadata = {}, paymentMethodTypes,
 }) {
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
