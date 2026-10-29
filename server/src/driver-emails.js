@@ -40,7 +40,7 @@ module.exports = {
       `${esc([u.vehicle_color, u.vehicle_year, u.vehicle_make, u.vehicle_model].filter(Boolean).join(' '))}${u.vehicle_type ? ` (${esc(u.vehicle_type)})` : ''}${u.driver_profile?.city ? ` · ${esc(u.driver_profile.city)}` : ''}`,
     ],
     button: { href: `${base()}/#/people/${u.id}`, text: 'Review application' },
-    footer: 'Approve or reject it on the People page.',
+    footer: 'Approve or reject it on the Team page.',
   })),
 
   approved: (u) => send(u.email, "You're approved to drive with Choice Delivery", layout({

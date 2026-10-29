@@ -65,7 +65,6 @@ function AddAccountForm({ roles, companies, fixedCompanyId, onCreated, submitPat
 const PEOPLE_TABS = [
   { key: 'driver', label: 'Drivers' },
   { key: 'dispatcher', label: 'Dispatch' },
-  { key: 'shipper', label: 'Shippers' },
   { key: 'admin', label: 'Admins' },
 ];
 
@@ -75,15 +74,16 @@ export function PeoplePage() {
   const { data, error, loading, reload } = useApi(`/users?role=${tab}`, { pollMs: tab === 'driver' ? 30000 : 0 });
   const companies = useApi('/organizations');
   const [actionError, setActionError] = useState(null);
-  const roles = me.role === 'admin' ? ['driver', 'dispatcher', 'shipper', 'admin'] : ['driver', 'shipper'];
-  const canManage = (u) => u.id !== me.id && (me.role === 'admin' || ['driver', 'shipper'].includes(u.role));
+  // Customers' logins are managed by their own company (Team), not here.
+  const roles = me.role === 'admin' ? ['driver', 'dispatcher', 'admin'] : ['driver'];
+  const canManage = (u) => u.id !== me.id && (me.role === 'admin' || u.role === 'driver');
   const applicants = tab === 'driver' ? (data || []).filter((u) => u.driverStatus === 'applied').length : 0;
   // Applications first, so they're easy to find.
   const rows = tab === 'driver' && data ? [...data].sort((a, b) => Number(b.driverStatus === 'applied') - Number(a.driverStatus === 'applied')) : data;
 
   return html`
     <${Layout}>
-      <${PageHeader} title="People" subtitle="Drivers, dispatch and shipper accounts." />
+      <${PageHeader} title="Team" subtitle="Drivers, dispatch and admins." />
       ${tab === 'driver' && applicants > 0 && html`<${Alert} tone="warn">${applicants} driver application${applicants === 1 ? '' : 's'} waiting for review. Click a name to review.<//>`}
       <div class="tabs" role="tablist">
         ${PEOPLE_TABS.map((t) => html`<button role="tab" aria-selected=${tab === t.key}
@@ -96,7 +96,6 @@ export function PeoplePage() {
             <thead><tr>
               <th>Name</th><th>Contact</th>
               ${tab === 'driver' && html`<th>Vehicle</th><th>Approval</th><th>Status</th>`}
-              ${tab === 'shipper' && html`<th>Company</th>`}
               <th></th>
             </tr></thead>
             <tbody>
@@ -111,7 +110,6 @@ export function PeoplePage() {
                       <span class=${`badge ${u.isOnline ? 'green' : 'gray'}`}>${u.isOnline ? 'Online' : 'Offline'}</span>
                       ${u.lastLocation && html`<div class="small"><a href=${mapsLink(u.lastLocation)} target="_blank" rel="noopener">Seen ${timeAgo(u.locationUpdatedAt)}</a></div>`}
                     </td>`}
-                  ${tab === 'shipper' && html`<td data-label="Company">${u.organization?.name || '—'}</td>`}
                   <td class="row-actions">
                     ${canManage(u) && html`<${ActionButton} class="btn small" onError=${setActionError}
                       confirmText=${u.isActive ? `Disable ${u.email}? They will be signed out and can't log in.` : null}
@@ -161,7 +159,7 @@ export function DriverDetailPage({ id }) {
   const [note, setNote] = useState('');
   const [actionError, setActionError] = useState(null);
   if (loading && !u) return html`<${Layout}><${Spinner} /><//>`;
-  if (!u) return html`<${Layout}><${Alert} error=${error} /><a href="#/people">Back to people</a><//>`;
+  if (!u) return html`<${Layout}><${Alert} error=${error} /><a href="#/people">Back to team</a><//>`;
   const p = u.driverProfile || {};
   const review = (status, confirmText) => html`<${ActionButton} class=${`btn ${status === 'approved' ? 'primary' : status === 'suspended' ? 'danger' : ''}`}
     onError=${setActionError} confirmText=${confirmText}
@@ -171,7 +169,7 @@ export function DriverDetailPage({ id }) {
   const expired = (d) => d && d < new Date().toISOString().slice(0, 10);
   return html`
     <${Layout}>
-      <a class="back" href="#/people">← People</a>
+      <a class="back" href="#/people">← Team</a>
       <${PageHeader} title=${html`${u.name || u.email} <${DriverStatusBadge} user=${u} />`}
         subtitle=${u.appliedAt ? `Applied ${formatDate(u.appliedAt)}` : 'Driver'} />
       <${Alert} error=${actionError} />
@@ -577,7 +575,7 @@ function FeesEditor() {
       <h3>Driver pay</h3>
       <p class="muted small">What drivers earn per order, the same whatever vehicle they drive. Drivers only ever see their pay,
         never what the customer is charged. You can set a different amount on any order, and mark owners who drive as "no payout"
-        on their People page.</p>
+        on their Team page.</p>
       <div class="grid-2">
         <${Field} label="Per job ($)">
           <input type="number" min="0" step="0.01" value=${dollars(fees.driverPay.perJobCents)}

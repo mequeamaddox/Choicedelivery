@@ -18,7 +18,7 @@ export function Layout({ children }) {
     { href: '/orders/new', label: 'New order', icon: 'plus', tab: true },
     ...(isStaff(user) ? [
       { href: '/leads', label: 'Leads', icon: 'inbox', tab: true },
-      { href: '/people', label: 'People', icon: 'users', tab: true },
+      { href: '/people', label: 'Team', icon: 'users', tab: true },
       { href: '/companies', label: 'Companies', icon: 'building' },
       { href: '/invoices', label: 'Invoices', icon: 'list' },
       { href: '/payouts', label: 'Driver pay', icon: 'list' },
