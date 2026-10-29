@@ -2346,20 +2346,31 @@ test('invoices: Net 30 accounts are billed monthly, sent, paid by check or onlin
     invoice = (await call('POST', '/invoices', { token: t.dispatcher, body: { organizationId: orgId } })).data;
     process.env.STRIPE_SECRET_KEY = 'sk_test_x';
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
-    stripe.setFetch(async (url) => (url.endsWith('/checkout/sessions')
+    let lastCheckout = null;
+    stripe.setFetch(async (url, opts) => (url.endsWith('/checkout/sessions') && (lastCheckout = opts.body)
       ? { ok: true, json: async () => ({ id: 'cs_inv_1', url: 'https://checkout.stripe.com/pay/inv' }) }
       : { ok: true, json: async () => ({}) }));
     const pay = await fetch(`${base}/public/invoice/${invoice.publicToken}/pay`, { redirect: 'manual' });
     assert.equal(pay.headers.get('location'), 'https://checkout.stripe.com/pay/inv');
-    const payload = JSON.stringify({ type: 'checkout.session.completed', data: { object: {
-      id: 'cs_inv_1', payment_status: 'paid', amount_total: invoice.totalCents, metadata: { kind: 'invoice', invoice_id: invoice.id } } } });
-    const ts = Math.floor(Date.now() / 1000);
-    const sig = crypto.createHmac('sha256', 'whsec_test').update(`${ts}.${payload}`).digest('hex');
-    const wh = await fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
-    assert.equal(wh.status, 200);
+    assert.match(String(lastCheckout), /payment_method_types%5B0%5D=card&payment_method_types%5B1%5D=us_bank_account/, 'card or bank, no buy-now-pay-later');
+    const hook = (type, paymentStatus) => {
+      const payload = JSON.stringify({ type, data: { object: {
+        id: 'cs_inv_1', payment_status: paymentStatus, amount_total: invoice.totalCents, metadata: { kind: 'invoice', invoice_id: invoice.id } } } });
+      const ts = Math.floor(Date.now() / 1000);
+      const sig = crypto.createHmac('sha256', 'whsec_test').update(`${ts}.${payload}`).digest('hex');
+      return fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
+    };
+    // Paying from the bank (ACH): on its way first, paid once it clears.
+    assert.equal((await hook('checkout.session.completed', 'unpaid')).status, 200);
+    r = await call('GET', `/invoices/${invoice.id}`, { token: t.dispatcher });
+    assert.equal(r.data.status, 'open');
+    assert.equal(r.data.paymentProcessing, true);
+    const again = await fetch(`${base}/public/invoice/${invoice.publicToken}/pay`, { redirect: 'manual' });
+    assert.ok(!String(again.headers.get('location')).includes('checkout.stripe.com'), 'no second payment while the first clears');
+    assert.equal((await hook('checkout.session.async_payment_succeeded', 'paid')).status, 200);
     r = await call('GET', `/invoices/${invoice.id}`, { token: t.dispatcher });
     assert.equal(r.data.status, 'paid');
-    assert.equal(r.data.paidMethod, 'card');
+    assert.equal(r.data.paidMethod, 'ach');
     await settle();
   } finally {
     mailer.setSender(null);

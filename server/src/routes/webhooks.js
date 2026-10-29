@@ -19,6 +19,13 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
   }
   try {
     const session = event.data?.object || {};
+    // A bank (ACH) payment on an invoice was started; it's marked paid once it clears (async_payment_succeeded).
+    if (session.metadata?.kind === 'invoice' && event.type === 'checkout.session.completed' && session.payment_status === 'unpaid') {
+      await db.query(
+        "UPDATE invoices SET payment_processing_at = now() WHERE id = $1 AND stripe_session_id = $2 AND status = 'open'",
+        [session.metadata.invoice_id, session.id]);
+      return res.json({ received: true });
+    }
     const paidEvent = (event.type === 'checkout.session.completed' && session.payment_status === 'paid')
       || event.type === 'checkout.session.async_payment_succeeded';
     if (paidEvent) {
@@ -29,7 +36,8 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
           const { rows: [open] } = await client.query(
             "SELECT id FROM invoices WHERE id = $1 AND stripe_session_id = $2 AND status = 'open' AND total_cents = $3 FOR UPDATE",
             [session.metadata.invoice_id, session.id, session.amount_total]);
-          if (open) await require('../invoices').markPaid(client, open.id, { method: 'card', note: 'Paid online', actorId: null });
+          const bank = event.type === 'checkout.session.async_payment_succeeded';
+          if (open) await require('../invoices').markPaid(client, open.id, { method: bank ? 'ach' : 'card', note: 'Paid online', actorId: null });
         });
         return res.json({ received: true });
       }

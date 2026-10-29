@@ -40,6 +40,7 @@ async function stripeRequest(method, path, params, { idempotencyKey, account } =
 
 function createCheckoutSession({
   orderId, orderNumber, amountCents, description, customerEmail, successUrl, cancelUrl, name, metadata = {},
+  paymentMethodTypes, // e.g. ['card', 'us_bank_account'] for invoices; omitted: the methods turned on in the Stripe dashboard
 }) {
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
@@ -47,6 +48,7 @@ function createCheckoutSession({
     cancel_url: cancelUrl,
     customer_email: customerEmail || undefined,
     client_reference_id: orderId,
+    payment_method_types: paymentMethodTypes,
     metadata: { order_id: orderId, order_number: orderNumber, ...metadata },
     payment_intent_data: { metadata: { order_id: orderId, order_number: orderNumber, ...metadata } },
     line_items: [{

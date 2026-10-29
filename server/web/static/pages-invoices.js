@@ -9,6 +9,7 @@ const issued = (d) => (d ? new Date(d).toLocaleDateString('en-US', { month: 'sho
 function InvoiceStatus({ i }) {
   if (i.status === 'paid') return html`<span class="badge green">Paid</span>`;
   if (i.status === 'void') return html`<span class="badge gray">Void</span>`;
+  if (i.paymentProcessing) return html`<span class="badge blue">Bank payment clearing</span>`;
   if (i.overdue) return html`<span class="badge red">Overdue</span>`;
   return i.sentAt ? html`<span class="badge blue">Sent</span>` : html`<span class="badge amber">Not sent</span>`;
 }

@@ -94,6 +94,9 @@ function serialize(i, lines) {
     periodStart: i.period_start && ymd(i.period_start), periodEnd: ymd(i.period_end), issuedAt: i.issued_at,
     termsDays: i.terms_days, terms: termsLabel(i.terms_days), dueDate: ymd(i.due_date), totalCents: i.total_cents,
     status: i.status, overdue: i.status === 'open' && ymd(i.due_date) < today,
+    // A bank payment on its way (it can take 3–5 business days); after 10 days it's treated as failed.
+    paymentProcessing: i.status === 'open' && !!i.payment_processing_at && Date.now() - new Date(i.payment_processing_at) < 10 * 864e5,
+    paymentProcessingAt: i.payment_processing_at || null,
     sentAt: i.sent_at, sentTo: i.sent_to, remindedAt: i.reminded_at, paidAt: i.paid_at,
     paidMethod: i.paid_method, paidMethodLabel: PAID_METHODS[i.paid_method] || i.paid_method || null, paidNote: i.paid_note,
     publicToken: i.public_token,
@@ -193,7 +196,8 @@ async function emailInvoice(inv, { to, reminder = false } = {}) {
       <tr><td style="color:#6b7280;padding:2px 14px 2px 0">Amount due</td><td><strong style="font-size:18px">${money(inv.totalCents)}</strong></td></tr>
     </table>
     <p><a href="${invoiceUrl(inv)}" style="background:#0f766e;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">View &amp; print invoice</a>
-      &nbsp; <a href="${invoiceUrl(inv)}/pay" style="background:#111827;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Pay ${money(inv.totalCents)} by card</a></p>
+      &nbsp; <a href="${invoiceUrl(inv)}/pay" style="background:#111827;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Pay ${money(inv.totalCents)} online</a></p>
+    <p style="color:#6b7280;font-size:13px">Pay online by card or straight from your bank account (ACH).</p>
     ${instructions ? `<p style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;white-space:pre-line"><strong>Other ways to pay</strong><br>${esc(instructions)}</p>` : ''}
     <table style="border-collapse:collapse;width:100%;margin-top:8px">
       <tr><th align="left" style="padding:6px">Date</th><th align="left" style="padding:6px">Delivery</th><th align="right" style="padding:6px">Amount</th></tr>
@@ -240,7 +244,8 @@ ${paidNow ? '<p class="stamp paid">Thank you! Your payment went through; this pa
 <div class="cols"><div><p class="muted">Bill to</p><p><strong>${esc(inv.company)}</strong></p>${inv.companyAddress ? `<p>${esc(inv.companyAddress)}</p>` : ''}${inv.billingEmail ? `<p>${esc(inv.billingEmail)}</p>` : ''}</div>
   <div><p class="muted">Deliveries</p><p>${inv.periodStart ? `${esc(longDate(inv.periodStart))} – ` : 'Through '}${esc(longDate(inv.periodEnd))}</p></div>
   <div class="due"><p class="muted">${inv.status === 'paid' ? 'Amount paid' : 'Amount due'}</p><strong>${money(inv.totalCents)}</strong><p class="muted">Due ${esc(longDate(inv.dueDate))}</p></div></div>
-<div class="actions">${inv.status === 'open' ? `<a class="btn primary" href="${invoiceUrl(inv)}/pay">Pay ${money(inv.totalCents)} by card</a>` : ''}
+${inv.paymentProcessing ? '<p class="stamp paid">Your bank payment is on its way. It usually takes 3–5 business days to clear; this invoice is marked paid when it does.</p>' : ''}
+<div class="actions">${inv.status === 'open' && !inv.paymentProcessing ? `<a class="btn primary" href="${invoiceUrl(inv)}/pay">Pay ${money(inv.totalCents)} online (card or bank)</a>` : ''}
   <button class="btn" onclick="window.print()">Print / Save as PDF</button><a class="btn" href="${invoiceUrl(inv)}/csv">Download spreadsheet (CSV)</a></div>
 <table><thead><tr><th>Date</th><th>Delivery</th><th>PO / reference</th><th class="num">Amount</th></tr></thead><tbody>${lines}</tbody>
 <tfoot><tr><td colspan="3">Total</td><td class="num">${money(inv.totalCents)}</td></tr></tfoot></table>

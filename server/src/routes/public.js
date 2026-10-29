@@ -143,18 +143,22 @@ router.get('/invoice/:token/pay', rateLimit({ windowMs: 60 * 1000, max: 20 }), a
   const invoice = /^[0-9a-f-]{36}$/i.test(req.params.token) ? await inv.getInvoice('public_token', req.params.token) : null;
   if (!invoice) return res.status(404).type('html').send(simplePage('Invoice not found', 'Check the link in your email, or email info@choicedeliverysc.com.'));
   const page = inv.invoiceUrl(invoice);
-  if (invoice.status !== 'open') return res.redirect(303, page);
+  if (invoice.status !== 'open' || invoice.paymentProcessing) return res.redirect(303, page);
   if (!stripe.enabled() || invoice.totalCents < 50) {
     return res.type('html').send(simplePage('Card payment unavailable', `Please pay invoice ${escapeHtml(invoice.invoiceNumber)} by check or bank transfer, or email info@choicedeliverysc.com.`));
   }
   const { rows: [{ stripe_session_id: previous }] } = await db.query('SELECT stripe_session_id FROM invoices WHERE id = $1', [invoice.id]);
   if (previous) await stripe.expireCheckoutSession(previous).catch(() => {});
-  const session = await stripe.createCheckoutSession({
+  // Business invoices: card or bank transfer (ACH) only, no buy-now-pay-later. If ACH isn't turned on in
+  // Stripe yet, card alone.
+  const params = {
     orderId: invoice.id, orderNumber: invoice.invoiceNumber, amountCents: invoice.totalCents,
     name: `Choice Delivery invoice ${invoice.invoiceNumber}`, description: `${invoice.company} · ${invoice.lines.length} line${invoice.lines.length === 1 ? '' : 's'}`,
     customerEmail: invoice.billingEmail || undefined, successUrl: `${page}?paid=1`, cancelUrl: page,
     metadata: { kind: 'invoice', invoice_id: invoice.id },
-  });
+  };
+  const session = await stripe.createCheckoutSession({ ...params, paymentMethodTypes: ['card', 'us_bank_account'] })
+    .catch(() => stripe.createCheckoutSession({ ...params, paymentMethodTypes: ['card'] }));
   await db.query('UPDATE invoices SET stripe_session_id = $2 WHERE id = $1', [invoice.id, session.id]);
   res.redirect(303, session.url);
 }));
