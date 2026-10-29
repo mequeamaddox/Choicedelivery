@@ -167,6 +167,8 @@ router.post('/book', limitGuestBookings, asyncH(async (req, res) => {
   if (b.agreeTerms !== true) throw new HttpError(400, 'Please agree to the Terms & Conditions to book');
   // The same check as the booking form: "10 Melissa Ct" alone could be anywhere.
   const stopList = Array.isArray(b.stops) ? b.stops : [];
+  // Extra stops are for account customers.
+  if (stopList.length > 2) throw new HttpError(400, 'Guest bookings have one pickup and one drop-off. Create a free account to add stops.');
   const vague = stopList.findIndex((st) => !/\b\d{5}\b/.test(st?.address || '') && !/,\s*[A-Za-z]/.test(st?.address || ''));
   if (vague >= 0) {
     const which = vague === 0 ? 'pickup' : vague === stopList.length - 1 ? 'drop-off' : `stop ${vague + 1}`;

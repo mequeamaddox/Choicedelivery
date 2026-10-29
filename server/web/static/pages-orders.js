@@ -168,7 +168,8 @@ export function ChargesNotice({ fees }) {
     </section>`;
 }
 
-function StopEditor({ stops, setStops }) {
+// multi: account customers and dispatch can add, reorder and remove stops; guests book one pickup and one drop-off.
+function StopEditor({ stops, setStops, multi = true }) {
   const update = (i, patch) => setStops(stops.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const move = (i, d) => {
     const next = [...stops];
@@ -182,16 +183,16 @@ function StopEditor({ stops, setStops }) {
       ${stops.map((s, i) => html`
         <fieldset class="stop-card">
           <legend>
-            <select value=${s.type} onChange=${(e) => update(i, { type: e.target.value })} aria-label="Stop type">
+            ${multi ? html`<select value=${s.type} onChange=${(e) => update(i, { type: e.target.value })} aria-label="Stop type">
               <option value="pickup">Pickup</option><option value="dropoff">Drop-off</option>
             </select>
-            <span class="muted small">Stop ${i + 1}</span>
+            <span class="muted small">Stop ${i + 1}</span>` : html`<strong>${s.type === 'pickup' ? 'Pickup' : 'Drop-off'}</strong>`}
           </legend>
-          <div class="stop-tools">
+          ${multi && html`<div class="stop-tools">
             <button type="button" class="icon-btn" disabled=${i === 0} onClick=${() => move(i, -1)} aria-label="Move up">↑</button>
             <button type="button" class="icon-btn" disabled=${i === stops.length - 1} onClick=${() => move(i, 1)} aria-label="Move down">↓</button>
             <button type="button" class="icon-btn" disabled=${stops.length <= 2} onClick=${() => remove(i)} aria-label="Remove stop">✕</button>
-          </div>
+          </div>`}
           <${Field} label="Address" hint=${s.location ? '✓ Located on the map' : 'Start typing and pick a suggestion so drivers get a map pin.'}>
             <${AddressInput} required placeholder="Street, city, state, ZIP" value=${s.address}
               onChange=${(patch) => update(i, patch)} />
@@ -203,7 +204,8 @@ function StopEditor({ stops, setStops }) {
           <${Field} label="Instructions for the driver"><input placeholder="Dock number, gate code, who to ask for…" value=${s.instructions}
             onInput=${(e) => update(i, { instructions: e.target.value })} /><//>
         </fieldset>`)}
-      <button type="button" class="btn" onClick=${add}>+ Add another stop</button>
+      ${multi ? html`<button type="button" class="btn" onClick=${add}>+ Add another stop</button>`
+        : html`<p class="small muted">Need more than one pickup or drop-off? <a href="#/signup">Create a free account</a> to add stops.</p>`}
     </div>`;
 }
 
@@ -404,7 +406,7 @@ export function NewOrderPage({ guest = false }) {
         <${Alert} error=${error} />
         <section class="card">
           <h2>Route</h2>
-          <${StopEditor} stops=${stops} setStops=${setStops} />
+          <${StopEditor} stops=${stops} setStops=${setStops} multi=${!guest} />
         </section>
         <section class="card">
           <h2>Service</h2>

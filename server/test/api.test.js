@@ -2382,6 +2382,11 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
     r = await call('POST', '/public/book', { body: { ...far, ...guest, customerEmail: 'far@guest.test' } });
     assert.equal(r.status, 400, 'a drop-off with no city or ZIP is refused');
     assert.match(r.data.message, /city or ZIP to the drop-off/);
+    const threeStops = withCities(orderBody());
+    threeStops.stops.splice(1, 0, { type: 'dropoff', address: '5 Elm St, Columbia, SC' });
+    r = await call('POST', '/public/book', { body: { ...threeStops, ...guest } });
+    assert.equal(r.status, 400, 'extra stops are for account customers');
+    assert.match(r.data.message, /Create a free account/);
     far.stops[1] = { ...far.stops[1], address: '2 Oak Ave, Spartanburg, SC 29301' };
     r = await call('POST', '/public/book', { body: { ...far, ...guest, customerEmail: 'far@guest.test' } });
     assert.equal(r.status, 201);

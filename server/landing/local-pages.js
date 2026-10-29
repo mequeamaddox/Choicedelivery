@@ -135,7 +135,8 @@ const SERVICES = [
     faqs: [
       ['Can you pick up an order I already paid for at the supply house?', 'Yes. Pay the supply house as usual, put the order or PO number and the name it\'s under in the pickup instructions, and we\'ll pick it up from the counter.'],
       ['Can you deliver to a job site without a street address?', 'Yes. Use the closest address and add directions in the instructions for the driver, like the lot number, gate code or which side of the building. We\'ll send a photo of where we left everything.'],
-      ['Do you offer accounts for contractors?', 'Yes. Contractors and supply houses that book often can set up a business account, add their team, and approved accounts can be invoiced instead of paying by card for each run.'],
+      ['Do you offer accounts for contractors?', 'Yes. Contractors and supply houses that book often can set up a business account, add their team, book runs with several stops, and approved accounts can be invoiced instead of paying by card for each run.'],
+      ['Are you insured?', 'Yes. We carry commercial cargo insurance, and we can send a certificate of insurance for your vendor file. Supply houses and contractors with regular runs can set coverage terms in a service agreement.'],
     ],
   },
   {
@@ -147,7 +148,7 @@ const SERVICES = [
     intro: 'New hire starting Monday? Laptop needs to come back from someone who left? We deliver and pick up office equipment for remote workers and branch offices, with live tracking and a signature at every handoff.',
     sections: [
       ['Delivery and pickup, door to door', 'We take laptops, monitors, docking stations, printers, phones, chairs and other office equipment from your office, IT vendor or repair shop to an employee\'s home or a branch office, and bring equipment back the same way.'],
-      ['Onboarding, swaps and returns', 'IT teams, office managers and HR use us to get a new hire set up on day one, swap out a broken laptop the same day, collect equipment when someone leaves, and move gear between offices. You can book several stops on one order.'],
+      ['Onboarding, swaps and returns', 'IT teams, office managers and HR use us to get a new hire set up on day one, swap out a broken laptop the same day, collect equipment when someone leaves, and move gear between offices. Business accounts can book several stops on one order.'],
       ['Signed for at every handoff', 'Every delivery and pickup is confirmed with a signature, a photo, the time and the GPS location, so you have a record of who received what and when. Add serial or asset tag numbers to the instructions for the driver for your records.'],
       ['Handled with care', 'Equipment rides in the vehicle with the driver, not in a sorting warehouse with other packages. Pack it in its box or a padded case, and have someone to load and unload heavier pieces. Large copiers and anything needing a liftgate are outside what we carry.'],
     ],
