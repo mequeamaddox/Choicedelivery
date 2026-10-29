@@ -101,7 +101,8 @@ export function SignupPage({ medical = false }) {
         <button class="btn primary block" disabled=${busy}>${busy ? 'Creating account…' : 'Create account'}</button>
       </form>
       <p class="auth-links">Already have an account? <a href="#/login">Log in</a>${booking ? ' and your quote will be waiting.' : ''}</p>
-      <p class="auth-links small">Your company already uses Choice Delivery? Ask a coworker to invite you from their Team page.</p>
+      <p class="auth-links small">Your team already has an account? Ask a coworker to invite you from their Team page.
+        A different location or branch can sign up on its own here.</p>
       ${!medical && !booking && html`<p class="auth-links small">Lab, clinic or pharmacy? <a href="#/signup/medical">Open a medical facility account</a></p>`}
     <//>`;
 }
