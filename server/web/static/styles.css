@@ -365,6 +365,8 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; display: flex; flex-direction: column; gap: .2rem; }
 .stat strong { font-size: 1.25rem; }
 @media (max-width: 520px) { .stat-row { grid-template-columns: 1fr; } }
+.stat-row.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 520px) { .stat-row.four { grid-template-columns: 1fr 1fr; } }
 .stack-sm { display: flex; flex-direction: column; gap: .35rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .payout-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .payout-options > div { border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; }
@@ -443,6 +445,9 @@ fieldset.card { margin: 0; min-width: 0; }
 .plain-list { list-style: none; padding: 0; margin: 0; }
 .plain-list li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid var(--border); }
 .plain-list li.inactive strong { color: var(--muted, #6b7280); }
+
+/* Expenses */
+.receipt-preview { max-width: 220px; max-height: 260px; border-radius: 8px; border: 1px solid var(--border); object-fit: contain; }
 
 /* Invoices */
 .application { border-top: 1px solid var(--border); padding-top: .75rem; }

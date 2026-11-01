@@ -21,6 +21,7 @@ export function Layout({ children }) {
       { href: '/people', label: 'Team', icon: 'users', tab: true },
       { href: '/companies', label: 'Companies', icon: 'building' },
       { href: '/invoices', label: 'Invoices', icon: 'list' },
+      ...(user.role === 'admin' ? [{ href: '/expenses', label: 'Expenses', icon: 'list' }] : []),
       { href: '/payouts', label: 'Driver pay', icon: 'list' },
     ] : []),
     ...(user?.role === 'shipper' ? [{ href: '/team', label: 'Team', icon: 'users', tab: true }] : []),

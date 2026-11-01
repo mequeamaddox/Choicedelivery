@@ -139,6 +139,7 @@ app.use('/auth', require('./routes/auth'));
 app.use('/users', require('./routes/users'));
 app.use('/organizations', require('./routes/organizations'));
 app.use('/invoices', require('./routes/invoices'));
+app.use('/expenses', require('./routes/expenses'));
 app.use('/orders', require('./routes/orders'));
 app.use('/track', require('./routes/track'));
 app.use('/public', require('./routes/public'));

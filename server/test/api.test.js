@@ -2478,6 +2478,35 @@ test('net terms: a card customer applies, dispatch approves or declines, approva
   }
 });
 
+test('expenses: the owner logs expenses with receipts and sees money in, driver pay and spending by month', async () => {
+  const year = new Date().getFullYear();
+  let r = await call('POST', '/expenses', { token: t.dispatcher, body: { day: `${year}-03-04`, cents: 4500, category: 'fuel' } });
+  assert.equal(r.status, 403, 'admin only');
+  assert.equal((await call('GET', '/expenses', { token: t.acme })).status, 403);
+  r = await call('POST', '/expenses', { token: t.admin, body: { day: `${year}-03-04`, cents: 4500, category: 'nope' } });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/expenses', { token: t.admin, body: { day: `${year}-03-04`, cents: 4512, category: 'fuel', vendor: 'QT', receipt: 'data:image/jpeg;base64,AAAA' } });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.equal(r.data.day, `${year}-03-04`);
+  assert.equal(r.data.hasReceipt, true);
+  const fuel = r.data.id;
+  r = await call('POST', '/expenses', { token: t.admin, body: { day: `${year}-03-20`, cents: 18900, category: 'insurance', note: 'Cargo policy' } });
+  const ins = r.data.id;
+  r = await call('PATCH', `/expenses/${ins}`, { token: t.admin, body: { cents: 19900 } });
+  assert.equal(r.data.cents, 19900);
+  r = await call('GET', `/expenses/${fuel}/receipt`, { token: t.admin });
+  assert.equal(r.data.receipt, 'data:image/jpeg;base64,AAAA');
+  r = await call('GET', `/expenses?year=${year}`, { token: t.admin });
+  assert.equal(r.data.months.length, 12);
+  const march = r.data.months.find((m) => m.month === `${year}-03`);
+  assert.equal(march.expenseCents, 4512 + 19900);
+  assert.equal(march.netCents, march.revenueCents - march.driverPayCents - march.expenseCents);
+  assert.deepEqual(r.data.byCategory.map((c) => c.category), ['insurance', 'fuel']);
+  assert.ok(!('receipt' in r.data.expenses[0]), 'receipts load one at a time');
+  assert.equal((await call('DELETE', `/expenses/${fuel}`, { token: t.admin })).status, 204);
+  assert.equal((await call('DELETE', `/expenses/${ins}`, { token: t.admin })).status, 204);
+});
+
 test('a customer signing up gets a welcome email and the owner is told where they came from', async () => {
   const mailer = require('../src/mailer');
   const mails = [];
