@@ -125,10 +125,17 @@ export function ExpensesPage() {
         </div>
         ${(d.months.some((m) => m.revenueCents || m.driverPayCents)) && html`<section class="card">
           <h2>Numbers from test orders?</h2>
-          <p class="small">If you haven't started real work yet, mark every order so far as a test and they're left out of
-            these numbers. Real orders from now on count as usual, and you can switch any one back on its order page.</p>
-          <${ActionButton} class="btn" onError=${setError} confirmText="Mark every order booked so far as a test? They stay in your order history but are left out of this report."
-            onClick=${async () => { await api('/expenses/mark-tests', { method: 'POST' }); r.reload(); }}>Mark all orders so far as tests<//>
+          <p class="small">Before real work starts, you can delete every order so far: their stops, photos, charges and history,
+            plus test invoices and Net terms applications. Order numbers start again at CD-100001. Companies, logins, drivers and
+            your settings stay. <strong>This can't be undone.</strong></p>
+          <${ActionButton} class="btn danger" onError=${setError}
+            onClick=${async () => {
+              const typed = window.prompt('This permanently deletes every order, invoice and Net terms application. Type DELETE to confirm.');
+              if (typed == null) return;
+              const c = await api('/expenses/delete-all-orders', { method: 'POST', body: { confirm: typed.trim() } });
+              window.alert(`Deleted ${c.orders} order${c.orders === 1 ? '' : 's'}, ${c.invoices} invoice${c.invoices === 1 ? '' : 's'} and ${c.applications} application${c.applications === 1 ? '' : 's'}.`);
+              r.reload();
+            }}>Delete all orders so far<//>
         </section>`}
         <${AddExpense} categories=${d.categories} onAdded=${r.reload} />
         <section class="card">

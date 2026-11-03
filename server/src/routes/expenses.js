@@ -89,11 +89,21 @@ router.get('/', asyncH(async (req, res) => {
   });
 }));
 
-// "Everything so far was testing": marks every order booked up to now as a test, so it's left out of the
-// report. Real orders after this count as usual; one order can be switched back on its page.
-router.post('/mark-tests', asyncH(async (req, res) => {
-  const { rowCount } = await db.query('UPDATE orders SET is_test = true WHERE NOT is_test AND created_at <= now()');
-  res.json({ marked: rowCount });
+// Starting fresh before real work: deletes every order (with its stops, proof, charges and history), all
+// invoices and Net terms applications, and restarts the numbering at CD-100001 and INV-1001. Companies,
+// logins, drivers and settings stay. Can't be undone, so the body must say { confirm: 'DELETE' }.
+router.post('/delete-all-orders', asyncH(async (req, res) => {
+  if (req.body?.confirm !== 'DELETE') throw new HttpError(400, 'Type DELETE to confirm');
+  const counts = await db.withTx(async (client) => {
+    const invoices = (await client.query('DELETE FROM invoices')).rowCount;
+    const applications = (await client.query('DELETE FROM credit_applications')).rowCount;
+    const orders = (await client.query('DELETE FROM orders')).rowCount;
+    await client.query('ALTER SEQUENCE order_number_seq RESTART WITH 100001');
+    await client.query('ALTER SEQUENCE invoice_number_seq RESTART WITH 1001');
+    return { orders, invoices, applications };
+  });
+  console.log(`Owner deleted all orders: ${JSON.stringify(counts)}`);
+  res.json(counts);
 }));
 
 router.post('/', asyncH(async (req, res) => {

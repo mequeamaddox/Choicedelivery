@@ -2531,12 +2531,8 @@ test('expenses: the owner logs expenses with receipts and sees money in, driver 
   assert.equal(r.data.isTest, true);
   assert.equal((await monthNow()).revenueCents, before.revenueCents);
   await call('POST', `/orders/${testRun}/test`, { token: t.admin, body: { isTest: false } });
-  r = await call('POST', '/expenses/mark-tests', { token: t.admin });
-  assert.ok(r.data.marked > 0);
-  const cleared = await monthNow();
-  assert.equal(cleared.revenueCents, 0);
-  assert.equal(cleared.driverPayCents, 0);
-  await db.query('UPDATE orders SET is_test = false');
+  assert.equal((await call('POST', '/expenses/delete-all-orders', { token: t.admin, body: { confirm: 'yes' } })).status, 400, 'has to say DELETE');
+  assert.equal((await call('POST', '/expenses/delete-all-orders', { token: t.dispatcher, body: { confirm: 'DELETE' } })).status, 403);
 
   assert.equal((await call('DELETE', `/expenses/${fuel}`, { token: t.admin })).status, 204);
   assert.equal((await call('DELETE', `/expenses/${ins}`, { token: t.admin })).status, 204);
@@ -2715,4 +2711,16 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_WEBHOOK_SECRET;
   }
+});
+
+// Last: it wipes every order. Companies, logins and settings stay; numbering starts again.
+test('the owner can delete every order before real work starts', async () => {
+  let r = await call('POST', '/expenses/delete-all-orders', { token: t.admin, body: { confirm: 'DELETE' } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.ok(r.data.orders > 0);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, 0);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM invoices')).rows[0].n, 0);
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+  assert.equal(r.data.orderNumber, 'CD-100001', 'numbering starts again');
+  assert.equal((await call('GET', '/auth/me', { token: t.acme })).status, 200, 'logins stay');
 });
