@@ -338,7 +338,9 @@ test('rate card: vehicle base covers 10 miles, then per mile; rush, weekend, hol
   assert.equal(price({ vehicleType: 'Minivan', distanceMiles: 12 }).totalCents, 3900, 'Minivan: $35 + 2 mi x $2.00');
   assert.equal(price({ vehicleType: 'Pickup Truck', distanceMiles: 12 }).totalCents, 5000, 'Truck: $45 + 2 mi x $2.50');
   assert.equal(price({ vehicleType: 'Pickup Truck', distanceMiles: 3 }).totalCents, 4500);
-  assert.equal(price({ vehicleType: 'Cargo Van', distanceMiles: 3 }).needsReview, true, 'Cargo Van is off by default');
+  assert.equal(price({ vehicleType: 'Cargo Van', distanceMiles: 12 }).totalCents, 4450, 'Cargo Van: $40 + 2 mi x $2.25');
+  const vanOff = { ...DEFAULT_FEES, vehicles: { ...DEFAULT_FEES.vehicles, 'Cargo Van': { ...DEFAULT_FEES.vehicles['Cargo Van'], enabled: false } } };
+  assert.equal(calculatePrice({ vehicleType: 'Cargo Van', distanceMiles: 3, fees: vanOff }).needsReview, true, 'a vehicle switched off needs review');
   assert.equal(price({ vehicleType: 'Van', distanceMiles: 12 }).totalCents, 2800, 'unknown types get Car rates');
   assert.equal(price({ distanceMiles: 12, serviceLevel: 'rush' }).totalCents, 5405, 'rush adds $25 + 35% of the $3 mileage');
   assert.equal(price({ distanceMiles: 12, serviceLevel: 'same_day' }).rushFeeCents, 2605, 'old name still works');

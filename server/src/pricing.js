@@ -108,11 +108,11 @@ const DEFAULT_FEES = {
   version: 2,
   // By vehicle: base price covering the first includedMiles, per-mile rate after that, and the most it
   // carries (heavier loads need a bigger vehicle or manual review). The biggest vehicle is a half-ton
-  // pickup; there's no liftgate/box-truck service. Cargo Van is off unless the owner turns it on.
+  // pickup; there's no liftgate/box-truck service. Each can be switched off in the fee settings.
   vehicles: {
     Car: { description: 'Envelopes, boxes, small parcels', baseCents: 2500, includedMiles: 10, perMileCents: 150, maxLbs: 150, enabled: true },
     Minivan: { description: 'Several boxes, small furniture', baseCents: 3500, includedMiles: 10, perMileCents: 200, maxLbs: 500, enabled: true },
-    'Cargo Van': { description: 'Larger loads that must stay dry', baseCents: 4000, includedMiles: 10, perMileCents: 225, maxLbs: 1000, enabled: false },
+    'Cargo Van': { description: 'Larger loads that must stay dry', baseCents: 4000, includedMiles: 10, perMileCents: 225, maxLbs: 1000, enabled: true },
     'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', baseCents: 4500, includedMiles: 10, perMileCents: 250, maxLbs: 1000, enabled: true },
   },
   // Rush: a flat amount, plus a share of the distance charges (extra miles + travel to pickup) so far

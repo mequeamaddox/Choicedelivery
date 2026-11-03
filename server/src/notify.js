@@ -241,7 +241,7 @@ async function welcomeShipper({ user, company }) {
       `<ol style="padding-left:20px">${[
         'Log in and tap <strong>New order</strong>.',
         "Enter the pickup and drop-off addresses. You'll see your exact price right away.",
-        'Choose <strong>Standard</strong> (same day) or <strong>Rush</strong> (first in line and driven straight there, about 2 hours around Columbia), pick a car, minivan or pickup truck, and pay securely.',
+        'Choose <strong>Standard</strong> (same day) or <strong>Rush</strong> (first in line and driven straight there, about 2 hours around Columbia), pick a car, minivan, cargo van or pickup truck, and pay securely.',
       ].map(li).join('')}</ol>`,
       p("Once it's booked, you'll get a tracking link to follow your driver on the map, plus a photo and signature when it's delivered."),
       p('<strong>A few things that make it easier:</strong>'),
