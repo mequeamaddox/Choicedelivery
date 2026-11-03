@@ -2505,6 +2505,27 @@ test('expenses: the owner logs expenses with receipts and sees money in, driver 
   assert.equal(march.netCents, march.revenueCents - march.driverPayCents - march.expenseCents);
   assert.deepEqual(r.data.byCategory.map((c) => c.category), ['insurance', 'fuel']);
   assert.ok(!('receipt' in r.data.expenses[0]), 'receipts load one at a time');
+
+  // An order dispatch booked and delivered but nobody paid (a test run) isn't money in until it's marked paid.
+  const thisMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()).slice(0, 7);
+  const monthNow = async () => (await call('GET', `/expenses?year=${thisMonth.slice(0, 4)}`, { token: t.admin })).data.months.find((m) => m.month === thisMonth);
+  const before = await monthNow();
+  r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody({ priceCents: 3300 }) });
+  const testRun = r.data.id;
+  r = await call('POST', `/orders/${testRun}/accept`, { token: t.d1 });
+  await call('POST', `/orders/${testRun}/stops/${r.data.stops[0].id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
+  await call('POST', `/orders/${testRun}/stops/${r.data.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
+  await call('POST', `/orders/${testRun}/stops/${r.data.stops[1].id}/arrive`, { token: t.d1, body: {} });
+  r = await call('POST', `/orders/${testRun}/stops/${r.data.stops[1].id}/complete`, { token: t.d1, body: { photo: 'data:p', signature: 'data:s' } });
+  assert.equal(r.data.status, 'completed');
+  let after = await monthNow();
+  assert.equal(after.revenueCents, before.revenueCents, 'an unpaid order dispatch booked is not money in');
+  assert.equal(after.driverPayCents, before.driverPayCents);
+  await call('POST', `/orders/${testRun}/payment`, { token: t.dispatcher, body: { status: 'paid', method: 'cash' } });
+  after = await monthNow();
+  assert.equal(after.revenueCents, before.revenueCents + 3300, 'it counts once marked paid');
+  assert.ok(after.driverPayCents > before.driverPayCents);
+
   assert.equal((await call('DELETE', `/expenses/${fuel}`, { token: t.admin })).status, 204);
   assert.equal((await call('DELETE', `/expenses/${ins}`, { token: t.admin })).status, 204);
 });

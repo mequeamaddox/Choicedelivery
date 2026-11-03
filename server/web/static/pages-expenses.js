@@ -136,7 +136,8 @@ export function ExpensesPage() {
               <td data-label="What's left"><strong class=${m.netCents < 0 ? 'error-text' : ''}>${formatMoney(m.netCents)}</strong></td>
             </tr>`)}</tbody>
           </table></div>
-          <p class="small muted">Money in is delivered orders and their extra charges (refunded and waived ones left out). Card
+          <p class="small muted">Money in is what you actually collected or billed: card payments (less refunds), deliveries on a
+            monthly invoice account, and paid extra charges. Orders you booked yourself count once you mark them paid. Card
             processing fees aren't included; add them as an expense from your Stripe payouts. This is a guide, not your tax return:
             your tax preparer decides what's deductible.</p>
         </section>

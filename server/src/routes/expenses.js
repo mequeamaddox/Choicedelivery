@@ -49,17 +49,29 @@ router.get('/', asyncH(async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, to_char(day, 'YYYY-MM-DD') AS day, cents, category, vendor, note, created_at, receipt IS NOT NULL AS has_receipt
      FROM expenses WHERE extract(year FROM day) = $1 ORDER BY day DESC, created_at DESC`, [year]);
-  // Money in (delivered orders and their extra charges) and driver pay, by month, to set against expenses.
+  // Money in: only money actually collected or billed. Card payments (less refunds), deliveries on a
+  // monthly invoice account, and extra charges paid or billed to an account. Orders dispatch booked and
+  // never marked paid (like test runs) don't count until they're marked paid. Driver pay counts for those
+  // same orders, or once it's actually been paid out.
   const { rows: months } = await db.query(
-    `SELECT to_char(m, 'YYYY-MM') AS month,
-       COALESCE((SELECT sum(o.price_cents) FROM orders o
-         WHERE o.status = 'completed' AND NOT o.is_demo AND o.payment_status NOT IN ('waived', 'refunded')
-           AND date_trunc('month', o.completed_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int
+    `WITH counted AS (
+       SELECT o.id, o.completed_at, o.driver_pay_cents, o.driver_paid_at,
+         CASE WHEN o.payment_status = 'paid' THEN GREATEST(COALESCE(o.paid_cents, o.price_cents) - COALESCE(o.refunded_cents, 0), 0)
+              WHEN o.payment_status = 'invoice' AND org.billing_mode = 'invoice' THEN o.price_cents
+              ELSE 0 END AS in_cents
+       FROM orders o LEFT JOIN organizations org ON org.id = o.organization_id
+       WHERE o.status = 'completed' AND NOT o.is_demo
+     )
+     SELECT to_char(m, 'YYYY-MM') AS month,
+       COALESCE((SELECT sum(in_cents) FROM counted
+         WHERE date_trunc('month', completed_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int
      + COALESCE((SELECT sum(c.cents) FROM order_charges c JOIN orders o ON o.id = c.order_id
-         WHERE c.status <> 'waived' AND NOT o.is_demo AND date_trunc('month', c.created_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int AS revenue_cents,
-       COALESCE((SELECT sum(o.driver_pay_cents) FROM orders o
-         WHERE o.status = 'completed' AND NOT o.is_demo
-           AND date_trunc('month', o.completed_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int AS driver_pay_cents,
+         LEFT JOIN organizations org ON org.id = o.organization_id
+         WHERE NOT o.is_demo AND (c.status = 'paid' OR (c.status = 'invoice' AND org.billing_mode = 'invoice'))
+           AND date_trunc('month', c.created_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int AS revenue_cents,
+       COALESCE((SELECT sum(driver_pay_cents) FROM counted
+         WHERE (in_cents > 0 OR driver_paid_at IS NOT NULL)
+           AND date_trunc('month', completed_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int AS driver_pay_cents,
        COALESCE((SELECT sum(cents) FROM expenses WHERE date_trunc('month', day) = m), 0)::int AS expense_cents
      FROM generate_series(make_date($1, 1, 1)::timestamp, make_date($1, 12, 1)::timestamp, interval '1 month') AS m
      ORDER BY m`, [year]);
