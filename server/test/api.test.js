@@ -2525,6 +2525,18 @@ test('expenses: the owner logs expenses with receipts and sees money in, driver 
   after = await monthNow();
   assert.equal(after.revenueCents, before.revenueCents + 3300, 'it counts once marked paid');
   assert.ok(after.driverPayCents > before.driverPayCents);
+  // Marked as a test, it's left out again; "everything so far was testing" marks them all.
+  assert.equal((await call('POST', `/orders/${testRun}/test`, { token: t.dispatcher, body: { isTest: true } })).status, 403);
+  r = await call('POST', `/orders/${testRun}/test`, { token: t.admin, body: { isTest: true } });
+  assert.equal(r.data.isTest, true);
+  assert.equal((await monthNow()).revenueCents, before.revenueCents);
+  await call('POST', `/orders/${testRun}/test`, { token: t.admin, body: { isTest: false } });
+  r = await call('POST', '/expenses/mark-tests', { token: t.admin });
+  assert.ok(r.data.marked > 0);
+  const cleared = await monthNow();
+  assert.equal(cleared.revenueCents, 0);
+  assert.equal(cleared.driverPayCents, 0);
+  await db.query('UPDATE orders SET is_test = false');
 
   assert.equal((await call('DELETE', `/expenses/${fuel}`, { token: t.admin })).status, 204);
   assert.equal((await call('DELETE', `/expenses/${ins}`, { token: t.admin })).status, 204);

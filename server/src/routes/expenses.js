@@ -60,14 +60,14 @@ router.get('/', asyncH(async (req, res) => {
               WHEN o.payment_status = 'invoice' AND org.billing_mode = 'invoice' THEN o.price_cents
               ELSE 0 END AS in_cents
        FROM orders o LEFT JOIN organizations org ON org.id = o.organization_id
-       WHERE o.status = 'completed' AND NOT o.is_demo
+       WHERE o.status = 'completed' AND NOT o.is_demo AND NOT o.is_test
      )
      SELECT to_char(m, 'YYYY-MM') AS month,
        COALESCE((SELECT sum(in_cents) FROM counted
          WHERE date_trunc('month', completed_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int
      + COALESCE((SELECT sum(c.cents) FROM order_charges c JOIN orders o ON o.id = c.order_id
          LEFT JOIN organizations org ON org.id = o.organization_id
-         WHERE NOT o.is_demo AND (c.status = 'paid' OR (c.status = 'invoice' AND org.billing_mode = 'invoice'))
+         WHERE NOT o.is_demo AND NOT o.is_test AND (c.status = 'paid' OR (c.status = 'invoice' AND org.billing_mode = 'invoice'))
            AND date_trunc('month', c.created_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int AS revenue_cents,
        COALESCE((SELECT sum(driver_pay_cents) FROM counted
          WHERE (in_cents > 0 OR driver_paid_at IS NOT NULL)
@@ -87,6 +87,13 @@ router.get('/', asyncH(async (req, res) => {
       netCents: m.revenue_cents - m.driver_pay_cents - m.expense_cents,
     })),
   });
+}));
+
+// "Everything so far was testing": marks every order booked up to now as a test, so it's left out of the
+// report. Real orders after this count as usual; one order can be switched back on its page.
+router.post('/mark-tests', asyncH(async (req, res) => {
+  const { rowCount } = await db.query('UPDATE orders SET is_test = true WHERE NOT is_test AND created_at <= now()');
+  res.json({ marked: rowCount });
 }));
 
 router.post('/', asyncH(async (req, res) => {

@@ -392,6 +392,14 @@ router.post('/:id/payment-link', requireRole('admin', 'dispatcher'), asyncH(asyn
 }));
 
 // Dispatch records payment made another way (cash, check), waives it, or moves it to invoicing.
+// An order that was only a test: left out of the owner's money report (or put back in).
+router.post('/:id/test', requireRole('admin'), asyncH(async (req, res) => {
+  if (typeof req.body?.isTest !== 'boolean') throw new HttpError(400, 'isTest must be true or false');
+  const order = await getOrderFor(req.user, req.params.id);
+  await db.query('UPDATE orders SET is_test = $2 WHERE id = $1', [order.id, req.body.isTest]);
+  res.json(await getOrderFor(req.user, order.id));
+}));
+
 router.post('/:id/payment', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   const { status, method } = req.body || {};
   if (!['paid', 'waived', 'invoice', 'unpaid'].includes(status)) {

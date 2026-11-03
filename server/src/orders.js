@@ -362,6 +362,7 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     id: o.id,
     orderNumber: o.order_number,
     isDemo: o.is_demo,
+    isTest: !!o.is_test,
     status: o.status,
     organization: o.organization_id ? { id: o.organization_id, name: o.organization_name } : null,
     driver: o.driver_id ? {

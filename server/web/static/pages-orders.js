@@ -941,7 +941,7 @@ export function OrderPage({ id }) {
     <${Layout}>
       <a class="back" href="#/orders">← Orders</a>
       <${PageHeader}
-        title=${html`${order.orderNumber} ${awaitingPrice ? html`<span class="badge amber">Waiting for price</span>` : html`<${StatusBadge} status=${order.status} />`}<${DemoBadge} on=${order.isDemo} />`}
+        title=${html`${order.orderNumber}${order.isTest ? html` <span class="badge gray">Test</span>` : ''} ${awaitingPrice ? html`<span class="badge amber">Waiting for price</span>` : html`<${StatusBadge} status=${order.status} />`}<${DemoBadge} on=${order.isDemo} />`}
         subtitle=${`${isQuote ? 'Quote saved' : 'Booked'} ${formatDate(isQuote ? order.createdAt : order.bookedAt || order.createdAt)}${order.organization ? ` · ${order.organization.name}` : ''}`}
         actions=${html`
           ${link && html`
@@ -998,6 +998,9 @@ export function OrderPage({ id }) {
             : html`<p class="muted">${order.status === 'cancelled' ? 'No driver.' : 'Waiting for a driver to accept.'}</p>`}
           </section>`}
           ${staff && html`<${DispatchPanel} key=${order.id} order=${order} onChange=${setOverride} setError=${setError} />`}
+          ${user.role === 'admin' && html`<label class="check-row small card test-toggle"><input type="checkbox" checked=${order.isTest}
+            onChange=${async (e) => { try { setOverride(await api(`/orders/${order.id}/test`, { method: 'POST', body: { isTest: e.target.checked } })); } catch (err) { setError(err); } }} />
+            <span><strong>Test order</strong>: leave it out of the Expenses page's money in and driver pay.</span></label>`}
           <section class="card">
             <h2>Shipment</h2>
             <dl class="facts">

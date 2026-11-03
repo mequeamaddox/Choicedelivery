@@ -447,6 +447,7 @@ fieldset.card { margin: 0; min-width: 0; }
 .plain-list li.inactive strong { color: var(--muted, #6b7280); }
 
 /* Expenses */
+.test-toggle { padding: .75rem 1rem; }
 .receipt-preview { max-width: 220px; max-height: 260px; border-radius: 8px; border: 1px solid var(--border); object-fit: contain; }
 
 /* Invoices */

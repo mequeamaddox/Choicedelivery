@@ -123,6 +123,13 @@ export function ExpensesPage() {
           <div class="stat"><span class="muted small">Expenses</span><strong>${formatMoney(sum('expenseCents'))}</strong></div>
           <div class="stat"><span class="muted small">What's left</span><strong>${formatMoney(sum('netCents'))}</strong></div>
         </div>
+        ${(d.months.some((m) => m.revenueCents || m.driverPayCents)) && html`<section class="card">
+          <h2>Numbers from test orders?</h2>
+          <p class="small">If you haven't started real work yet, mark every order so far as a test and they're left out of
+            these numbers. Real orders from now on count as usual, and you can switch any one back on its order page.</p>
+          <${ActionButton} class="btn" onError=${setError} confirmText="Mark every order booked so far as a test? They stay in your order history but are left out of this report."
+            onClick=${async () => { await api('/expenses/mark-tests', { method: 'POST' }); r.reload(); }}>Mark all orders so far as tests<//>
+        </section>`}
         <${AddExpense} categories=${d.categories} onAdded=${r.reload} />
         <section class="card">
           <h2>By month</h2>
