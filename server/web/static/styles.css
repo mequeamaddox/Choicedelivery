@@ -365,7 +365,7 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: .75rem 1rem; display: flex; flex-direction: column; gap: .2rem; }
 .stat strong { font-size: 1.25rem; }
 @media (max-width: 520px) { .stat-row { grid-template-columns: 1fr; } }
-.stat-row.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.stat-row.four { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 @media (max-width: 520px) { .stat-row.four { grid-template-columns: 1fr 1fr; } }
 .stack-sm { display: flex; flex-direction: column; gap: .35rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .payout-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
@@ -445,6 +445,28 @@ fieldset.card { margin: 0; min-width: 0; }
 .plain-list { list-style: none; padding: 0; margin: 0; }
 .plain-list li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid var(--border); }
 .plain-list li.inactive strong { color: var(--muted, #6b7280); }
+
+/* Gig routes */
+.gig-map { height: 320px; }
+.map-pin.gig { background: var(--teal, #0f766e); }
+.map-pin.gig.done { background: #9ca3af; }
+.map-pin.choice { background: #ea580c; }
+.map-pin.choice.mine { background: #c2410c; box-shadow: 0 0 0 3px #fed7aa; }
+.legend.choice { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #ea580c; color: #fff; font-weight: 700; font-size: 11px; align-items: center; justify-content: center; }
+.inline.wrap { flex-wrap: wrap; }
+.shot-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+.shot { position: relative; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: #fff; cursor: pointer; }
+.shot img { width: 72px; height: 120px; object-fit: cover; border-radius: 8px; display: block; }
+.shot span { position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,.6); color: #fff; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; line-height: 20px; }
+.gig-edit, .gig-stops { list-style: none; padding: 0; margin: 0; }
+.gig-edit li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; padding: .35rem 0; }
+.gig-edit li input { flex: 1 1 220px; }
+.gig-stops li { display: grid; grid-template-columns: 2rem 1fr auto; gap: .5rem; align-items: center; padding: .55rem 0; border-top: 1px solid var(--border); }
+.gig-stops li.done .gig-addr { color: var(--muted, #6b7280); text-decoration: line-through; }
+.gig-num { width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--teal, #0f766e); color: #fff; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; }
+.gig-stops li.done .gig-num { background: #9ca3af; }
+.gig-actions { display: flex; gap: .35rem; }
+@media (max-width: 600px) { .gig-stops li { grid-template-columns: 2rem 1fr; } .gig-actions { grid-column: 2; } }
 
 /* Expenses */
 .test-toggle { padding: .75rem 1rem; }

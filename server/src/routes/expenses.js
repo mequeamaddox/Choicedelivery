@@ -72,9 +72,10 @@ router.get('/', asyncH(async (req, res) => {
        COALESCE((SELECT sum(driver_pay_cents) FROM counted
          WHERE (in_cents > 0 OR driver_paid_at IS NOT NULL)
            AND date_trunc('month', completed_at AT TIME ZONE '${TIME_ZONE}') = m), 0)::int AS driver_pay_cents,
-       COALESCE((SELECT sum(cents) FROM expenses WHERE date_trunc('month', day) = m), 0)::int AS expense_cents
+       COALESCE((SELECT sum(cents) FROM expenses WHERE date_trunc('month', day) = m), 0)::int AS expense_cents,
+       COALESCE((SELECT sum(pay_cents + tips_cents) FROM gig_shifts WHERE user_id = $2 AND date_trunc('month', day) = m), 0)::int AS gig_cents
      FROM generate_series(make_date($1, 1, 1)::timestamp, make_date($1, 12, 1)::timestamp, interval '1 month') AS m
-     ORDER BY m`, [year]);
+     ORDER BY m`, [year, req.user.id]);
   const byCategory = {};
   for (const e of rows) byCategory[e.category] = (byCategory[e.category] || 0) + e.cents;
   res.json({
@@ -83,8 +84,8 @@ router.get('/', asyncH(async (req, res) => {
     expenses: rows.map(serialize),
     byCategory: Object.entries(byCategory).map(([k, cents]) => ({ category: k, label: CATEGORIES[k] || k, cents })).sort((a, b) => b.cents - a.cents),
     months: months.map((m) => ({
-      month: m.month, revenueCents: m.revenue_cents, driverPayCents: m.driver_pay_cents, expenseCents: m.expense_cents,
-      netCents: m.revenue_cents - m.driver_pay_cents - m.expense_cents,
+      month: m.month, revenueCents: m.revenue_cents, gigCents: m.gig_cents, driverPayCents: m.driver_pay_cents, expenseCents: m.expense_cents,
+      netCents: m.revenue_cents + m.gig_cents - m.driver_pay_cents - m.expense_cents,
     })),
   });
 }));

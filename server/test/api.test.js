@@ -2713,6 +2713,83 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
   }
 });
 
+test('gig routes: stops read from screenshots, worked on a map, deleted after; shifts count as gig income', async () => {
+  const gig = require('../src/gig');
+  const geocode = require('../src/geocode');
+  geocode.setFetch(async (url) => {
+    const q = new URL(url).searchParams.get('q').toLowerCase();
+    const spots = { 'elm': ['34.01', '-81.03'], 'oak': ['34.05', '-81.10'], 'pine': ['34.02', '-81.04'] };
+    const hit = Object.entries(spots).find(([k]) => q.includes(k));
+    return { ok: true, json: async () => (hit ? [{ lat: hit[1][0], lon: hit[1][1], address: { house_number: '1', road: hit[0], city: 'Columbia', state: 'South Carolina' } }] : []) };
+  });
+  assert.equal((await call('GET', '/gig', { token: t.acme })).status, 403, 'not for customers');
+  let r = await call('POST', '/gig/extract', { token: t.admin, body: { images: ['data:image/jpeg;base64,AAAA'] } });
+  assert.equal(r.status, 503, 'screenshots need the AI key');
+  r = await call('POST', '/gig/extract', { token: t.admin, body: { text: 'Stop 1\n12 Elm St, Columbia SC\n2) 40 Oak Ave, Columbia SC\nThanks!' } });
+  assert.deepEqual(r.data.stops.map((s) => s.address), ['12 Elm St, Columbia SC', '40 Oak Ave, Columbia SC'], 'pasted lines with a house number');
+
+  // With the key: the screenshots go to Claude, which returns the stops.
+  process.env.ANTHROPIC_API_KEY = 'test-key';
+  let sent = null;
+  gig.setClient({ beta: { messages: { create: async (req) => { sent = req; return {
+    stop_reason: 'end_turn',
+    content: [{ type: 'text', text: JSON.stringify({ app: 'amazon flex', stops: [
+      { address: '12 Elm St, Columbia, SC 29201', note: '2 packages' }, { address: '40 Oak Ave, Columbia, SC 29203', note: '' },
+      { address: '7 Pine Rd, Columbia, SC 29205', note: 'Apt 4' }] }) }],
+  }; } } } });
+  try {
+    r = await call('POST', '/gig/extract', { token: t.admin, body: { images: ['data:image/jpeg;base64,AAAA', 'data:image/png;base64,BBBB'] } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.app, 'Amazon Flex');
+    assert.equal(r.data.stops.length, 3);
+    assert.equal(sent.model, 'claude-opus-5-5');
+    assert.equal(sent.messages[0].content.filter((b) => b.type === 'image').length, 2);
+    assert.equal(sent.output_config.format.type, 'json_schema');
+    assert.equal(sent.fallbacks, 'default');
+    assert.equal((await call('POST', '/gig/extract', { token: t.admin, body: { images: ['not an image'] } })).status, 400);
+  } finally {
+    delete process.env.ANTHROPIC_API_KEY;
+    gig.setClient(null);
+  }
+
+  r = await call('POST', '/gig/routes', { token: t.admin, body: { app: 'Amazon Flex', stops: r.data.stops } });
+  assert.equal(r.status, 201);
+  const routeId = r.data.id;
+  for (let i = 0; i < 40 && r.data.locating; i++) {
+    await new Promise((done) => setTimeout(done, 250));
+    r = await call('GET', `/gig/routes/${routeId}`, { token: t.admin });
+  }
+  assert.equal(r.data.locating, false, 'stops are placed on the map');
+  assert.ok(r.data.stops.every((s) => s.location));
+  assert.ok(r.data.estimatedMiles > 0);
+  assert.equal((await call('GET', `/gig/routes/${routeId}`, { token: t.d1 })).status, 404, 'only yours');
+  r = await call('GET', '/gig', { token: t.admin });
+  assert.equal(r.data.routes[0].id, routeId);
+
+  // Done stops stay first; the rest go nearest-first from where you are (next to Pine Rd).
+  const elm = r.data.routes[0].stops[0];
+  await call('PATCH', `/gig/stops/${elm.id}`, { token: t.admin, body: { done: true } });
+  r = await call('POST', `/gig/routes/${routeId}/optimize`, { token: t.admin, body: { from: { lat: 34.021, lng: -81.041 } } });
+  assert.deepEqual(r.data.stops.map((s) => s.address.split(' ')[1]), ['Elm', 'Pine', 'Oak']);
+
+  r = await call('POST', `/gig/routes/${routeId}/finish`, { token: t.admin });
+  assert.equal(r.data.status, 'done');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+  r = await call('POST', '/gig/shifts', { token: t.admin, body: { day: today, app: 'Amazon Flex', hours: 3.5, payCents: 7200, tipsCents: 0, miles: 41.5, stops: 3 } });
+  assert.equal(r.status, 201);
+  r = await call('GET', '/gig/shifts', { token: t.admin });
+  assert.equal(r.data.shifts[0].payCents, 7200);
+  assert.equal((await call('GET', '/gig/shifts', { token: t.d1 })).data.shifts.length, 0);
+  r = await call('GET', '/expenses', { token: t.admin });
+  assert.equal(r.data.months.find((m) => m.month === today.slice(0, 7)).gigCents, 7200, 'gig pay is income on the Expenses page');
+
+  // A day after finishing, the route and its addresses are gone; the shift stays.
+  await db.query("UPDATE gig_routes SET finished_at = now() - interval '25 hours' WHERE id = $1", [routeId]);
+  await gig.purgeOldStops();
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM gig_stops')).rows[0].n, 0);
+  assert.equal((await call('GET', '/gig/shifts', { token: t.admin })).data.shifts.length, 1);
+});
+
 // Last: it wipes every order. Companies, logins and settings stay; numbering starts again.
 test('the owner can delete every order before real work starts', async () => {
   let r = await call('POST', '/expenses/delete-all-orders', { token: t.admin, body: { confirm: 'DELETE' } });

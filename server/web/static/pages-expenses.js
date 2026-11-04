@@ -103,7 +103,7 @@ export function ExpensesPage() {
   const sum = (k) => (d ? d.months.reduce((t, m) => t + m[k], 0) : 0);
   // Months with anything in them (and the current month), newest first.
   const shownMonths = d ? d.months.filter((m) => m.month === today().slice(0, 7)
-    || ((m.revenueCents || m.driverPayCents || m.expenseCents) && m.month <= today().slice(0, 7))).reverse() : [];
+    || ((m.revenueCents || m.gigCents || m.driverPayCents || m.expenseCents) && m.month <= today().slice(0, 7))).reverse() : [];
   const byMonth = {};
   for (const e of d?.expenses || []) (byMonth[e.day.slice(0, 7)] ||= []).push(e);
   return html`
@@ -118,7 +118,8 @@ export function ExpensesPage() {
       <${Alert} error=${error || r.error} />
       ${!d ? html`<${Spinner} />` : html`
         <div class="stat-row four">
-          <div class="stat"><span class="muted small">Money in, ${year}</span><strong>${formatMoney(sum('revenueCents'))}</strong></div>
+          <div class="stat"><span class="muted small">Choice Delivery, ${year}</span><strong>${formatMoney(sum('revenueCents'))}</strong></div>
+          <div class="stat"><span class="muted small">Gig apps</span><strong>${formatMoney(sum('gigCents'))}</strong></div>
           <div class="stat"><span class="muted small">Driver pay</span><strong>${formatMoney(sum('driverPayCents'))}</strong></div>
           <div class="stat"><span class="muted small">Expenses</span><strong>${formatMoney(sum('expenseCents'))}</strong></div>
           <div class="stat"><span class="muted small">What's left</span><strong>${formatMoney(sum('netCents'))}</strong></div>
@@ -141,16 +142,17 @@ export function ExpensesPage() {
         <section class="card">
           <h2>By month</h2>
           <div class="table-wrap"><table>
-            <thead><tr><th>Month</th><th>Money in</th><th>Driver pay</th><th>Expenses</th><th>What's left</th></tr></thead>
+            <thead><tr><th>Month</th><th>Choice Delivery</th><th>Gig apps</th><th>Driver pay</th><th>Expenses</th><th>What's left</th></tr></thead>
             <tbody>${shownMonths.map((m) => html`<tr key=${m.month}>
               <td data-label="Month">${monthLabel(m.month)}</td>
-              <td data-label="Money in">${formatMoney(m.revenueCents)}</td>
+              <td data-label="Choice Delivery">${formatMoney(m.revenueCents)}</td>
+              <td data-label="Gig apps">${formatMoney(m.gigCents)}</td>
               <td data-label="Driver pay">${formatMoney(m.driverPayCents)}</td>
               <td data-label="Expenses">${formatMoney(m.expenseCents)}</td>
               <td data-label="What's left"><strong class=${m.netCents < 0 ? 'error-text' : ''}>${formatMoney(m.netCents)}</strong></td>
             </tr>`)}</tbody>
           </table></div>
-          <p class="small muted">Money in is what you actually collected or billed: card payments (less refunds), deliveries on a
+          <p class="small muted">Gig apps is the pay and tips from your shift log on the Gig page. Choice Delivery is what you actually collected or billed: card payments (less refunds), deliveries on a
             monthly invoice account, and paid extra charges. Orders you booked yourself count once you mark them paid. Card
             processing fees aren't included; add them as an expense from your Stripe payouts. This is a guide, not your tax return:
             your tax preparer decides what's deductible.</p>

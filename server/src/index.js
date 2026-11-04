@@ -110,6 +110,9 @@ async function start() {
 
   // Companies billed on account get last month's invoice on the 1st (8 AM Columbia time), ready to send.
   require('./invoices').startMonthlyTimer();
+
+  // Gig customers' addresses are deleted a day after the route (the shift log keeps no addresses).
+  require('./gig').startPurgeTimer();
 }
 
 start();
