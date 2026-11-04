@@ -1069,6 +1069,19 @@ test('a price given over the phone: dispatch saves a locked quote for the compan
     assert.equal(r.data.url, 'https://checkout.stripe.com/pay/cs_l');
     await call('POST', `/orders/${q.id}/cancel`, { token: t.acme });
 
+    // Changing what was quoted (rush instead of standard) also goes back to the calculated price.
+    r = await call('POST', '/orders', { token: t.admin, body: {
+      organizationId: ids.acmeOrg, saveAsQuote: true, priceCents: 31696, vehicleType: 'Car',
+      stops: [{ type: 'pickup', address: '29212', location: irmo }, { type: 'dropoff', address: '29445', location: gooseCreek }],
+    } });
+    const rushQ = r.data.id;
+    r = await call('PATCH', `/orders/${rushQ}`, { token: t.acme, body: { vehicleType: 'Car' } });
+    assert.equal(r.data.priceCents, 31696, 'resending the same details keeps the price');
+    r = await call('PATCH', `/orders/${rushQ}`, { token: t.acme, body: { serviceLevel: 'rush' } });
+    assert.equal(r.data.priceUnlocked, true);
+    assert.equal(r.data.priceIsCustom, false);
+    await call('DELETE', `/orders/${rushQ}`, { token: t.acme });
+
     // A different route goes back to the calculated price.
     r = await call('POST', '/orders', { token: t.admin, body: {
       organizationId: ids.acmeOrg, saveAsQuote: true, priceCents: 31696, vehicleType: 'Car',

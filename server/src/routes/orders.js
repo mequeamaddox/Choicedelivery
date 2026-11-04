@@ -244,6 +244,22 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
       await client.query('DELETE FROM stops WHERE order_id = $1', [current.id]);
       await insertStops(client, current.id, stops);
     }
+    // A locked price covers what was quoted: the customer changing the vehicle, weight, service (rush),
+    // add-ons or piece sizes goes back to the calculated price.
+    if (req.user.role === 'shipper' && current.priceIsCustom && !priceUnlocked) {
+      const sameList = (x, y) => JSON.stringify([...(x || [])].sort()) === JSON.stringify([...(y || [])].sort());
+      const changed = (b.vehicleType !== undefined && b.vehicleType !== current.vehicleType)
+        || (b.weight !== undefined && String(b.weight) !== String(current.weight ?? ''))
+        || (b.serviceLevel !== undefined && b.serviceLevel !== current.serviceLevel)
+        || (addOns !== undefined && !sameList(addOns, current.addOns))
+        || (maxPieceLbs !== undefined && maxPieceLbs !== current.maxPieceLbs)
+        || (b.numberOfPieces !== undefined && String(b.numberOfPieces) !== String(current.numberOfPieces ?? ''));
+      if (changed) {
+        priceUnlocked = true;
+        await client.query('UPDATE orders SET price_is_custom = false WHERE id = $1', [current.id]);
+        await recordEvent(client, current.id, req.user.id, 'price_unlocked', { fromCents: current.priceCents });
+      }
+    }
     await repriceOrder(client, current.id);
     await recordEvent(client, current.id, req.user.id, 'updated', { fields: Object.keys(b) });
     // A quote edited so the formula can (or can no longer) price it moves in or out of review.
