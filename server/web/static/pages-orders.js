@@ -43,6 +43,30 @@ function WeatherSwitch() {
     <//>`;
 }
 
+// Quotes emailed from the website quote box: the price is honored when that email books the same trip.
+function EmailedQuotes() {
+  const r = useApi('/leads/emailed-quotes');
+  const list = r.data || [];
+  if (!list.length) return null;
+  const label = { open: html`<span class="badge amber">Not booked yet</span>`, booked: html`<span class="badge green">Booked</span>`, expired: html`<span class="badge">Expired</span>` };
+  return html`
+    <section class="card">
+      <h2>Emailed quotes</h2>
+      <p class="small muted">Sent with "Email me this quote" on the website. When they book the same trip with that email, they get
+        this price, even if prices have changed since. Good for 14 days.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Sent to</th><th>Trip</th><th>Price</th><th>Status</th><th>Sent</th></tr></thead>
+        <tbody>${list.map((q) => html`<tr key=${q.id}>
+          <td data-label="Sent to"><a href=${`mailto:${q.email}`}>${q.email}</a>${q.account && html`<div class="muted small">Has an account${q.account.company && q.account.company !== q.account.name ? `: ${q.account.company}` : ''}</div>`}</td>
+          <td data-label="Trip">${q.addresses.join(' → ')}<div class="muted small">${q.serviceLevel === 'rush' ? 'Rush · ' : ''}${q.vehicleType}${q.weightLbs ? ` · ${q.weightLbs} lbs` : ''}</div></td>
+          <td data-label="Price"><strong>${formatMoney(q.priceCents)}</strong></td>
+          <td data-label="Status">${label[q.status]}${q.order && html` <a href=${`#/orders/${q.order.id}`}>${q.order.orderNumber}</a>`}</td>
+          <td data-label="Sent" class="muted small">${formatDate(q.sentAt)}${q.status === 'open' ? html`<div>Good until ${formatDate(q.expiresAt)}</div>` : ''}</td>
+        </tr>`)}</tbody>
+      </table></div>
+    </section>`;
+}
+
 export function OrdersPage() {
   const user = getUser();
   const [filter, setFilter] = useState('active');
@@ -75,6 +99,8 @@ export function OrdersPage() {
           onInput=${(e) => setSearch(e.target.value)} aria-label="Search orders" />
       </div>
       <${Alert} error=${error} />
+      ${filter === 'quotes' && isStaff(user) && html`<${EmailedQuotes} />`}
+      ${filter === 'quotes' && isStaff(user) && html`<h2 class="section-title">Saved quotes</h2>`}
       ${loading ? html`<${Spinner} />` : rows.length === 0 ? html`
         <${Empty} title="No orders here yet">
           ${filter === 'active' ? 'New orders you book will show up here.'
@@ -107,9 +133,9 @@ export function OrdersPage() {
 const blankStop = (type) => ({ type, address: '', location: null, contactName: '', contactPhone: '', instructions: '' });
 
 // Live quote from the server (same formula used when the order is booked).
-function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleType) {
+function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleType, email) {
   const [quote, setQuote] = useState(null);
-  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt, weightLbs, addOns, vehicleType]);
+  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt, weightLbs, addOns, vehicleType, email]);
   useEffect(() => {
     if (stops.some((s) => !s.address.trim() && !s.location)) { setQuote(null); return undefined; }
     let cancelled = false;
@@ -118,7 +144,7 @@ function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleTy
         const q = await api('/public/quote', { method: 'POST', body: {
           stops: stops.map((s) => ({ address: s.address, location: s.location || undefined })), serviceLevel,
           scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
-          weightLbs: weightLbs === '' ? undefined : Number(weightLbs), addOns, vehicleType,
+          weightLbs: weightLbs === '' ? undefined : Number(weightLbs), addOns, vehicleType, email: email || undefined,
         } });
         if (!cancelled) setQuote(q);
       } catch { /* the estimate is optional */ }
@@ -268,7 +294,8 @@ export function NewOrderPage({ guest = false }) {
     setFromQuote(true);
   }, []);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
-  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType);
+  // A guest's email lets an earlier emailed quote be honored (signed-in customers are matched by their login).
+  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType, guest ? v.customerEmail.trim() : '');
   useEffect(() => { setShownCents(null); }, [quote?.totalCents]); // a fresh price on screen replaces "the price changed"
   const fees = pricing.data?.fees;
   const vehicles = fees ? Object.entries(fees.vehicles).filter(([, x]) => x.enabled) : [];
@@ -455,7 +482,7 @@ export function NewOrderPage({ guest = false }) {
             </div>`}
           <div class="estimate">
             <div class="estimate-head">
-              <span><strong>Estimated total</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
+              <span><strong>${quote?.quotedPrice ? 'Your quoted price' : 'Estimated total'}</strong>${quote?.distanceMiles != null ? html`<span class="muted"> · about ${quote.distanceMiles} miles</span>` : ''}</span>
               <span class="price">${pieceProblem ? '—' : needsReview ? 'Custom' : quote ? formatMoney(quote.totalCents) : '—'}</span>
             </div>
             ${pieceProblem ? html`<div class="alert error" role="alert"><strong>Can't book this shipment:</strong> ${`${pieceProblem} Split it into lighter pieces, or email info@choicedeliverysc.com.`}</div>`
@@ -467,7 +494,7 @@ export function NewOrderPage({ guest = false }) {
                 Nothing is charged until it's approved.</div>`}
               ${farPickupForStaff && html`<div class="alert warn" role="status"><strong>Far pickup:</strong>
                 ${' '}${quote.approvalReason}. The drive out from Columbia is included in this price (Travel to pickup:
-                ${formatMoney(quote.travelCents)}). Booking it here approves it.</div>`}<${PriceBreakdown} q=${quote} open=${!!quote.travelCents && staff} />
+                ${formatMoney(quote.travelCents)}). Booking it here approves it.</div>`}${!quote.quotedPrice && html`<${PriceBreakdown} q=${quote} open=${!!quote.travelCents && staff} />`}
               ${!needsApproval && html`<p class="muted small">${quote.note}</p>`}`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
@@ -569,6 +596,7 @@ const EVENT_LABELS = {
   review_requested: 'Sent for a custom price',
   price_set: 'Price set by dispatch',
   quote_prepared: 'Quote prepared by dispatch',
+  quote_honored: 'Booked at the price in the emailed quote',
   price_unlocked: 'Route changed, so the price was recalculated',
   marked_delivered: 'Marked delivered by dispatch',
   driver_pay_set: 'Driver pay changed',

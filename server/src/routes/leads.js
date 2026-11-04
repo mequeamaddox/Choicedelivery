@@ -17,6 +17,24 @@ const serialize = (l) => ({
   source: l.attribution ? { channel: l.attribution.channel, campaign: l.attribution.utm_campaign || null } : null,
 });
 
+// Quotes emailed from the website quote box (by a visitor, or by dispatch after a phone call), with
+// whether they've booked it yet. Shown on Orders → Quotes.
+router.get('/emailed-quotes', asyncH(async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT q.*, o.order_number, u.name AS account_name, org.name AS company
+     FROM quote_locks q LEFT JOIN orders o ON o.id = q.order_id
+     LEFT JOIN LATERAL (SELECT name, organization_id FROM users WHERE lower(email) = q.email AND role = 'shipper' LIMIT 1) u ON true
+     LEFT JOIN organizations org ON org.id = u.organization_id
+     WHERE q.created_at > now() - interval '60 days' ORDER BY q.created_at DESC LIMIT 100`);
+  res.json(rows.map((q) => ({
+    id: q.id, email: q.email, priceCents: q.price_cents, vehicleType: q.vehicle_type, serviceLevel: q.service_level,
+    weightLbs: q.weight_lbs == null ? null : Number(q.weight_lbs), addresses: q.addresses, sentAt: q.created_at, expiresAt: q.expires_at,
+    status: q.order_id ? 'booked' : new Date(q.expires_at) < new Date() ? 'expired' : 'open',
+    order: q.order_id ? { id: q.order_id, orderNumber: q.order_number } : null,
+    account: q.account_name || q.company ? { name: q.account_name, company: q.company } : null,
+  })));
+}));
+
 router.get('/', asyncH(async (req, res) => {
   const params = [];
   let where = '';

@@ -4,6 +4,7 @@ const { HttpError, parseLocation, str } = require('./util');
 const { isStaff } = require('./auth');
 const stripe = require('./stripe');
 const { locate, haversineMiles } = require('./geocode');
+const quoteLocks = require('./quote-locks');
 const {
   isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
   pieceWeightProblem, driverPayFor,
@@ -188,6 +189,25 @@ async function createOrder(client, actor, body) {
   await assertPieceWeights(client, orderId);
   await insertStops(client, orderId, await locateStops(stops));
   await repriceOrder(client, orderId, { fresh: true });
+  // A customer booking a trip we emailed them a quote for gets the quoted price (src/quote-locks.js).
+  if (actor.role === 'shipper' || guest) {
+    const email = guest ? customerEmail
+      : (await client.query('SELECT email FROM users WHERE id = $1', [actor.id])).rows[0]?.email;
+    const { rows: [p] } = await client.query('SELECT price_breakdown, price_is_custom FROM orders WHERE id = $1', [orderId]);
+    const { rows: located } = await client.query('SELECT location FROM stops WHERE order_id = $1 ORDER BY sequence', [orderId]);
+    const bd = p.price_breakdown || {};
+    if (!p.price_is_custom && !bd.needsReview) {
+      const lock = await quoteLocks.findLock(client, email, {
+        vehicleType: bd.vehicleType, serviceLevel: bd.serviceLevel || serviceLevel, weightLbs: bd.weightLbs, addOns,
+        locations: located.map((x) => x.location), weightFeeCents: bd.weightFeeCents,
+      });
+      if (lock) {
+        await client.query('UPDATE orders SET price_cents = $2, price_is_custom = true WHERE id = $1', [orderId, lock.priceCents]);
+        await quoteLocks.useLock(client, lock.id, orderId);
+        await recordEvent(client, orderId, actor.id, 'quote_honored', { cents: lock.priceCents, quotedAt: lock.createdAt });
+      }
+    }
+  }
   if (owner !== actor.id) {
     await recordEvent(client, orderId, actor.id, 'quote_prepared', { priceLocked: priceCents != null });
   }

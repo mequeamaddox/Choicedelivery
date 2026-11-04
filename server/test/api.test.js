@@ -1159,6 +1159,48 @@ test('dispatch phone alerts: subscribe, choose kinds, alerts go out, logins rene
   }
 });
 
+test('an emailed quote is honored when the same email books the same trip', async () => {
+  const mailer = require('../src/mailer');
+  mailer.setSender(async () => {});
+  const a = { lat: 34.09, lng: -81.18 };
+  const z = { lat: 33.99, lng: -81.03 };
+  try {
+    let r = await call('POST', '/public/email-quote', { body: { email: 'Sam@Acme.com', vehicleType: 'Car', serviceLevel: 'standard',
+      stops: [{ type: 'pickup', address: '29212', location: a }, { type: 'dropoff', address: '29201', location: z }],
+      pickupAddress: '29212', dropoffAddress: '29201' } });
+    assert.equal(r.status, 201);
+    const { rows: [lock] } = await db.query("SELECT * FROM quote_locks WHERE email = 'sam@acme.com' ORDER BY created_at DESC LIMIT 1");
+    assert.ok(lock, 'the emailed quote is kept');
+    // Prices move (busy time, weather...); the quote they were emailed doesn't.
+    await db.query('UPDATE quote_locks SET price_cents = 4321 WHERE id = $1', [lock.id]);
+    const trip = (pickup, drop, extra = {}) => ({ vehicleType: 'Car', serviceLevel: 'standard', maxPieceLbs: 10,
+      stops: [{ type: 'pickup', address: pickup, location: { lat: 34.1, lng: -81.17 } }, { type: 'dropoff', address: drop, location: { lat: 33.995, lng: -81.035 } }], ...extra });
+    r = await call('POST', '/public/quote', { token: t.acme, body: trip('7 Lake Murray Blvd, Irmo, SC', '1 Main St, Columbia, SC') });
+    assert.equal(r.data.totalCents, 4321, 'the booking form shows the quoted price');
+    assert.equal(r.data.quotedPrice, true);
+    r = await call('POST', '/public/quote', { body: trip('7 Lake Murray Blvd, Irmo, SC', '1 Main St, Columbia, SC') });
+    assert.notEqual(r.data.totalCents, 4321, 'not for someone else');
+    r = await call('POST', '/public/quote', { token: t.acme, body: trip('7 Lake Murray Blvd, Irmo, SC', '1 Main St, Columbia, SC', { serviceLevel: 'rush' }) });
+    assert.notEqual(r.data.totalCents, 4321, 'rush is a different job');
+    r = await call('POST', '/orders', { token: t.acme, body: { ...trip('7 Lake Murray Blvd, Irmo, SC', '1 Main St, Columbia, SC'), expectedCents: 4321 } });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.priceCents, 4321, 'booked at the quoted price');
+    assert.ok(r.data.events.some((e) => e.type === 'quote_honored'));
+    const { rows: [used] } = await db.query('SELECT order_id FROM quote_locks WHERE id = $1', [lock.id]);
+    assert.equal(used.order_id, r.data.id, 'used once');
+    await call('POST', `/orders/${r.data.id}/cancel`, { token: t.acme });
+    r = await call('POST', '/public/quote', { token: t.acme, body: trip('7 Lake Murray Blvd, Irmo, SC', '1 Main St, Columbia, SC') });
+    assert.notEqual(r.data.totalCents, 4321, 'a quote is honored for one booking');
+    r = await call('GET', '/leads/emailed-quotes', { token: t.admin });
+    const shown = r.data.find((x) => x.id === lock.id);
+    assert.equal(shown.status, 'booked');
+    assert.equal(shown.account.name, 'Sam', 'matched to their account');
+    assert.equal((await call('GET', '/leads/emailed-quotes', { token: t.acme })).status, 403);
+  } finally {
+    mailer.setSender(null);
+  }
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

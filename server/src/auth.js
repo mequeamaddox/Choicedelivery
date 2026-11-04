@@ -86,6 +86,19 @@ async function requireAuth(req, res, next) {
   }
 }
 
+// The signed-in user's id and email on a public route that works with or without a login, or null.
+async function optionalUser(req) {
+  const header = req.get('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token || token.startsWith(API_KEY_PREFIX)) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.purpose) return null;
+    const { rows: [u] } = await db.query('SELECT id, email, role FROM users WHERE id = $1 AND is_active', [payload.sub]);
+    return u || null;
+  } catch { return null; }
+}
+
 const requireRole = (...roles) => (req, res, next) => {
   if (!roles.includes(req.user?.role)) return res.status(403).json({ message: 'Not allowed for your account type' });
   next();
@@ -93,4 +106,4 @@ const requireRole = (...roles) => (req, res, next) => {
 
 const isStaff = (user) => STAFF.includes(user.role);
 
-module.exports = { ROLES, STAFF, signToken, signScopedToken, requireAuth, requireRole, isStaff, newApiKey };
+module.exports = { ROLES, STAFF, signToken, signScopedToken, requireAuth, requireRole, isStaff, newApiKey, optionalUser };

@@ -23,6 +23,7 @@ const limitQuoteEmails = rateLimit({ windowMs: 10 * 60 * 1000, max: 8 });
 const LEADS_EMAIL = () => process.env.LEADS_EMAIL || 'info@choicedeliverysc.com';
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const limit = (s, n) => str(s).slice(0, n);
+const { optionalUser } = require('../auth');
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 router.get('/pricing', asyncH(async (req, res) => {
@@ -296,12 +297,28 @@ async function priceQuote(b) {
         ? 'Estimate based on approximate driving distance. Final price is confirmed when your order is booked.'
         : "We couldn't pinpoint one of the addresses, so this is the base price. Final price is confirmed when your order is booked.",
   };
-  return { quote: result, stops, serviceLevel };
+  return { quote: result, stops, serviceLevel, locations, addOns, weightLbs: parseWeightLbs(b.weightLbs ?? b.weight) };
+}
+
+// A quote they were emailed earlier, for the same trip, is shown (and booked) at the quoted price.
+async function applyQuoteLock(quote, email, { locations, addOns, weightLbs }) {
+  if (!email || quote.needsReview) return quote;
+  const lock = await require('../quote-locks').findLock(db, email, {
+    vehicleType: quote.vehicleType, serviceLevel: quote.serviceLevel, weightLbs, addOns, locations, weightFeeCents: quote.weightFeeCents,
+  });
+  if (!lock) return quote;
+  return { ...quote, totalCents: lock.priceCents, priceCents: lock.priceCents, needsApproval: false, quotedPrice: true,
+    note: 'This is the price in the quote we emailed you.' };
 }
 
 router.post('/quote', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
   const b = req.body || {};
-  const { quote, stops, serviceLevel } = await priceQuote(b);
+  const priced = await priceQuote(b);
+  const { stops, serviceLevel } = priced;
+  // Signed in, or a guest who typed their email on the booking form: honor a quote we emailed them.
+  const me = b.attribution === undefined ? await optionalUser(req) : null;
+  const email = me?.role === 'shipper' ? me.email : isEmail(str(b.email).toLowerCase()) ? str(b.email).toLowerCase() : null;
+  const quote = await applyQuoteLock(priced.quote, email, priced);
   // The website's quote calculator sends `attribution` (even when empty); the app's booking form, which
   // re-quotes as the customer edits, doesn't, so only website quotes are logged.
   if (b.attribution !== undefined) {
@@ -325,7 +342,8 @@ router.post('/email-quote', limitQuoteEmails, asyncH(async (req, res) => {
   const ok = { message: `Sent! Check ${email} for your quote. It has a link to book whenever you're ready.` };
   if (str(b.website)) return res.status(201).json(ok); // spam trap
   let quote = null;
-  try { ({ quote } = await priceQuote(b)); } catch (e) { console.error('Email quote pricing failed:', e.message); }
+  let priced = null;
+  try { priced = await priceQuote(b); ({ quote } = priced); } catch (e) { console.error('Email quote pricing failed:', e.message); }
   const money = (c) => `$${(c / 100).toFixed(2)}`;
   const priceText = !quote ? "We'll work out the price and email it to you."
     : quote.needsReview ? "This one needs a custom price. We'll email it to you before anything is charged."
@@ -357,11 +375,18 @@ router.post('/email-quote', limitQuoteEmails, asyncH(async (req, res) => {
       + '<p>Prices depend on the time of pickup, so the final price is shown when you book. Questions? Just reply to this email.</p>'
       + '<p>Choice Delivery SC · Same-day courier in Columbia, SC · 8 AM to 10 PM daily</p>',
   }).catch((e) => console.error('Quote email failed:', e.message));
-  await saveLead(req, {
+  const lead = await saveLead(req, {
     type: 'quote', name: '', email, phone: '', company: '',
     message: rows.map(([k, v]) => `${k}: ${v}`).join('\n'),
     subject: `Quote emailed to ${email}: ${quote && !quote.needsReview ? money(quote.totalCents) : 'needs a price'}${ballpark ? ' (ballpark, no street address)' : ''}`,
   });
+  // Honored when they book the same trip with this email (see src/quote-locks.js).
+  if (priced && lead) {
+    await require('../quote-locks').saveLock({
+      email, leadId: lead.id, quote, addresses: priced.stops.map((st) => str(st.address)), locations: priced.locations,
+      weightLbs: priced.weightLbs, addOns: priced.addOns,
+    }).catch((e) => console.error('Quote lock failed:', e.message));
+  }
   res.status(201).json(ok);
 }));
 
