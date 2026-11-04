@@ -385,6 +385,9 @@ async function saveLead(req, lead) {
     ['Plan', lead.plan && PLAN_NAMES[lead.plan]], ['Message', lead.message], ['Came from', sourceLabel(attribution)]]
     .filter(([, v]) => v).map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join('');
   const base = process.env.PUBLIC_URL || '';
+  require('../webpush').notifyStaff('leads', {
+    title: subject, body: [lead.name, lead.phone, lead.message].filter(Boolean).join(' · ').slice(0, 180), url: '/#/leads',
+  });
   sendMail({
     to: LEADS_EMAIL(),
     subject,

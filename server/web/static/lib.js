@@ -86,6 +86,9 @@ export async function api(path, { method = 'GET', body } = {}) {
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  // The server renews a day-old login so it lasts 30 days from the last use (see src/auth.js).
+  const renewed = res.headers.get('X-Session-Token');
+  if (renewed && token && res.ok) { token = renewed; storage.set(TOKEN_KEY, renewed); }
   const data = res.status === 204 ? null : await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && token && !path.startsWith('/auth/login')) setSession(null, null);

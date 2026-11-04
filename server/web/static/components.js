@@ -24,6 +24,7 @@ export function Layout({ children }) {
       { href: '/gig', label: 'Gig routes', icon: 'pin' },
       ...(user.role === 'admin' ? [{ href: '/expenses', label: 'Expenses', icon: 'list' }] : []),
       { href: '/payouts', label: 'Driver pay', icon: 'list' },
+      { href: '/phone-app', label: 'Phone app & alerts', icon: 'user' },
     ] : []),
     ...(user?.role === 'shipper' ? [{ href: '/team', label: 'Team', icon: 'users', tab: true }] : []),
     ...(user?.role === 'shipper' && user.organization?.billingMode === 'invoice' ? [{ href: '/invoices', label: 'Invoices', icon: 'list' }] : []),

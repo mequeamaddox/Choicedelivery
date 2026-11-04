@@ -1089,6 +1089,63 @@ test('a price given over the phone: dispatch saves a locked quote for the compan
   }
 });
 
+test('dispatch phone alerts: subscribe, choose kinds, alerts go out, logins renew', async () => {
+  const webpush = require('../src/webpush');
+  const pushed = [];
+  webpush.setSender(async (sub, payload) => {
+    if (sub.endpoint.includes('gone')) { const e = new Error('gone'); e.statusCode = 410; throw e; }
+    pushed.push({ endpoint: sub.endpoint, ...JSON.parse(payload) });
+  });
+  try {
+    assert.equal((await call('GET', '/push', { token: t.acme })).status, 403, 'customers have no dispatch alerts');
+    let r = await call('GET', '/push', { token: t.admin });
+    assert.equal(r.status, 200);
+    assert.ok(r.data.publicKey.length > 40, 'signing key made automatically');
+    assert.ok(r.data.kinds.every((k) => k.on));
+    const sub = { endpoint: 'https://push.example.com/admin-phone', keys: { p256dh: 'p', auth: 'a' } };
+    assert.equal((await call('POST', '/push/subscribe', { token: t.admin, body: { subscription: { endpoint: 'nope' } } })).status, 400);
+    r = await call('POST', '/push/subscribe', { token: t.admin, body: { subscription: sub } });
+    assert.equal(r.data.devices, 1);
+    await call('POST', '/push/subscribe', { token: t.admin, body: { subscription: { ...sub, endpoint: 'https://push.example.com/gone' } } });
+    r = await call('POST', '/push/test', { token: t.admin });
+    assert.equal(r.data.sent, 1);
+    assert.equal((await call('GET', '/push', { token: t.admin })).data.devices, 1, 'a removed phone is forgotten');
+
+    pushed.length = 0;
+    await webpush.notifyStaff('signups', { title: 'New customer signup', body: 'x', url: '/#/companies' });
+    assert.equal(pushed.length, 1);
+    assert.equal(pushed[0].tag, 'signups');
+    await call('PATCH', '/push/prefs', { token: t.admin, body: { signups: false, bogus: true } });
+    pushed.length = 0;
+    await webpush.notifyStaff('signups', { title: 'x' });
+    assert.equal(pushed.length, 0, 'turned off');
+    await webpush.notifyStaff('orders', { title: 'x' });
+    assert.equal(pushed.length, 1);
+    await call('PATCH', '/push/prefs', { token: t.admin, body: { signups: true } });
+
+    const { rows } = await db.query("SELECT key FROM settings WHERE key = 'web_push_vapid'");
+    assert.equal(rows.length, 1);
+    r = await call('GET', '/settings', { token: t.admin });
+    assert.ok(!JSON.stringify(r.data).includes('privateKey'), 'the signing key is never shown');
+
+    // A day-old login comes back with a fresh one.
+    const jwt = require('jsonwebtoken');
+    const old = jwt.sign({ sub: ids.admin || jwt.decode(t.admin).sub, iat: Math.floor(Date.now() / 1000) - 2 * 86400 }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const res = await fetch(`${base}/push`, { headers: { Authorization: `Bearer ${old}` } });
+    assert.equal(res.status, 200);
+    assert.ok(res.headers.get('x-session-token'), 'renewed');
+    const fresh = await fetch(`${base}/push`, { headers: { Authorization: `Bearer ${t.admin}` } });
+    assert.equal(fresh.headers.get('x-session-token'), null, 'a new login is left alone');
+
+    const page = await fetch(`${base}/manifest-dispatch.webmanifest`);
+    assert.equal((await page.json()).name, 'Choice Dispatch');
+    const sw = await fetch(`${base}/sw.js`);
+    assert.match(await sw.text(), /showNotification/);
+  } finally {
+    webpush.setSender(null);
+  }
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

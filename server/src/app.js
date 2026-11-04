@@ -120,7 +120,7 @@ const webHeaders = (res) => {
       + "style-src 'self' 'sha256-0hAheEzaMe6uXIKV4EehS9pu1am1lj/KnnzrOYqckXk='; "
       + "script-src 'self' https://connect-js.stripe.com https://js.stripe.com https://connect.facebook.net; "
       + "frame-src https://connect-js.stripe.com https://js.stripe.com; "
-      + "connect-src 'self' https://api.stripe.com https://connect-js.stripe.com https://www.facebook.com https://connect.facebook.net; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      + "manifest-src 'self'; worker-src 'self'; connect-src 'self' https://api.stripe.com https://connect-js.stripe.com https://www.facebook.com https://connect.facebook.net; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'same-origin',
   });
@@ -129,6 +129,16 @@ app.get('/', (req, res) => {
   webHeaders(res);
   res.set('Cache-Control', 'no-cache');
   res.sendFile(path.join(WEB_DIR, 'index.html'));
+});
+// Home-screen app: the service worker (phone alerts) has to come from "/" to cover the whole app.
+app.get('/sw.js', (req, res) => {
+  webHeaders(res);
+  res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' });
+  res.type('application/javascript').sendFile(path.join(WEB_DIR, 'app', 'sw.js'));
+});
+app.get(['/manifest.webmanifest', '/manifest-dispatch.webmanifest'], (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.type('application/manifest+json').sendFile(path.join(WEB_DIR, 'app', req.path.slice(1)));
 });
 app.use('/static', express.static(path.join(WEB_DIR, 'static'), {
   fallthrough: false,
@@ -141,6 +151,7 @@ app.use('/organizations', require('./routes/organizations'));
 app.use('/invoices', require('./routes/invoices'));
 app.use('/expenses', require('./routes/expenses'));
 app.use('/gig', require('./routes/gig'));
+app.use('/push', require('./routes/push'));
 app.use('/orders', require('./routes/orders'));
 app.use('/track', require('./routes/track'));
 app.use('/public', require('./routes/public'));

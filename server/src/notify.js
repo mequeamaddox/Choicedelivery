@@ -157,6 +157,7 @@ async function emailShipper(orderId, kind, extra = {}) {
 }
 
 // Where staff alerts go: ORDER_ALERTS_EMAIL, else LEADS_EMAIL, else info@.
+const { notifyStaff } = require('./webpush');
 const staffInbox = () => process.env.ORDER_ALERTS_EMAIL || process.env.LEADS_EMAIL || 'info@choicedeliverysc.com';
 
 // Emails the owner/dispatch when a customer's order is booked and ready for drivers (account
@@ -186,6 +187,11 @@ async function alertStaffOfBooking(orderId) {
       ['Service', `${o.service_level === 'rush' ? '<strong>RUSH</strong>' : 'Standard'} · ${esc(o.vehicle_type || '')}${o.distance_miles != null ? ` · about ${Number(o.distance_miles)} mi` : ''}`],
       ['Price', `${money(o.price_cents)} (${paid})${o.driver_pay_cents != null ? ` · driver pay ${money(o.driver_pay_cents)}` : ''}`],
     ];
+    notifyStaff('orders', {
+      title: `New ${o.service_level === 'rush' ? 'RUSH ' : ''}order ${o.order_number}: ${money(o.price_cents)}`,
+      body: `${o.company || o.customer_name || o.shipper_name || 'Customer'} · ${o.first_address} → ${o.last_address}`,
+      url: `/#/orders/${o.id}`,
+    });
     await sendMail({
       to: staffInbox(),
       subject: `New ${o.service_level === 'rush' ? 'RUSH ' : ''}${o.is_guest ? 'guest ' : ''}order ${o.order_number}: ${money(o.price_cents)}${o.company ? ` · ${o.company}` : o.is_guest ? ` · ${o.customer_name}` : ''}`,
@@ -218,6 +224,11 @@ async function alertStaffOfSignup({ user, company, phone, attribution, medical =
       ['Phone', phone ? esc(phone) : '—'],
       ['Came from', `${esc(source)}${attribution?.utm_campaign ? ` · campaign "${esc(attribution.utm_campaign)}"` : ''}${attribution?.landingPage ? ` · landed on ${esc(attribution.landingPage)}` : ''}`],
     ];
+    notifyStaff('signups', {
+      title: `New ${medical ? 'medical facility' : 'customer'} signup`,
+      body: `${forSelf ? (user.name || user.email) : `${company} (${user.name || user.email})`} · came from ${source}`,
+      url: '/#/companies',
+    });
     await sendMail({
       to: staffInbox(),
       subject: `New ${medical ? 'medical facility' : 'customer'} signup: ${forSelf ? (user.name || user.email) : company}`,
@@ -320,6 +331,11 @@ function notifyStaffOfReview(order) {
   const reasons = bd.needsReview ? (bd.reviewReasons || []) : [bd.approvalReason].filter(Boolean);
   const approval = !bd.needsReview && bd.needsApproval;
   const esc = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  notifyStaff('approvals', {
+    title: `${approval ? 'Approval needed' : 'Needs a price'}: ${order.orderNumber}${approval ? ` (${money(order.priceCents)})` : ''}`,
+    body: `${order.organization?.name || order.customerName || 'Customer'} · ${reasons.join('; ')}`,
+    url: `/#/orders/${order.id}`,
+  });
   sendMail({
     to: process.env.LEADS_EMAIL || 'info@choicedeliverysc.com',
     subject: `${approval ? 'Approval needed' : 'Price review needed'}: ${order.orderNumber}${order.organization ? ` (${order.organization.name})` : order.isGuest ? ` (guest: ${order.customerName})` : ''}`,
@@ -368,6 +384,11 @@ async function alertStaffOfCustodyException(orderId, stopId) {
     if (!e) return;
     const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
     const where = e.data.type === 'pickup' ? 'pickup' : 'drop-off';
+    notifyStaff('problems', {
+      title: `Custody exception: ${e.order_number}`,
+      body: `At the ${where}: ${(e.data.problems || []).join('; ')}`,
+      url: `/#/orders/${orderId}`,
+    });
     await sendMail({
       to: staffInbox(),
       subject: `Chain of custody exception: ${e.order_number} (${where})`,

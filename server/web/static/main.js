@@ -10,6 +10,7 @@ import { CustodyPage } from './pages-custody.js';
 import { InvoicesPage, InvoicePage, BillingPage } from './pages-invoices.js';
 import { ExpensesPage } from './pages-expenses.js';
 import { GigPage } from './pages-gig.js';
+import { PhoneAppPage, setupHomeScreenApp } from './pages-phone.js';
 
 const MedicalSignupPage = () => html`<${SignupPage} medical=${true} />`;
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/signup/medical': MedicalSignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
@@ -20,8 +21,8 @@ function App() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const off = onSessionChange(setUser);
-    restoreSession().then((u) => { setUser(u); setReady(true); });
+    const off = onSessionChange((u) => { setUser(u); setupHomeScreenApp(u); });
+    restoreSession().then((u) => { setUser(u); setupHomeScreenApp(u); setReady(true); });
     return off;
   }, []);
 
@@ -83,6 +84,7 @@ function App() {
   if (path === '/invoices') return html`<${InvoicesPage} />`;
   if (path === '/expenses' && user.role === 'admin') return html`<${ExpensesPage} />`;
   if (path === '/gig' && isStaff(user)) return html`<${GigPage} />`;
+  if (path === '/phone-app' && isStaff(user)) return html`<${PhoneAppPage} />`;
   if (path === '/billing' && user.role === 'shipper') return html`<${BillingPage} />`;
   const invoice = match('/invoices/:id', path);
   if (invoice) return html`<${InvoicePage} key=${invoice.id} id=${invoice.id} />`;

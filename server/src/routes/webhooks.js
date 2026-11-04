@@ -38,6 +38,14 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
             [session.metadata.invoice_id, session.id, session.amount_total]);
           const bank = event.type === 'checkout.session.async_payment_succeeded';
           if (open) await require('../invoices').markPaid(client, open.id, { method: bank ? 'ach' : 'card', note: 'Paid online', actorId: null });
+          if (open) {
+            const { rows: [inv] } = await client.query(
+              'SELECT i.invoice_number AS number, i.total_cents, o.name FROM invoices i JOIN organizations o ON o.id = i.organization_id WHERE i.id = $1', [open.id]);
+            require('../webpush').notifyStaff('payments', {
+              title: `Invoice paid: ${inv.number} $${(inv.total_cents / 100).toFixed(2)}`,
+              body: `${inv.name} paid online${bank ? ' by bank (ACH)' : ' by card'}.`, url: `/#/invoices/${open.id}`,
+            });
+          }
         });
         return res.json({ received: true });
       }

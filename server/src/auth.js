@@ -75,6 +75,11 @@ async function requireAuth(req, res, next) {
       'SELECT id, role, organization_id, is_active, driver_status FROM users WHERE id = $1', [payload.sub]);
     if (!rows[0] || !rows[0].is_active) return res.status(401).json({ message: 'Account is disabled' });
     req.user = rows[0];
+    // Logins last 30 days from the last time the app was used, not from sign-in: a day-old login gets a
+    // fresh token in this header (the web app saves it), so people who use it stay signed in.
+    if (!payload.purpose && payload.iat && Date.now() / 1000 - payload.iat > 24 * 60 * 60) {
+      res.set('X-Session-Token', signToken(rows[0]));
+    }
     next();
   } catch (e) {
     next(e);

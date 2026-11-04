@@ -1,0 +1,16 @@
+{
+  "name": "Choice Dispatch",
+  "short_name": "Dispatch",
+  "description": "Orders, quotes, drivers and alerts for Choice Delivery SC dispatch.",
+  "id": "/?app=dispatch",
+  "start_url": "/?app=dispatch#/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "/static/dispatch-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/dispatch-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/dispatch-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

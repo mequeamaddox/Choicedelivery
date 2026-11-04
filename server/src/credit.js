@@ -66,6 +66,9 @@ async function submit(orgId, user, body) {
     throw e;
   }
   const app = (await list()).find((a) => a.id === id);
+  require('./webpush').notifyStaff('approvals', {
+    title: `Net terms application: ${org.name}`, body: `Asking for ${termsLabel(data.requestedTerms)}. Review it on the Invoices page.`, url: '/#/invoices',
+  });
   const row = (k, v) => (v ? `<tr><td style="color:#6b7280;padding:3px 14px 3px 0;vertical-align:top">${k}</td><td>${v}</td></tr>` : '');
   sendMail({
     to: staffInbox(),
