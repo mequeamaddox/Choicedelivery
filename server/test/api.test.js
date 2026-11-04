@@ -1201,6 +1201,34 @@ test('an emailed quote is honored when the same email books the same trip', asyn
   }
 });
 
+test('a quote a customer saves keeps its price for 14 days', async () => {
+  let r = await call('POST', '/orders', { token: t.acme, body: orderBody({ saveAsQuote: true }) });
+  const q = r.data;
+  const formula = q.priceCents;
+  assert.ok(new Date(q.priceLockedUntil) > new Date(Date.now() + 13 * 86400e3), 'locked for 14 days');
+  // Prices go up (busy time, weather): the saved quote doesn't.
+  await db.query('UPDATE orders SET quote_locked_cents = 1234 WHERE id = $1', [q.id]);
+  r = await call('POST', `/orders/${q.id}/book`, { token: t.acme, body: { expectedCents: 1234 } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.priceCents, 1234, 'booked at the saved price');
+  r = await call('PATCH', `/orders/${q.id}`, { token: t.dispatcher, body: { description: 'boxes' } });
+  assert.equal(r.data.priceCents, 1234, 'still that price after booking');
+  await call('POST', `/orders/${q.id}/cancel`, { token: t.acme });
+
+  // Changing the trip gives a new price (locked again); an expired lock goes back to today's price.
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ saveAsQuote: true }) });
+  const q2 = r.data;
+  await db.query('UPDATE orders SET quote_locked_cents = 1234 WHERE id = $1', [q2.id]);
+  r = await call('PATCH', `/orders/${q2.id}`, { token: t.acme, body: { serviceLevel: 'rush' } });
+  assert.notEqual(r.data.priceCents, 1234);
+  assert.ok(r.data.priceLockedUntil, 'the new price is locked');
+  await db.query("UPDATE orders SET quote_locked_cents = 1234, quote_locked_until = now() - interval '1 day' WHERE id = $1", [q2.id]);
+  r = await call('POST', `/orders/${q2.id}/book`, { token: t.acme });
+  assert.notEqual(r.data.priceCents, 1234, 'expired: today\'s price');
+  await call('POST', `/orders/${q2.id}/cancel`, { token: t.acme });
+  assert.ok(formula > 0);
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

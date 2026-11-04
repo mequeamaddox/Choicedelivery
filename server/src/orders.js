@@ -113,7 +113,23 @@ function custodyFields(body, current = {}, medical = !!current.custodyRequired) 
 // actor is a user, or GUEST for someone booking from the website without an account (card payment only).
 const GUEST = Object.freeze({ id: null, role: 'guest', organization_id: null });
 
+const QUOTE_LOCK_DAYS = 14;
+// A quote's price holds for 14 days: it's kept when they book, whatever the time of day, demand or weather.
+// Not for prices dispatch still has to set (review) or set by hand (those are kept anyway).
+async function lockQuotePrice(client, orderId) {
+  await client.query(
+    `UPDATE orders SET quote_locked_cents = price_cents, quote_locked_until = now() + make_interval(days => $2)
+     WHERE id = $1 AND status = 'quote' AND NOT price_is_custom AND review_status IS DISTINCT FROM 'needed' AND price_cents IS NOT NULL`,
+    [orderId, QUOTE_LOCK_DAYS]);
+}
+
 async function createOrder(client, actor, body) {
+  const orderId = await createOrderRow(client, actor, body);
+  await lockQuotePrice(client, orderId);
+  return orderId;
+}
+
+async function createOrderRow(client, actor, body) {
   const stops = normalizeStops(body.stops);
   const guest = actor.role === 'guest';
   const isQuote = body.saveAsQuote === true && !guest;
@@ -263,6 +279,10 @@ async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
     await client.query('UPDATE orders SET scheduled_at = NULL WHERE id = $1', [orderId]);
   }
   await repriceOrder(client, orderId, { fresh: true, at: new Date() });
+  // Booked within the lock: the quoted price stays with the order. Past it: today's price, and no lock.
+  await client.query(
+    `UPDATE orders SET quote_locked_until = CASE WHEN quote_locked_until > now() THEN 'infinity'::timestamptz END,
+       quote_locked_cents = CASE WHEN quote_locked_until > now() THEN quote_locked_cents END WHERE id = $1`, [orderId]);
   const { rows: [priced] } = await client.query('SELECT price_cents FROM orders WHERE id = $1', [orderId]);
   if (expectedCents != null && Number(expectedCents) !== priced.price_cents) {
     await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [orderId]);
@@ -307,7 +327,8 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
   });
   await client.query(
     `UPDATE orders SET distance_miles = $2, price_breakdown = $3,
-       price_cents = CASE WHEN price_is_custom THEN price_cents ELSE $4 END WHERE id = $1`,
+       price_cents = CASE WHEN price_is_custom THEN price_cents
+         WHEN quote_locked_until > now() AND quote_locked_cents IS NOT NULL THEN quote_locked_cents ELSE $4 END WHERE id = $1`,
     [orderId, breakdown.distanceMiles, JSON.stringify(breakdown), breakdown.totalCents]
   );
   await refreshDriverPay(client, orderId);
@@ -413,6 +434,8 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     distanceMiles: o.distance_miles == null ? null : Number(o.distance_miles),
     priceBreakdown: o.price_breakdown,
     priceIsCustom: o.price_is_custom,
+    // A saved quote's price holds until this date ('infinity' once booked from a locked quote).
+    priceLockedUntil: o.status === 'quote' && o.quote_locked_until && Number.isFinite(new Date(o.quote_locked_until).getTime()) ? o.quote_locked_until : null,
     paymentStatus: o.payment_status,
     paidCents: o.paid_cents,
     paidAt: o.paid_at,
@@ -656,7 +679,7 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
   return status;
 }
 
-module.exports = {
+module.exports = { lockQuotePrice,
   GUEST, ACTIVE, TEMPERATURES, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 };

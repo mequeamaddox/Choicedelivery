@@ -16,8 +16,9 @@ const logOrderEmail = (orderId, type, data) => db.query(
 const MESSAGES = {
   quote_saved: (o) => ({
     subject: `Your quote ${o.order_number}: ${money(o.price_cents)}`,
-    line: `Your delivery quote of ${money(o.price_cents)} is saved. Book it any time from Orders → Quotes; the price is
-      rechecked when you book, since time of day, demand and weather can change it.`,
+    line: `Your delivery quote of ${money(o.price_cents)} is saved. Book it any time from Orders → Quotes. ${o.quote_locked_until
+      ? `This price is locked until ${new Date(o.quote_locked_until).toLocaleDateString('en-US', { timeZone: 'America/New_York', month: 'long', day: 'numeric' })} as long as the trip stays the same.`
+      : 'The price is rechecked when you book.'}`,
     quote: true,
   }),
   quote_prepared: (o) => ({
@@ -26,7 +27,7 @@ const MESSAGES = {
       ? `Here's the quote we put together for you: <strong>${money(o.price_cents)}</strong>. This price is locked in for you.
         Open it to add the exact pickup and drop-off addresses, then book${o.payment_status === 'unpaid' || o.payment_status == null ? ' and pay' : ''}.`
       : `Here's the quote we put together for you: <strong>${money(o.price_cents)}</strong>. Open it to add the exact
-        addresses and book. The price is rechecked when you book.`,
+        addresses and book. This price holds for 14 days as long as the trip stays the same.`,
     quote: true,
     button: 'Add addresses & book',
   }),

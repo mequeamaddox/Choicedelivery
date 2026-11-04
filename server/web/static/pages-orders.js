@@ -499,7 +499,7 @@ export function NewOrderPage({ guest = false }) {
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
             ${payByCard && html`<p class="small"><strong>Payment:</strong> you'll pay by card on Stripe's secure page after booking. Drivers are notified once it's paid.</p>`}
-            ${!needsReview && !guest && html`<p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this order under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>`}
+            ${!needsReview && !guest && html`<p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this price for 14 days under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>`}
           </div>
         </section>
         <section class="card">
@@ -581,7 +581,7 @@ export function NewOrderPage({ guest = false }) {
         <div class="form-actions">
           <a class="btn" href=${guest ? 'https://choicedeliverysc.com' : '#/orders'}>Cancel</a>
           ${!needsReview && !guest && html`<button type="button" class="btn" disabled=${busy || !!pieceProblem} onClick=${(e) => submit(e, true)}
-            title="Keep this price and book it later from Orders → Quotes">Save quote</button>`}
+            title="Keep this price for 14 days and book it later from Orders → Quotes">Save quote</button>`}
           <button class="btn primary" disabled=${busy || !!pieceProblem}>${busy ? 'Sending…' : needsReview ? 'Request a price' : needsApproval ? 'Request approval' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
         </div>
       </form>
@@ -984,6 +984,8 @@ function QuotePanel({ order, onChange, setError }) {
       </dl>
       ${notice ? html`<div class="alert warn" role="status">${notice}</div>`
         : order.priceIsCustom ? html`<p class="small muted">Not booked yet, so no driver has been notified. This is the price we gave you, and it's locked in${order.scheduledAt ? '. If the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`
+        : order.priceLockedUntil && new Date(order.priceLockedUntil) > new Date() ? html`<p class="small muted">Not booked yet, so no driver has been notified.
+          <strong>This price is locked until ${formatDate(order.priceLockedUntil)}.</strong> Changing the addresses, vehicle, weight, service or add-ons gives a new price.${order.scheduledAt ? ' If the pickup time has passed, it\'s booked for as soon as possible.' : ''}</p>`
         : html`<p class="small muted">Not booked yet, so no driver has been notified. The price is rechecked when you book (time of day, weekends, holidays, demand and weather can change it)${order.scheduledAt ? '; if the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`}
       <${ActionButton} class="btn primary block" onError=${setError} onClick=${book}>
         ${notice ? `Book at ${formatMoney(order.priceCents)}` : payByCard ? `Book & pay ${formatMoney(order.priceCents)}` : `Book for ${formatMoney(order.priceCents)}`}

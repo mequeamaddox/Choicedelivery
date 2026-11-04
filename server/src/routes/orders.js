@@ -3,7 +3,7 @@ const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
   ACTIVE, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
-  getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
+  getOrderFor, lockQuotePrice, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
@@ -260,7 +260,12 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
         await recordEvent(client, current.id, req.user.id, 'price_unlocked', { fromCents: current.priceCents });
       }
     }
+    const priceFields = ['stops', 'vehicleType', 'weight', 'serviceLevel', 'addOns', 'maxPieceLbs', 'numberOfPieces'];
+    if (priceFields.some((k) => b[k] !== undefined)) {
+      await client.query('UPDATE orders SET quote_locked_cents = NULL, quote_locked_until = NULL WHERE id = $1', [current.id]);
+    }
     await repriceOrder(client, current.id);
+    if (priceFields.some((k) => b[k] !== undefined)) await lockQuotePrice(client, current.id);
     await recordEvent(client, current.id, req.user.id, 'updated', { fields: Object.keys(b) });
     // A quote edited so the formula can (or can no longer) price it moves in or out of review.
     await client.query(
