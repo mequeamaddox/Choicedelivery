@@ -21,7 +21,7 @@ const serialize = (l) => ({
 // whether they've booked it yet. Shown on Orders → Quotes.
 router.get('/emailed-quotes', asyncH(async (req, res) => {
   const { rows } = await db.query(
-    `SELECT q.*, o.order_number, u.name AS account_name, org.name AS company
+    `SELECT q.*, o.order_number, o.status AS order_status, u.name AS account_name, org.name AS company
      FROM quote_locks q LEFT JOIN orders o ON o.id = q.order_id
      LEFT JOIN LATERAL (SELECT name, organization_id FROM users WHERE lower(email) = q.email AND role = 'shipper' LIMIT 1) u ON true
      LEFT JOIN organizations org ON org.id = u.organization_id
@@ -29,10 +29,20 @@ router.get('/emailed-quotes', asyncH(async (req, res) => {
   res.json(rows.map((q) => ({
     id: q.id, email: q.email, priceCents: q.price_cents, vehicleType: q.vehicle_type, serviceLevel: q.service_level,
     weightLbs: q.weight_lbs == null ? null : Number(q.weight_lbs), addresses: q.addresses, sentAt: q.created_at, expiresAt: q.expires_at,
-    status: q.order_id ? 'booked' : new Date(q.expires_at) < new Date() ? 'expired' : 'open',
+    status: q.order_id ? (q.order_status === 'quote' ? 'in_account' : 'booked') : new Date(q.expires_at) < new Date() ? 'expired' : 'open',
     order: q.order_id ? { id: q.order_id, orderNumber: q.order_number } : null,
     account: q.account_name || q.company ? { name: q.account_name, company: q.company } : null,
   })));
+}));
+
+// One tap: put the emailed quote in their account at the quoted price and email them a link to it, where
+// they add the street addresses and pay.
+router.post('/emailed-quotes/:id/send', asyncH(async (req, res) => {
+  const locks = require('../quote-locks');
+  const orderId = await locks.toAccountQuote(req.params.id, req.user);
+  if (!orderId) throw new HttpError(409, "They don't have an account yet, or this quote was already booked.");
+  await require('../notify').emailShipper(orderId, 'quote_prepared');
+  res.json({ orderId });
 }));
 
 router.get('/', asyncH(async (req, res) => {

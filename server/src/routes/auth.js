@@ -53,6 +53,7 @@ router.post('/signup', asyncH(async (req, res) => {
   logEvent('signup', attribution, { userId: user.id, organizationId: user.organization_id });
   alertStaffOfSignup({ user, company: companyName, phone: str(phoneNumber), attribution, medical });
   welcomeShipper({ user, company: companyName });
+  require('../quote-locks').claimForNewAccount(user.email).catch(() => {});
   res.status(201).json({ token: signToken(user), user: publicUser(user) });
 }));
 

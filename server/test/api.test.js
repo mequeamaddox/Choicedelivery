@@ -1196,6 +1196,37 @@ test('an emailed quote is honored when the same email books the same trip', asyn
     assert.equal(shown.status, 'booked');
     assert.equal(shown.account.name, 'Sam', 'matched to their account');
     assert.equal((await call('GET', '/leads/emailed-quotes', { token: t.acme })).status, 403);
+
+    // One tap: the emailed quote goes into their account and they get a link to add addresses and pay.
+    const sent = [];
+    mailer.setSender(async (m) => { sent.push(m); });
+    r = await call('POST', '/public/email-quote', { body: { email: 'sam@acme.com', vehicleType: 'Car', serviceLevel: 'standard',
+      stops: [{ type: 'pickup', address: '29212', location: a }, { type: 'dropoff', address: '29201', location: z }],
+      pickupAddress: '29212', dropoffAddress: '29201' } });
+    const { rows: [lock2] } = await db.query("SELECT id, price_cents FROM quote_locks WHERE email = 'sam@acme.com' AND order_id IS NULL ORDER BY created_at DESC LIMIT 1");
+    sent.length = 0;
+    r = await call('POST', `/leads/emailed-quotes/${lock2.id}/send`, { token: t.admin });
+    assert.equal(r.status, 200);
+    const acct = await call('GET', `/orders/${r.data.orderId}`, { token: t.acme });
+    assert.equal(acct.data.status, 'quote', 'in their Quotes');
+    assert.equal(acct.data.priceCents, lock2.price_cents, 'at the quoted price');
+    await new Promise((res) => setTimeout(res, 150));
+    const linkMail = sent.find((m) => m.to === 'sam@acme.com');
+    assert.ok(linkMail && linkMail.html.includes(`#/orders/${r.data.orderId}`), 'emailed a link to it');
+    r = await call('GET', '/leads/emailed-quotes', { token: t.admin });
+    assert.equal(r.data.find((x) => x.id === lock2.id).status, 'in_account');
+    await call('DELETE', `/orders/${acct.data.id}`, { token: t.acme });
+
+    // Quoted first, signed up after: the quote is waiting in the new account.
+    await call('POST', '/public/email-quote', { body: { email: 'newbie@ship.test', vehicleType: 'Car', serviceLevel: 'standard',
+      stops: [{ type: 'pickup', address: '29212', location: a }, { type: 'dropoff', address: '29201', location: z }],
+      pickupAddress: '29212', dropoffAddress: '29201' } });
+    r = await call('POST', '/auth/signup', { body: { name: 'Newbie', email: 'newbie@ship.test', password: 'password1' } });
+    assert.equal(r.status, 201);
+    await new Promise((res) => setTimeout(res, 300));
+    const mine = await call('GET', '/orders?status=quote', { token: r.data.token });
+    assert.equal(mine.data.length, 1, 'the emailed quote is in their account');
+    assert.equal(mine.data[0].priceIsCustom, true);
   } finally {
     mailer.setSender(null);
   }

@@ -48,19 +48,28 @@ function EmailedQuotes() {
   const r = useApi('/leads/emailed-quotes');
   const list = r.data || [];
   if (!list.length) return null;
-  const label = { open: html`<span class="badge amber">Not booked yet</span>`, booked: html`<span class="badge green">Booked</span>`, expired: html`<span class="badge">Expired</span>` };
+  const [error, setError] = useState(null);
+  const [sent, setSent] = useState(null);
+  const label = { open: html`<span class="badge amber">Not booked yet</span>`, in_account: html`<span class="badge amber">In their account</span>`,
+    booked: html`<span class="badge green">Booked</span>`, expired: html`<span class="badge">Expired</span>` };
   return html`
     <section class="card">
       <h2>Emailed quotes</h2>
       <p class="small muted">Sent with "Email me this quote" on the website. When they book the same trip with that email, they get
-        this price, even if prices have changed since. Good for 14 days.</p>
+        this price, even if prices have changed since. Good for 14 days. If they have an account, <strong>Send booking link</strong>
+        puts the quote in their account and emails them a button to add the street addresses and pay.</p>
+      <${Alert} error=${error} />
+      ${sent && html`<${Alert} tone="success">Sent to ${sent}.<//>`}
       <div class="table-wrap"><table>
         <thead><tr><th>Sent to</th><th>Trip</th><th>Price</th><th>Status</th><th>Sent</th></tr></thead>
         <tbody>${list.map((q) => html`<tr key=${q.id}>
           <td data-label="Sent to"><a href=${`mailto:${q.email}`}>${q.email}</a>${q.account && html`<div class="muted small">Has an account${q.account.company && q.account.company !== q.account.name ? `: ${q.account.company}` : ''}</div>`}</td>
           <td data-label="Trip">${q.addresses.join(' → ')}<div class="muted small">${q.serviceLevel === 'rush' ? 'Rush · ' : ''}${q.vehicleType}${q.weightLbs ? ` · ${q.weightLbs} lbs` : ''}</div></td>
           <td data-label="Price"><strong>${formatMoney(q.priceCents)}</strong></td>
-          <td data-label="Status">${label[q.status]}${q.order && html` <a href=${`#/orders/${q.order.id}`}>${q.order.orderNumber}</a>`}</td>
+          <td data-label="Status">${label[q.status]}${q.order && html` <a href=${`#/orders/${q.order.id}`}>${q.order.orderNumber}</a>`}
+            ${q.account && ['open', 'in_account'].includes(q.status) && html`<div><${ActionButton} class="btn small primary" onError=${setError}
+              onClick=${async () => { setError(null); setSent(null); await api(`/leads/emailed-quotes/${q.id}/send`, { method: 'POST' }); setSent(q.email); r.reload(); }}>
+              ${q.status === 'in_account' ? 'Resend booking link' : 'Send booking link'}<//></div>`}</td>
           <td data-label="Sent" class="muted small">${formatDate(q.sentAt)}${q.status === 'open' ? html`<div>Good until ${formatDate(q.expiresAt)}</div>` : ''}</td>
         </tr>`)}</tbody>
       </table></div>

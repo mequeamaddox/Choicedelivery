@@ -175,7 +175,7 @@ async function createOrderRow(client, actor, body) {
   if (isQuote && isStaff(actor) && organizationId) {
     const { rows: [contact] } = await client.query(
       `SELECT id FROM users WHERE organization_id = $1 AND role = 'shipper' AND is_active
-       ORDER BY created_at LIMIT 1`, [organizationId]).catch(() => ({ rows: [] }));
+       ORDER BY (id = $2) DESC, created_at LIMIT 1`, [organizationId, body.customerUserId || null]).catch(() => ({ rows: [] }));
     if (contact) owner = contact.id;
   }
 

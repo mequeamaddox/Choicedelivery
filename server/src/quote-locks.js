@@ -48,4 +48,33 @@ async function useLock(client, lockId, orderId) {
   await client.query('UPDATE quote_locks SET order_id = $2 WHERE id = $1', [lockId, orderId]);
 }
 
-module.exports = { saveLock, findLock, useLock, LOCK_DAYS, RADIUS_MILES };
+// Puts an emailed quote into the customer's account as a saved quote at the quoted price, so they can
+// open it, add the street addresses and pay. Returns the order id, or null if they have no account yet.
+// actor: the staff user doing it, or null (done automatically when they sign up).
+async function toAccountQuote(lockId, actor) {
+  const { createOrder } = require('./orders');
+  const { rows: [q] } = await db.query(
+    `SELECT q.*, u.id AS user_id, u.organization_id FROM quote_locks q
+     JOIN users u ON lower(u.email) = q.email AND u.role = 'shipper' AND u.is_active
+     WHERE q.id = $1 AND (q.order_id IS NULL OR NOT EXISTS (SELECT 1 FROM orders o WHERE o.id = q.order_id AND o.status <> 'quote'))`, [lockId]);
+  if (!q) return null;
+  if (q.order_id) return q.order_id; // already in their account
+  const locations = Array.isArray(q.locations) && q.locations.length === q.addresses.length ? q.locations : [];
+  const stops = q.addresses.map((address, i) => ({ type: i === 0 ? 'pickup' : 'dropoff', address, location: locations[i] || undefined }));
+  const orderId = await db.withTx((client) => createOrder(client, actor || { id: null, role: 'dispatcher', organization_id: null }, {
+    organizationId: q.organization_id, customerUserId: q.user_id, saveAsQuote: true, priceCents: q.price_cents,
+    vehicleType: q.vehicle_type, serviceLevel: q.service_level, weight: q.weight_lbs == null ? '' : `${Number(q.weight_lbs)} lbs`,
+    addOns: q.add_ons, stops,
+  }));
+  await db.query('UPDATE quote_locks SET order_id = $2 WHERE id = $1', [lockId, orderId]);
+  return orderId;
+}
+
+// Someone who was emailed a quote just signed up: their quotes are waiting in their account.
+async function claimForNewAccount(email) {
+  const { rows } = await db.query(
+    'SELECT id FROM quote_locks WHERE email = lower($1) AND order_id IS NULL AND expires_at > now() ORDER BY created_at', [String(email || '')]);
+  for (const r of rows) await toAccountQuote(r.id, null).catch((e) => console.error('Quote to account failed:', e.message));
+}
+
+module.exports = { saveLock, findLock, useLock, toAccountQuote, claimForNewAccount, LOCK_DAYS, RADIUS_MILES };
