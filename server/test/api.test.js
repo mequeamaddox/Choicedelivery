@@ -482,6 +482,7 @@ test('website: contact messages and plan requests become leads', async () => {
     assert.match(toVisitor.subject, /Your Choice Delivery quote/);
     assert.match(toVisitor.html, /\?book=/, 'links to booking with the quote filled in');
     assert.doesNotMatch(toVisitor.html, /949-7034/, 'no phone number');
+    assert.match(toVisitor.html, /ballpark price/, 'no street numbers: the email says it is a ballpark');
     const { rows: [ql] } = await db.query("SELECT type, message, attribution FROM leads WHERE email = 'shopper@x.com'");
     assert.equal(ql.type, 'quote');
     assert.match(ql.message, /From: lead pickup/);
@@ -2668,10 +2669,15 @@ test('guest checkout: book and pay without an account; drivers are alerted once 
     // A pickup far from Columbia: received, then approved by dispatch, which books it with a pay link.
     mails.length = 0;
     const far = orderBody();
-    far.stops[0] = { ...far.stops[0], address: 'King St, Charleston', location: { lat: 32.78, lng: -79.93 } };
+    far.stops[0] = { ...far.stops[0], address: '10 King St, Charleston', location: { lat: 32.78, lng: -79.93 } };
     r = await call('POST', '/public/book', { body: { ...far, ...guest, customerEmail: 'far@guest.test' } });
     assert.equal(r.status, 400, 'a drop-off with no city or ZIP is refused');
     assert.match(r.data.message, /city or ZIP to the drop-off/);
+    const zipOnly = withCities(orderBody());
+    zipOnly.stops[0] = { ...zipOnly.stops[0], address: '29212' };
+    r = await call('POST', '/public/book', { body: { ...zipOnly, ...guest } });
+    assert.equal(r.status, 400, 'a ZIP code alone is a ballpark, not a pickup address');
+    assert.match(r.data.message, /street address to the pickup/);
     const threeStops = withCities(orderBody());
     threeStops.stops.splice(1, 0, { type: 'dropoff', address: '5 Elm St, Columbia, SC' });
     r = await call('POST', '/public/book', { body: { ...threeStops, ...guest } });

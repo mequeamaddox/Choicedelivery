@@ -1,6 +1,6 @@
 import {
   html, useState, useEffect, api, getUser, isStaff, navigate, useApi, formatDate, timeAgo, formatMoney, mapsLink,
-  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText, hasCityOrZip, bookingDraft, clearBookingDraft,
+  trackingUrl, ACTIVE_STATUSES, VEHICLE_TYPES, SERVICE_LEVEL_LABELS, PAYMENT_STATUS, startCheckout, currentPath, rushTimeText, hasCityOrZip, hasStreetNumber, bookingDraft, clearBookingDraft,
   attribution,
 } from './lib.js';
 import {
@@ -306,6 +306,13 @@ export function NewOrderPage({ guest = false }) {
     if (vague >= 0) {
       const which = vague === 0 ? 'pickup' : vague === stops.length - 1 ? 'drop-off' : `stop ${vague + 1}`;
       setError(new Error(`Add the city or ZIP to the ${which} address (for example "10 Melissa Ct, Spartanburg, SC 29301"), or pick it from the suggestions.`));
+      window.scrollTo(0, 0);
+      return;
+    }
+    const noStreet = staff ? -1 : stops.findIndex((st) => !hasStreetNumber(st.address));
+    if (noStreet >= 0) {
+      const which = noStreet === 0 ? 'pickup' : noStreet === stops.length - 1 ? 'drop-off' : `stop ${noStreet + 1}`;
+      setError(new Error(`Add the street address to the ${which} (for example "10 Melissa Ct, Spartanburg, SC 29301"). A ZIP code alone isn't enough for the driver.`));
       window.scrollTo(0, 0);
       return;
     }

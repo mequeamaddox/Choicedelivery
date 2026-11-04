@@ -12,6 +12,9 @@ const { asyncH, HttpError, str, parseLocation } = require('../util');
 const { searchAddresses, locate, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES } = require('../geocode');
 const { cleanAttribution, logEvent } = require('../attribution');
 
+// A street address has a house or building number besides the ZIP code ("29212" or "Irmo, SC" doesn't).
+const hasStreetNumber = (a) => /\d/.test(String(a || '').replace(/\b\d{5}(-\d{4})?\b/g, ''));
+
 const router = express.Router();
 const limitWrites = rateLimit({ windowMs: 10 * 60 * 1000, max: 8 });
 // Emailed quotes have their own allowance, so a visitor comparing a few quotes can still send a message.
@@ -210,10 +213,15 @@ router.post('/book', limitGuestBookings, asyncH(async (req, res) => {
   const stopList = Array.isArray(b.stops) ? b.stops : [];
   // Extra stops are for account customers.
   if (stopList.length > 2) throw new HttpError(400, 'Guest bookings have one pickup and one drop-off. Create a free account to add stops.');
+  const stopName = (i) => (i === 0 ? 'pickup' : i === stopList.length - 1 ? 'drop-off' : `stop ${i + 1}`);
   const vague = stopList.findIndex((st) => !/\b\d{5}\b/.test(st?.address || '') && !/,\s*[A-Za-z]/.test(st?.address || ''));
   if (vague >= 0) {
-    const which = vague === 0 ? 'pickup' : vague === stopList.length - 1 ? 'drop-off' : `stop ${vague + 1}`;
-    throw new HttpError(400, `Add the city or ZIP to the ${which} address (for example "10 Melissa Ct, Spartanburg, SC 29301")`);
+    throw new HttpError(400, `Add the city or ZIP to the ${stopName(vague)} address (for example "10 Melissa Ct, Spartanburg, SC 29301")`);
+  }
+  // A ZIP code or a city is fine for a ballpark quote, but the driver needs the building.
+  const noStreet = stopList.findIndex((st) => !hasStreetNumber(st?.address));
+  if (noStreet >= 0) {
+    throw new HttpError(400, `Add the street address to the ${stopName(noStreet)} (for example "10 Melissa Ct, Spartanburg, SC 29301")`);
   }
   const { priceCents, organizationId, saveAsQuote, trackingNumber, ...fields } = b;
   const id = await db.withTx((client) => createOrder(client, GUEST, fields));
@@ -322,6 +330,7 @@ router.post('/email-quote', limitQuoteEmails, asyncH(async (req, res) => {
   const priceText = !quote ? "We'll work out the price and email it to you."
     : quote.needsReview ? "This one needs a custom price. We'll email it to you before anything is charged."
     : `${money(quote.totalCents)}${quote.needsApproval ? ' (we confirm this job before it’s booked)' : ''}`;
+  const ballparkNote = 'This is a ballpark price from ZIP codes or towns. Your exact price shows when you enter the street addresses at booking.';
   const details = {
     pickupAddress: pickup, dropoffAddress: dropoff,
     serviceLevel: quote?.serviceLevel || (b.serviceLevel === 'rush' ? 'rush' : 'standard'),
@@ -332,6 +341,8 @@ router.post('/email-quote', limitQuoteEmails, asyncH(async (req, res) => {
   const bookUrl = `${app}/?book=${encodeURIComponent(JSON.stringify(details))}`
     + `${attribution ? `&a=${encodeURIComponent(JSON.stringify(b.attribution))}` : ''}#/signup`;
   const level = details.serviceLevel === 'rush' ? 'Rush delivery' : 'Standard delivery';
+  // Priced from ZIP codes or towns only: a ballpark, and the booking form asks for the street addresses.
+  const ballpark = !hasStreetNumber(pickup) || !hasStreetNumber(dropoff);
   const rows = [['From', pickup], ['To', dropoff], ['Vehicle', details.vehicleType], ['Service', level],
     ...(details.weightLbs ? [['Weight', `${details.weightLbs} lbs`]] : []), ['Price', priceText]];
   await sendMail({
@@ -341,14 +352,15 @@ router.post('/email-quote', limitQuoteEmails, asyncH(async (req, res) => {
     html: `<p>Here's the delivery quote you asked for.</p>`
       + rows.map(([k, v]) => `<p><strong>${k}:</strong> ${escapeHtml(v)}</p>`).join('')
       + (quote?.note ? `<p>${escapeHtml(quote.note)}</p>` : '')
-      + `<p><a href="${bookUrl}">Book this delivery</a>. Your addresses are already filled in. Book and pay online in about 2 minutes.</p>`
+      + (ballpark && quote && !quote.needsReview ? `<p>${ballparkNote}</p>` : '')
+      + `<p><a href="${bookUrl}">Book this delivery</a>. ${ballpark ? 'Add the street addresses when you book.' : 'Your addresses are already filled in.'} Book and pay online in about 2 minutes.</p>`
       + '<p>Prices depend on the time of pickup, so the final price is shown when you book. Questions? Just reply to this email.</p>'
       + '<p>Choice Delivery SC · Same-day courier in Columbia, SC · 8 AM to 10 PM daily</p>',
   }).catch((e) => console.error('Quote email failed:', e.message));
   await saveLead(req, {
     type: 'quote', name: '', email, phone: '', company: '',
     message: rows.map(([k, v]) => `${k}: ${v}`).join('\n'),
-    subject: `Quote emailed to ${email}: ${quote && !quote.needsReview ? money(quote.totalCents) : 'needs a price'}`,
+    subject: `Quote emailed to ${email}: ${quote && !quote.needsReview ? money(quote.totalCents) : 'needs a price'}${ballpark ? ' (ballpark, no street address)' : ''}`,
   });
   res.status(201).json(ok);
 }));

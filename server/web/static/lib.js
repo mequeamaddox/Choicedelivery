@@ -242,6 +242,8 @@ export function rushTimeText(miles, travelMiles = 0) {
 }
 
 // A stop address needs its city or ZIP ("10 Melissa Ct" alone could be anywhere).
+// A house or building number besides the ZIP: "29212" or "Irmo, SC" is a ballpark, not somewhere to drive to.
+export const hasStreetNumber = (address) => /\d/.test(String(address || '').replace(/\b\d{5}(-\d{4})?\b/g, ''));
 export const hasCityOrZip = (address) => /\b\d{5}\b/.test(address || '') || /,\s*[A-Za-z]/.test(address || '');
 
 export const VEHICLE_TYPES = ['Car', 'Minivan', 'Cargo Van', 'Pickup Truck'];

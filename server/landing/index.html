@@ -178,15 +178,15 @@
             </div>
             <div id="quote" class="bg-white text-gray-800 text-left rounded-xl p-6 shadow-xl scroll-mt-24 md:col-start-2 md:row-start-1 md:row-span-2">
                         <h2 class="text-xl font-bold text-choice-teal mb-1">Get your price in seconds</h2>
-                        <p class="text-sm text-gray-600 mb-4">Enter the pickup and drop-off. Your price is set by your actual route.</p>
+                        <p class="text-sm text-gray-600 mb-4">Enter the pickup and drop-off street addresses. Your price is set by your actual route. Only have ZIP codes? You'll get a ballpark.</p>
                         <div class="space-y-4">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
-                                <input type="text" id="quote-from" placeholder="Pickup address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                <label for="quote-from" class="block text-sm font-medium text-gray-700 mb-1">Pickup address</label>
+                                <input type="text" id="quote-from" placeholder="Street address, city" autocomplete="off" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
-                                <input type="text" id="quote-to" placeholder="Delivery address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
+                                <label for="quote-to" class="block text-sm font-medium text-gray-700 mb-1">Delivery address</label>
+                                <input type="text" id="quote-to" placeholder="Street address, city" autocomplete="off" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-choice-teal focus:border-transparent">
                             </div>
                             <div>
                                 <label for="quote-vehicle" class="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
@@ -877,8 +877,12 @@
                 const q = await postJson('/public/quote', lastQuote);
                 if (window.cdTrack) cdTrack('ViewContent', { content_name: 'Instant quote', value: q.totalCents / 100 });
                 const money = (c) => `$${(c / 100).toFixed(2)}`;
+                // ZIP codes or towns only: priced from the middle of the area, so it's a ballpark.
+                const street = (a) => /\d/.test(a.replace(/\b\d{5}(-\d{4})?\b/g, ''));
+                const ballpark = !street(from) || !street(to);
+                const label = ballpark ? 'Ballpark' : 'Estimated';
                 document.getElementById('quote-price').textContent = q.needsReview ? 'Custom price'
-                    : q.needsApproval ? `Estimated: ${money(q.totalCents)} (needs our approval)` : `Estimated: ${money(q.totalCents)}`;
+                    : q.needsApproval ? `${label}: ${money(q.totalCents)} (needs our approval)` : `${label}: ${money(q.totalCents)}`;
                 const lines = [[`${q.vehicleType || 'Car'} delivery`, money(q.baseFeeCents)]];
                 const shortMileage = q.extraMileageCents - (q.longMileageCents || 0);
                 if (shortMileage > 0) lines.push(['Distance', '+' + money(shortMileage)]);
@@ -900,7 +904,8 @@
                 if (q.extraChargesNote) document.getElementById('quote-extras').textContent = q.extraChargesNote;
                 document.getElementById('quote-note').textContent =
                     (q.distanceMiles != null ? `About ${q.distanceMiles} miles. ` : '')
-                    + (q.serviceLevel === 'rush' && q.rushEstimate ? `Rush: ${q.rushEstimate.text.toLowerCase()}. ` : '') + q.note;
+                    + (q.serviceLevel === 'rush' && q.rushEstimate ? `Rush: ${q.rushEstimate.text.toLowerCase()}. ` : '') + q.note
+                    + (ballpark && !q.needsReview ? ' This is a ballpark from ZIP codes or towns: add the street addresses for your exact price.' : '');
             } catch (err) {
                 document.getElementById('quote-price').textContent = "We couldn't price that route just now.";
                 document.getElementById('quote-breakdown').replaceChildren();
