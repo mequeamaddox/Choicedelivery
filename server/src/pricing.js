@@ -166,6 +166,10 @@ function driverPayFor(priceCents, extrasCents, fees, breakdown = null) {
   return trip + rush + Math.round((((extrasCents || 0) + bookedExtras) * extrasPercent) / 100);
 }
 
+// Truck ordered, not used: kept when dispatch cancels an order after the driver accepted it (is on the way)
+// but before pickup. The driver gets their usual share of extras (driverPay.extrasPercent).
+const TONU_CENTS = 5000;
+
 // Charges added after booking (by dispatch), with the reason shown to the customer.
 const CHARGE_KINDS = {
   wait_time: 'Wait time',
@@ -173,6 +177,7 @@ const CHARGE_KINDS = {
   labor: 'Loading/unloading help',
   return_trip: 'Return trip',
   failed_attempt: 'Failed delivery attempt',
+  tonu: 'Cancelled after the driver was on the way (TONU)',
   other: 'Other',
 };
 
@@ -522,6 +527,6 @@ module.exports = {
   TIME_ZONE, BASE_FEE_CENTS, BASE_MILES, PER_MILE_CENTS, RUSH_FEE_CENTS, SURCHARGES, HOLIDAYS, HIGH_DEMAND_OPEN_ORDERS,
   holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES,
-  businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS,
+  businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS, TONU_CENTS,
   normalizeFees, getFees, driverPayFor, rushFeeFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, driverLifts, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
 };

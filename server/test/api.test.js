@@ -774,6 +774,30 @@ test('payments: card orders wait for Stripe payment; invoice companies dispatch 
     const refundCall = stripeCalls.find((c) => c.url.endsWith('/refunds'));
     assert.equal(refundCall.body.get('payment_intent'), 'pi_123');
 
+    // TONU: cancelled after the driver is on the way: $50 is kept, the rest refunded, the driver gets a share.
+    r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
+    const tonuOrder = r.data;
+    await call('POST', `/orders/${tonuOrder.id}/checkout`, { token: t.acme });
+    const tonuSession = (await db.query('SELECT stripe_session_id FROM orders WHERE id = $1', [tonuOrder.id])).rows[0].stripe_session_id;
+    await webhook({ type: 'checkout.session.completed', data: { object: {
+      id: tonuSession, payment_status: 'paid', amount_total: tonuOrder.priceCents, payment_intent: 'pi_tonu', metadata: { order_id: tonuOrder.id } } } });
+    r = await call('POST', `/orders/${tonuOrder.id}/cancel`, { token: t.dispatcher, body: { tonu: true } });
+    assert.equal(r.status, 409, 'no TONU before a driver is on the way');
+    assert.equal((await call('POST', `/orders/${tonuOrder.id}/accept`, { token: t.d1 })).status, 200);
+    r = await call('POST', `/orders/${tonuOrder.id}/cancel`, { token: t.dispatcher, body: { tonu: true } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.status, 'cancelled');
+    const kept = Math.min(5000, tonuOrder.priceCents);
+    assert.equal(r.data.tonuCents, kept, '$50, or the whole price if it was less');
+    assert.equal(r.data.paymentStatus, 'paid', 'the fee stays paid');
+    if (tonuOrder.priceCents > 5000) {
+      assert.equal(r.data.refundedCents, tonuOrder.priceCents - 5000, 'the rest is refunded');
+      assert.equal(stripeCalls.filter((c) => c.url.endsWith('/refunds')).pop().body.get('amount'), String(tonuOrder.priceCents - 5000));
+    }
+    const { rows: [tp] } = await db.query('SELECT driver_pay_cents FROM orders WHERE id = $1', [tonuOrder.id]);
+    assert.equal(tp.driver_pay_cents, Math.round(kept * 0.7), 'the driver gets their extras share');
+    await db.query('UPDATE orders SET driver_pay_cents = 0 WHERE id = $1', [tonuOrder.id]); // keep later payout totals simple
+
     // Invoice (monthly account) companies skip payment.
     await call('PATCH', `/organizations/${ids.acmeOrg}`, { token: t.acme, body: { billingMode: 'invoice' } })
       .then((x) => assert.equal(x.status, 403, 'shippers cannot switch themselves to invoicing'));

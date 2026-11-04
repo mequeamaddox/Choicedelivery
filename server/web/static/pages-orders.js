@@ -1043,7 +1043,14 @@ export function OrderPage({ id }) {
           ${!isQuote && order.status !== 'cancelled' && html`<${ActionButton} class="btn" onError=${setError}
             onClick=${async () => navigate(`/shipping-forms/${(await api(`/shipping-forms/from-order/${order.id}`, { method: 'POST' })).code}`)}>
             Print shipping label<//>`}
-          ${canCancel && html`<${ActionButton} class="btn danger" onError=${setError}
+          ${canCancel && staff && ['accepted', 'at_pickup'].includes(order.status) && ['paid', 'invoice'].includes(order.paymentStatus) ? html`
+            <${ActionButton} class="btn danger" onError=${setError}
+              confirmText=${`Cancel and keep the $50 TONU fee? The driver is already on the way. ${order.paymentStatus === 'paid' ? `The customer is refunded ${formatMoney(Math.max(0, (order.paidCents || 0) - 5000))}` : 'The $50 goes on their next invoice'}, and the driver gets their share.`}
+              onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: { tonu: true } }))}>Cancel: keep $50 TONU<//>
+            <${ActionButton} class="btn" onError=${setError}
+              confirmText="Cancel with a full refund? The driver will be notified and no fee is kept."
+              onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel: full refund<//>`
+          : canCancel && html`<${ActionButton} class="btn danger" onError=${setError}
             confirmText="Cancel this order? The driver (if any) will be notified."
             onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel order<//>`}
           ${isQuote && html`<${ActionButton} class="btn danger" onError=${setError} confirmText="Delete this saved quote?"

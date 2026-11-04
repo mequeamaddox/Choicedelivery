@@ -438,6 +438,7 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     priceLockedUntil: o.status === 'quote' && o.quote_locked_until && Number.isFinite(new Date(o.quote_locked_until).getTime()) ? o.quote_locked_until : null,
     paymentStatus: o.payment_status,
     paidCents: o.paid_cents,
+    tonuCents: o.tonu_cents || null,
     paidAt: o.paid_at,
     paymentMethod: o.payment_method,
     refundedCents: o.refunded_cents,

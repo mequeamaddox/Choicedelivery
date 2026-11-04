@@ -13,7 +13,7 @@ const { buildCustody, custodyEmailHtml } = require('../custody');
 const { sendMail } = require('../mailer');
 const { haversineMiles } = require('../geocode');
 const { getUser, driverWorkBlocker } = require('../users');
-const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
+const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS, TONU_CENTS } = require('../pricing');
 
 const router = express.Router();
 const money = (c) => `$${(c / 100).toFixed(2)}`;
@@ -332,16 +332,27 @@ router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH
     throw new HttpError(409, 'A driver has accepted this order; contact dispatch to cancel it');
   }
   if (['completed', 'cancelled'].includes(current.status)) throw new HttpError(409, `Order is ${current.status}`);
+  // TONU: dispatch cancelling after the driver is on the way (accepted, not picked up yet) can keep $50.
+  const tonu = req.body?.tonu === true;
+  if (tonu && !['accepted', 'at_pickup'].includes(current.status)) {
+    throw new HttpError(409, 'The TONU fee is for orders cancelled after a driver is on the way and before pickup');
+  }
   const { rows } = await db.withTx(async (client) => {
     const { rows: [o] } = await client.query(
-      'SELECT payment_status, paid_cents, stripe_payment_intent, stripe_session_id FROM orders WHERE id = $1 FOR UPDATE',
-      [current.id]);
-    // Card payments are refunded in full; the refund happens before the order is cancelled.
+      `SELECT o.payment_status, o.paid_cents, o.stripe_payment_intent, o.stripe_session_id, o.payment_method,
+              o.driver_pay_is_custom, d.no_driver_pay
+       FROM orders o LEFT JOIN users d ON d.id = o.driver_id WHERE o.id = $1 FOR UPDATE OF o`, [current.id]);
+    const paidByCard = o.payment_status === 'paid' && o.stripe_payment_intent;
+    if (tonu && !paidByCard && o.payment_status !== 'invoice') {
+      throw new HttpError(409, "There's no payment to keep the TONU fee from. Cancel without it, or add a charge.");
+    }
+    const keep = tonu ? Math.min(TONU_CENTS, paidByCard ? o.paid_cents : TONU_CENTS) : 0;
+    // Card payments are refunded (less the TONU fee); the refund happens before the order is cancelled.
     let refundedCents = null;
-    if (o.payment_status === 'paid' && o.stripe_payment_intent) {
+    if (paidByCard && o.paid_cents - keep > 0) {
       try {
-        const refund = await stripe.refund(o.stripe_payment_intent, o.paid_cents, current.id);
-        refundedCents = refund.amount ?? o.paid_cents;
+        const refund = await stripe.refund(o.stripe_payment_intent, o.paid_cents - keep, current.id);
+        refundedCents = refund.amount ?? o.paid_cents - keep;
       } catch (e) {
         throw new HttpError(502, `The refund didn't go through, so the order was not cancelled: ${e.message}`);
       }
@@ -350,12 +361,26 @@ router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH
     }
     const r = await client.query(
       `UPDATE orders SET status = 'cancelled', cancelled_at = now(), updated_at = now(),
-         payment_status = CASE WHEN $2::int IS NOT NULL THEN 'refunded' ELSE payment_status END,
-         refunded_cents = COALESCE($2, refunded_cents)
-       WHERE id = $1 AND status NOT IN ('completed', 'cancelled') RETURNING driver_id`, [current.id, refundedCents]);
+         payment_status = CASE WHEN $2::int IS NOT NULL AND $3::int = 0 THEN 'refunded' ELSE payment_status END,
+         refunded_cents = COALESCE($2, refunded_cents), tonu_cents = NULLIF($3::int, 0)
+       WHERE id = $1 AND status NOT IN ('completed', 'cancelled') RETURNING driver_id`, [current.id, refundedCents, keep]);
     if (r.rows[0]) {
-      await recordEvent(client, current.id, req.user.id, 'cancelled', { reason: str(req.body?.reason) || undefined });
+      await recordEvent(client, current.id, req.user.id, 'cancelled', { reason: str(req.body?.reason) || undefined, tonuCents: keep || undefined });
       if (refundedCents != null) await recordEvent(client, current.id, req.user.id, 'refunded', { cents: refundedCents });
+      if (keep) {
+        // Monthly accounts are billed the fee on their next invoice; card customers already paid it.
+        if (o.payment_status === 'invoice') {
+          await client.query(
+            `INSERT INTO order_charges (order_id, kind, description, cents, status, created_by)
+             VALUES ($1, 'tonu', 'Cancelled after the driver was on the way', $2, 'invoice', $3)`, [current.id, keep, req.user.id]);
+        }
+        // The driver who drove out is paid their share of the fee (owners driving aren't paid out).
+        if (!o.driver_pay_is_custom) {
+          const pct = (await getFees(client)).driverPay.extrasPercent;
+          await client.query('UPDATE orders SET driver_pay_cents = $2 WHERE id = $1',
+            [current.id, o.no_driver_pay ? 0 : Math.round((keep * pct) / 100)]);
+        }
+      }
     }
     return r;
   });

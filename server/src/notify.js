@@ -88,7 +88,9 @@ const MESSAGES = {
   }),
   cancelled: (o) => ({
     subject: `Order ${o.order_number} cancelled`,
-    line: `This order was cancelled${o.refunded_cents ? ` and ${money(o.refunded_cents)} was refunded to your card` : ''}. Questions? Email info@choicedeliverysc.com.`,
+    line: o.tonu_cents
+      ? `This order was cancelled after your driver was already on the way, so a ${money(o.tonu_cents)} TONU (truck ordered, not used) fee applies, as in our Terms.${o.refunded_cents ? ` The rest, ${money(o.refunded_cents)}, was refunded to your card.` : o.payment_status === 'invoice' ? ' It will be on your next invoice.' : ''} Questions? Email info@choicedeliverysc.com.`
+      : `This order was cancelled${o.refunded_cents ? ` and ${money(o.refunded_cents)} was refunded to your card` : ''}. Questions? Email info@choicedeliverysc.com.`,
   }),
 };
 
