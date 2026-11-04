@@ -20,6 +20,16 @@ const MESSAGES = {
       rechecked when you book, since time of day, demand and weather can change it.`,
     quote: true,
   }),
+  quote_prepared: (o) => ({
+    subject: `Your quote ${o.order_number}: ${money(o.price_cents)}`,
+    line: o.price_is_custom
+      ? `Here's the quote we put together for you: <strong>${money(o.price_cents)}</strong>. This price is locked in for you.
+        Open it to add the exact pickup and drop-off addresses, then book${o.payment_status === 'unpaid' || o.payment_status == null ? ' and pay' : ''}.`
+      : `Here's the quote we put together for you: <strong>${money(o.price_cents)}</strong>. Open it to add the exact
+        addresses and book. The price is rechecked when you book.`,
+    quote: true,
+    button: 'Add addresses & book',
+  }),
   review_requested: (o) => (!o.price_breakdown?.needsReview && o.price_breakdown?.needsApproval ? {
     subject: `We're confirming your delivery ${o.order_number}`,
     line: `Thanks! ${esc(o.price_breakdown.approvalReason)}, so we confirm jobs like this before booking. Your quote is

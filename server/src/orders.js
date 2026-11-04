@@ -152,6 +152,16 @@ async function createOrder(client, actor, body) {
     : { rows: [] };
   const custody = custodyFields(body, {}, !!org?.is_medical);
 
+  // A quote dispatch prepares for a company (e.g. a price given over the phone) belongs to the company's
+  // main contact: it shows in their Quotes, they're emailed, and they book and pay it like their own.
+  let owner = actor.id;
+  if (isQuote && isStaff(actor) && organizationId) {
+    const { rows: [contact] } = await client.query(
+      `SELECT id FROM users WHERE organization_id = $1 AND role = 'shipper' AND is_active
+       ORDER BY created_at LIMIT 1`, [organizationId]).catch(() => ({ rows: [] }));
+    if (contact) owner = contact.id;
+  }
+
   let rows;
   try {
     ({ rows } = await client.query(
@@ -162,7 +172,7 @@ async function createOrder(client, actor, body) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15, $16, $17, $18, $19,
                $20, $21, $22, $23)
        RETURNING id`,
-      [organizationId, actor.id, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
+      [organizationId, owner, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
         body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns, maxPieceLbs,
         customerName || null, customerEmail || null, customerPhone || null, guest,
@@ -178,6 +188,9 @@ async function createOrder(client, actor, body) {
   await assertPieceWeights(client, orderId);
   await insertStops(client, orderId, await locateStops(stops));
   await repriceOrder(client, orderId, { fresh: true });
+  if (owner !== actor.id) {
+    await recordEvent(client, orderId, actor.id, 'quote_prepared', { priceLocked: priceCents != null });
+  }
   // Customers agree to the Terms when they book: guests tick a box, account customers see the notice above the button.
   if (!isQuote && (actor.role === 'guest' || actor.role === 'shipper')) {
     await recordEvent(client, orderId, actor.id, 'terms_accepted', { method: actor.role === 'guest' ? 'checkbox' : 'booking' });

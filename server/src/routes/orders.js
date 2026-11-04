@@ -11,11 +11,17 @@ const stripe = require('../stripe');
 const { emailShipper, alertStaffOfBooking, emailPaymentRequest, notifyStaffOfReview, alertStaffOfCustodyException } = require('../notify');
 const { buildCustody, custodyEmailHtml } = require('../custody');
 const { sendMail } = require('../mailer');
+const { haversineMiles } = require('../geocode');
 const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS } = require('../pricing');
 
 const router = express.Router();
 const money = (c) => `$${(c / 100).toFixed(2)}`;
+// A house or building number besides the ZIP: "29212" or "Irmo, SC" isn't somewhere a driver can go.
+const hasStreetNumber = (a) => /\d/.test(String(a || '').replace(/\b\d{5}(-\d{4})?\b/g, ''));
+// A locked (dispatch-set) price on a quote holds when the customer fills in the exact addresses, as long
+// as each one is within this many miles of the place it was quoted for.
+const LOCKED_PRICE_RADIUS_MILES = 10;
 router.use(requireAuth);
 
 const driverOnly = (req, res, next) => {
@@ -75,7 +81,8 @@ router.post('/', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async (re
     });
   }
   if (order.status === 'quote') {
-    emailShipper(order.id, 'quote_saved');
+    const { rows: [{ created_by: owner }] } = await db.query('SELECT created_by FROM orders WHERE id = $1', [id]);
+    emailShipper(order.id, owner !== req.user.id ? 'quote_prepared' : 'quote_saved');
     return res.status(201).json(order);
   }
   // Card orders notify drivers once paid (see the Stripe webhook).
@@ -163,6 +170,14 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
     && ['stops', 'serviceLevel', 'scheduledAt', 'weight', 'addOns', 'maxPieceLbs', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
     throw new HttpError(409, 'This order is already paid; contact dispatch to change the route, service, time, weight or add-ons');
   }
+  if (req.user.role === 'shipper' && Array.isArray(b.stops)) {
+    const i = b.stops.findIndex((st) => !hasStreetNumber(st?.address));
+    if (i >= 0) {
+      const which = i === 0 ? 'pickup' : i === b.stops.length - 1 ? 'drop-off' : `stop ${i + 1}`;
+      throw new HttpError(400, `Add the street address to the ${which} (for example "10 Melissa Ct, Spartanburg, SC 29301")`);
+    }
+  }
+  let priceUnlocked = false;
   const addOns = b.addOns === undefined ? undefined : normalizeAddOns(b.addOns);
   const maxPieceLbs = b.maxPieceLbs === undefined ? undefined : parsePieceLbs(b.maxPieceLbs);
   if (b.serviceLevel !== undefined && !isServiceLevel(b.serviceLevel)) {
@@ -212,6 +227,20 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
     if (b.stops !== undefined) {
       if (current.stops.some((s) => s.status !== 'pending')) throw new HttpError(409, 'Stops can no longer be changed');
       const stops = await locateStops(normalizeStops(b.stops));
+      // The customer filling in the exact addresses on a quote with a price we gave them: the price holds
+      // if the route is the same (same number of stops, each near where it was quoted). A different route
+      // goes back to the calculated price.
+      if (req.user.role === 'shipper' && current.priceIsCustom) {
+        const same = stops.length === current.stops.length && stops.every((st, i) => {
+          const was = current.stops[i].location;
+          return st.location && was && haversineMiles(st.location, was) <= LOCKED_PRICE_RADIUS_MILES;
+        });
+        if (!same) {
+          priceUnlocked = true;
+          await client.query('UPDATE orders SET price_is_custom = false WHERE id = $1', [current.id]);
+          await recordEvent(client, current.id, req.user.id, 'price_unlocked', { fromCents: current.priceCents });
+        }
+      }
       await client.query('DELETE FROM stops WHERE order_id = $1', [current.id]);
       await insertStops(client, current.id, stops);
     }
@@ -236,7 +265,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   });
   const updated = await getOrderFor(req.user, current.id);
   if (current.reviewStatus === 'needed' && updated.reviewStatus === 'done') emailShipper(updated.id, 'price_ready');
-  res.json(updated);
+  res.json(priceUnlocked ? { ...updated, priceUnlocked: true } : updated);
 }));
 
 // Dispatch marks an order delivered by hand (the driver's phone died, they forgot to finish in the app,

@@ -1021,6 +1021,74 @@ test('saved quotes: hidden from drivers, booked later at a rechecked price, dele
   }
 });
 
+test('a price given over the phone: dispatch saves a locked quote for the company, the customer adds addresses and pays it', async () => {
+  const stripe = require('../src/stripe');
+  const mailer = require('../src/mailer');
+  const sent = [];
+  mailer.setSender(async (m) => { sent.push(m); });
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+  stripe.setFetch(async () => ({ ok: true, json: async () => ({ id: 'cs_l', url: 'https://checkout.stripe.com/pay/cs_l' }) }));
+  const settle = () => new Promise((r) => setTimeout(r, 150));
+  const irmo = { lat: 34.09, lng: -81.18 };
+  const gooseCreek = { lat: 32.98, lng: -80.03 };
+  try {
+    let r = await call('POST', '/orders', { token: t.admin, body: {
+      organizationId: ids.acmeOrg, saveAsQuote: true, priceCents: 31696, vehicleType: 'Car',
+      stops: [{ type: 'pickup', address: '29212', location: irmo }, { type: 'dropoff', address: '29445', location: gooseCreek }],
+    } });
+    assert.equal(r.status, 201);
+    const q = r.data;
+    assert.equal(q.status, 'quote');
+    assert.equal(q.priceCents, 31696);
+    await settle();
+    const mail = sent.find((m) => m.to === 'sam@acme.com');
+    assert.ok(mail, 'the company contact is emailed, not dispatch');
+    assert.match(mail.html, /locked in/);
+    r = await call('GET', '/orders?status=quote', { token: t.acme });
+    assert.ok(r.data.some((o) => o.id === q.id), 'it is in their Quotes');
+
+    // ZIP codes alone are refused; the exact addresses nearby keep the price.
+    const exact = (pickup, drop) => ({ stops: [{ type: 'pickup', ...pickup }, { type: 'dropoff', ...drop }] });
+    r = await call('PATCH', `/orders/${q.id}`, { token: t.acme, body: exact({ address: '29212', location: irmo }, { address: '29445', location: gooseCreek }) });
+    assert.equal(r.status, 400);
+    assert.match(r.data.message, /street address to the pickup/);
+    r = await call('PATCH', `/orders/${q.id}`, { token: t.acme, body: exact(
+      { address: '7 Lake Murray Blvd, Irmo, SC 29063', location: { lat: 34.1, lng: -81.2 } },
+      { address: '100 Red Bank Rd, Goose Creek, SC 29445', location: { lat: 32.99, lng: -80.05 } }) });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.priceCents, 31696, 'the quoted price holds');
+    assert.equal(r.data.priceUnlocked, undefined);
+
+    sent.length = 0;
+    r = await call('POST', `/orders/${q.id}/book`, { token: t.acme, body: { expectedCents: 31696 } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.priceCents, 31696);
+    assert.equal(r.data.paymentStatus, 'unpaid', 'a card customer pays it, not billed to account');
+    r = await call('POST', `/orders/${q.id}/checkout`, { token: t.acme });
+    assert.equal(r.data.url, 'https://checkout.stripe.com/pay/cs_l');
+    await call('POST', `/orders/${q.id}/cancel`, { token: t.acme });
+
+    // A different route goes back to the calculated price.
+    r = await call('POST', '/orders', { token: t.admin, body: {
+      organizationId: ids.acmeOrg, saveAsQuote: true, priceCents: 31696, vehicleType: 'Car',
+      stops: [{ type: 'pickup', address: '29212', location: irmo }, { type: 'dropoff', address: '29445', location: gooseCreek }],
+    } });
+    r = await call('PATCH', `/orders/${r.data.id}`, { token: t.acme, body: exact(
+      { address: '7 Lake Murray Blvd, Irmo, SC 29063', location: irmo },
+      { address: '1 Main St, Greenville, SC 29601', location: { lat: 34.85, lng: -82.4 } }) });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.priceUnlocked, true);
+    assert.equal(r.data.priceIsCustom, false);
+    assert.notEqual(r.data.priceCents, 31696);
+    await call('DELETE', `/orders/${r.data.id}`, { token: t.acme });
+  } finally {
+    mailer.setSender(null);
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

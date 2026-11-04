@@ -523,6 +523,9 @@ export function NewOrderPage({ guest = false }) {
               <//>
               <${Field} label="Custom price (USD)" hint="Leave empty to use the calculated price."><input type="number" min="0" step="0.01" ...${bind('price')} /><//>
             </div>
+            ${v.organizationId && html`<p class="small muted">Gave them a price over the phone? Enter it as the custom price and tap
+              <strong>Save as quote</strong>. It goes into their account with that price locked, and they're emailed to add the exact
+              addresses (ZIP codes are fine here) and book. The price holds as long as their addresses are within 10 miles of what you quoted.</p>`}
             ${!v.organizationId && html`
               <p class="small muted">Booking for someone without an account? Add their email and they get the order emails and tracking link.</p>
               <div class="grid-2">
@@ -565,6 +568,8 @@ const EVENT_LABELS = {
   barcode_scanned: 'Driver scanned the package barcode',
   review_requested: 'Sent for a custom price',
   price_set: 'Price set by dispatch',
+  quote_prepared: 'Quote prepared by dispatch',
+  price_unlocked: 'Route changed, so the price was recalculated',
   marked_delivered: 'Marked delivered by dispatch',
   driver_pay_set: 'Driver pay changed',
   driver_paid: 'Driver paid out',
@@ -853,6 +858,44 @@ function ChargesPanel({ order, onChange, setError }) {
 // Set by the new-order form when the price changed before booking; shown once on that quote.
 let priceChangedNotice = null;
 
+// On a quote priced from ZIP codes or towns (e.g. one dispatch prepared from a phone call): the customer
+// fills in the exact addresses before booking. A locked price stays if the places are the same.
+function ExactAddresses({ order, onChange, setError }) {
+  const [addresses, setAddresses] = useState(() => order.stops.map((s) => (hasStreetNumber(s.address) ? s.address : '')));
+  const [busy, setBusy] = useState(false);
+  const label = (s, i) => (s.type === 'pickup' ? (i === 0 ? 'Pickup address' : `Pickup ${i + 1} address`)
+    : i === order.stops.length - 1 ? 'Drop-off address' : `Stop ${i + 1} address`);
+  const save = async (e) => {
+    e.preventDefault();
+    setError(null);
+    const missing = addresses.findIndex((a) => !hasStreetNumber(a) || !hasCityOrZip(a));
+    if (missing >= 0) {
+      setError(new Error(`Enter the full ${label(order.stops[missing], missing).toLowerCase()}: street, city and ZIP (for example "10 Melissa Ct, Spartanburg, SC 29301").`));
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await api(`/orders/${order.id}`, { method: 'PATCH', body: {
+        stops: order.stops.map((s, i) => ({ type: s.type, address: addresses[i].trim(), contactName: s.contactName,
+          contactPhone: s.contactPhone, instructions: s.instructions })),
+      } });
+      onChange(updated);
+      if (updated.priceUnlocked) setError(new Error(`Those addresses are a different route from the one we quoted, so the price was recalculated: ${formatMoney(updated.priceCents)}. Questions? Reply to your quote email.`));
+    } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  return html`
+    <form class="card stack" onSubmit=${save}>
+      <h2>Add the exact addresses</h2>
+      <p class="small muted">This quote was priced from ZIP codes or towns. Enter the street addresses so your driver knows exactly
+        where to go.${order.priceIsCustom ? html` <strong>Your price of ${formatMoney(order.priceCents)} stays the same.</strong>` : ''}</p>
+      ${order.stops.map((s, i) => html`
+        <${Field} label=${label(s, i)} hint=${`Quoted for: ${s.address}`}>
+          <input required placeholder="Street, city, SC ZIP" value=${addresses[i]} autocomplete="street-address"
+            onInput=${(e) => setAddresses(addresses.map((a, j) => (j === i ? e.target.value : a)))} /><//>`)}
+      <div><button class="btn primary" disabled=${busy}>${busy ? 'Saving…' : 'Save addresses'}</button></div>
+    </form>`;
+}
+
 function QuotePanel({ order, onChange, setError }) {
   const user = getUser();
   const payments = useApi('/payments/config');
@@ -902,6 +945,8 @@ function QuotePanel({ order, onChange, setError }) {
           : html`<p class="small muted">We're reviewing this shipment and will email you the price, usually within a business hour. Nothing is booked or charged until you accept it.</p>`}
       </section>`;
   }
+  const needsAddresses = order.stops.some((s) => !hasStreetNumber(s.address));
+  if (needsAddresses && user.role === 'shipper') return html`<${ExactAddresses} order=${order} onChange=${onChange} setError=${setError} />`;
   return html`
     <section class="card">
       <h2>${order.reviewStatus === 'done' ? 'Your price is ready' : 'Saved quote'}</h2>
@@ -910,6 +955,7 @@ function QuotePanel({ order, onChange, setError }) {
         <dt>Saved</dt><dd>${formatDate(order.createdAt)}</dd>
       </dl>
       ${notice ? html`<div class="alert warn" role="status">${notice}</div>`
+        : order.priceIsCustom ? html`<p class="small muted">Not booked yet, so no driver has been notified. This is the price we gave you, and it's locked in${order.scheduledAt ? '. If the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`
         : html`<p class="small muted">Not booked yet, so no driver has been notified. The price is rechecked when you book (time of day, weekends, holidays, demand and weather can change it)${order.scheduledAt ? '; if the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`}
       <${ActionButton} class="btn primary block" onError=${setError} onClick=${book}>
         ${notice ? `Book at ${formatMoney(order.priceCents)}` : payByCard ? `Book & pay ${formatMoney(order.priceCents)}` : `Book for ${formatMoney(order.priceCents)}`}
