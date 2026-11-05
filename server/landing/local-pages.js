@@ -17,7 +17,7 @@ const AREAS = [
     ],
     faqs: [
       ['How fast can you deliver in Lexington?', 'With Rush, your order goes to the front of the line and is driven straight there, usually about 2 hours for trips around Lexington and into Columbia. Standard deliveries are same day.'],
-      ['Do you deliver from Lexington to other cities?', 'Yes. We deliver from the Midlands to anywhere in South Carolina, plus nearby North Carolina and Georgia. Your quote shows the price for the exact route.'],
+      ['Do you deliver from Lexington to other cities?', 'Yes, around Columbia and the Midlands: Columbia, West Columbia, Cayce, Irmo, Chapin, Blythewood and more. For a trip farther out, get a quote or send us a message and we\'ll let you know.'],
     ],
   },
   {
@@ -60,11 +60,11 @@ const AREAS = [
     h1: 'Courier and same-day delivery in Blythewood and Northeast Columbia',
     intro: 'Northeast Columbia keeps growing, from the Sandhills and Killian Road up to Blythewood along I-77. We pick up and deliver across the area every day, with an instant price online and live tracking on every order.',
     sections: [
-      ['Covering the I-77 corridor', 'We serve Blythewood, Killian Road, the Sandhills, Pontiac, Elgin and the rest of Northeast Columbia, plus trips between there and downtown, Lexington, Irmo and the rest of South Carolina.'],
+      ['Covering the I-77 corridor', 'We serve Blythewood, Killian Road, the Sandhills, Pontiac, Elgin and the rest of Northeast Columbia, plus trips between there and downtown, Lexington, Irmo and the rest of the Midlands.'],
       ['Built for businesses on the move', 'Warehouses, contractors, repair shops and offices in the area use same-day couriers for parts, supplies and paperwork that can\'t wait for a shipping carrier.'],
     ],
     faqs: [
-      ['Do you deliver from Blythewood to Charlotte?', 'Yes. We deliver into nearby North Carolina, including the Charlotte area. Your quote shows the price and how long the drive takes.'],
+      ['How fast can you get across town from Blythewood?', 'With Rush, your order goes to the front of the line and is driven straight there, usually about 2 hours to downtown, Lexington or Irmo. Standard deliveries are same day.'],
       ['What vehicles do you have?', 'Car, minivan, cargo van and pickup truck, so we can take anything from an envelope to bulky items. Heavy pieces are fine as long as you have someone to load and unload.'],
     ],
   },
@@ -75,16 +75,16 @@ const SERVICES = [
     slug: 'same-day-delivery-columbia-sc',
     nav: 'Same-day delivery',
     title: 'Same-Day Delivery Service in Columbia, SC',
-    description: 'Same-day delivery from Columbia and the Midlands to anywhere in South Carolina, plus nearby NC and GA. Instant online price, live tracking and photo proof of delivery.',
+    description: 'Same-day delivery across Columbia and the Midlands. Instant online price, live tracking and photo proof of delivery.',
     h1: 'Same-day delivery from Columbia, SC',
-    intro: 'When shipping carriers say "two to three business days," we say today. Choice Delivery picks up in Columbia and the Midlands and delivers the same day, across town or across the state.',
+    intro: 'When shipping carriers say "two to three business days," we say today. Choice Delivery picks up in Columbia and the Midlands and delivers the same day, across town and around the Midlands.',
     sections: [
-      ['Across town or across the state', 'Most of our runs stay in the Midlands, but we also deliver to Charleston, Greenville, Spartanburg, Florence, Rock Hill, Myrtle Beach and anywhere else in South Carolina, plus nearby North Carolina and Georgia. One driver takes your shipment the whole way.'],
+      ['Across town and around the Midlands', 'We cover Columbia, Lexington, Irmo, Chapin, West Columbia, Cayce, Blythewood, Forest Acres and the towns around them. One driver takes your shipment the whole way, with no sorting warehouse in between.'],
       ['Priced by your route', 'Your price is based on the vehicle and the driving distance, and you can see exactly what each part is for before you book. No calling around for a quote.'],
     ],
     faqs: [
       ['What\'s the difference between standard and Rush?', 'Standard is delivered the same day. With Rush, your order goes to the front of the line and is driven straight there, about 2 hours for trips within 50 miles.'],
-      ['How late can I book?', 'We run 8 AM to 10 PM every day. For long trips, booking earlier in the day gives the driver time to get there.'],
+      ['How late can I book?', 'We run 8 AM to 10 PM every day. Booking earlier in the day gives you the most options for pickup times.'],
     ],
   },
   {
@@ -154,7 +154,7 @@ const SERVICES = [
     ],
     faqs: [
       ['Can you pick up a laptop from an employee who\'s leaving?', 'Yes. Book the employee\'s address as the pickup and your office as the drop-off. We\'ll collect it and confirm the handoff with a photo and signature.'],
-      ['Can you deliver outside Columbia?', 'Yes. We deliver anywhere in South Carolina, plus nearby North Carolina and Georgia, so remote employees around the state can get equipment the same day.'],
+      ['Do you deliver outside Columbia?', 'Yes, across the Midlands: Lexington, Irmo, Chapin, West Columbia, Cayce, Blythewood and more. For an employee farther away, send us a message and we\'ll let you know.'],
       ['Can we be invoiced monthly?', 'Approved business accounts can be invoiced instead of paying by card for each delivery. Send us a message to set it up.'],
     ],
   },

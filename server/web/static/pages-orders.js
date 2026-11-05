@@ -95,7 +95,7 @@ export function OrdersPage() {
         <section class="welcome">
           <div>
             <h1>Welcome back${user.name ? `, ${user.name.split(' ')[0]}` : ''}!</h1>
-            <p>Ready for delivery across the Southeast? We're based in Columbia and deliver across South Carolina and nearby NC and GA.</p>
+            <p>Ready for your next delivery? We pick up and deliver across Columbia and the Midlands, same day.</p>
           </div>
           <a class="btn" href="#/orders/new">+ New order</a>
         </section>`}
