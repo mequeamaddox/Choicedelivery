@@ -1,5 +1,6 @@
 import { html, useState, api, getUser, refreshUser, useApi, timeAgo, formatDate, mapsLink, ROLE_LABELS, VEHICLE_TYPES, navigate, formatMoney } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, Field, ActionButton, DemoBadge } from './components.js';
+import { StoreLinkPanel } from './pages-store.js';
 import { MileageLog } from './pages-mileage.js';
 
 function AddAccountForm({ roles, companies, fixedCompanyId, onCreated, submitPath }) {
@@ -412,9 +413,9 @@ export function CompaniesPage() {
                 </td>
                 <td data-label="Since" class="muted small">${new Date(c.createdAt).toLocaleDateString()}</td>
                 <td data-label="Logins"><button type="button" class="btn small" aria-expanded=${open === c.id}
-                  onClick=${() => setOpen(open === c.id ? null : c.id)}>${open === c.id ? 'Hide' : 'Logins & invites'}</button></td>
+                  onClick=${() => setOpen(open === c.id ? null : c.id)}>${open === c.id ? 'Hide' : 'Logins & store link'}</button>${c.storeCode && html` <span class="badge green">Store link</span>`}</td>
               </tr>
-              ${open === c.id && html`<tr class="company-users-row"><td colspan="7"><${CompanyUsers} org=${c} /></td></tr>`}`)}</tbody>
+              ${open === c.id && html`<tr class="company-users-row"><td colspan="7"><${CompanyUsers} org=${c} /><${StoreLinkPanel} org=${c} onChange=${reload} /></td></tr>`}`)}</tbody>
           </table>
         </div>`}
       <form class="card stack" onSubmit=${submit}>

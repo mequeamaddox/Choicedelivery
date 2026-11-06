@@ -13,6 +13,7 @@ const serialize = (o) => ({
   id: o.id, name: o.name, phone: o.phone, billingEmail: o.billing_email, address: o.address,
   createdAt: o.created_at, isDemo: o.is_demo, billingMode: o.billing_mode, isMedical: !!o.is_medical,
   paymentTermsDays: o.payment_terms_days, creditLimitCents: o.credit_limit_cents ?? null,
+  storeCode: o.store_code || null,
 });
 
 function canAccess(user, orgId) {
@@ -72,6 +73,21 @@ router.patch('/:id', asyncH(async (req, res) => {
     [req.params.id, str(name), phone ?? null, billingEmail ?? null, address ?? null, billingMode ?? null, isMedical ?? null, paymentTermsDays ?? null]
   );
   if (!rows[0]) throw new HttpError(404, 'Organization not found');
+  res.json(serialize(rows[0]));
+}));
+
+// Store delivery link (dispatch): turn on gives the company a short code for its counter QR code; the
+// pickup is the company's address. Body: { enabled, address? }.
+router.post('/:id/store-link', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const enabled = req.body?.enabled !== false;
+  const address = str(req.body?.address);
+  if (address) await db.query('UPDATE organizations SET address = $2, updated_at = now() WHERE id = $1', [req.params.id, address]);
+  const { rows: [org] } = await db.query('SELECT * FROM organizations WHERE id = $1', [req.params.id]);
+  if (!org) throw new HttpError(404, 'Organization not found');
+  if (enabled && !str(org.address)) throw new HttpError(400, "Add the store's address first: it's the pickup for every delivery");
+  let code = enabled ? org.store_code : null;
+  if (enabled && !code) code = crypto.randomBytes(4).toString('hex');
+  const { rows } = await db.query('UPDATE organizations SET store_code = $2, updated_at = now() WHERE id = $1 RETURNING *', [org.id, code]);
   res.json(serialize(rows[0]));
 }));
 

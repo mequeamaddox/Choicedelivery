@@ -26,6 +26,25 @@ const limit = (s, n) => str(s).slice(0, n);
 const { optionalUser } = require('../auth');
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
+// Store delivery link (#/store/<code>): the store's name and pickup address, and a QR code of the link.
+async function storeByCode(code) {
+  if (!/^[a-f0-9]{6,16}$/.test(String(code || ''))) return null;
+  const { rows: [s] } = await db.query('SELECT id, name, address, phone FROM organizations WHERE store_code = $1', [code]);
+  return s && str(s.address) ? s : null;
+}
+const storeUrl = (code) => `${String(process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com').replace(/\/$/, '')}/s/${code}`;
+router.get('/store/:code', asyncH(async (req, res) => {
+  const s = await storeByCode(req.params.code);
+  if (!s) throw new HttpError(404, "This store link isn't active. Ask the store, or book at choicedeliverysc.com.");
+  res.json({ name: s.name, pickupAddress: s.address, url: storeUrl(req.params.code) });
+}));
+router.get('/store/:code/qr.svg', asyncH(async (req, res) => {
+  const s = await storeByCode(req.params.code);
+  if (!s) throw new HttpError(404, 'Not found');
+  const svg = await require('qrcode').toString(storeUrl(req.params.code), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+  res.set('Cache-Control', 'public, max-age=3600').type('image/svg+xml').send(svg);
+}));
+
 router.get('/pricing', asyncH(async (req, res) => {
   const { badWeather } = await pricingContext(db);
   const fees = await getFees(db);
@@ -200,7 +219,10 @@ router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(as
 // Returns { status: 'checkout', checkoutUrl } or { status: 'review' } when dispatch must price or approve it.
 const limitGuestBookings = rateLimit({ windowMs: 10 * 60 * 1000, max: 10 }); // room to fix typos in the form
 const STAFF_VIEW = Object.freeze({ id: null, role: 'dispatcher' });
-router.post('/book', limitGuestBookings, asyncH(async (req, res) => {
+// A store's counter tablet books for many customers from one address, so store links get more room.
+const limitStoreBookings = rateLimit({ windowMs: 10 * 60 * 1000, max: 60 });
+const limitBookings = (req, res, next) => (req.body?.storeCode ? limitStoreBookings : limitGuestBookings)(req, res, next);
+router.post('/book', limitBookings, asyncH(async (req, res) => {
   const stripe = require('../stripe');
   const { GUEST, createOrder, getOrderFor } = require('../orders');
   const { emailShipper, notifyStaffOfReview } = require('../notify');
@@ -224,7 +246,16 @@ router.post('/book', limitGuestBookings, asyncH(async (req, res) => {
   if (noStreet >= 0) {
     throw new HttpError(400, `Add the street address to the ${stopName(noStreet)} (for example "10 Melissa Ct, Spartanburg, SC 29301")`);
   }
-  const { priceCents, organizationId, saveAsQuote, trackingNumber, ...fields } = b;
+  const { priceCents, organizationId, saveAsQuote, trackingNumber, storeCode, ...fields } = b;
+  // Booked from a store's counter link: the store is the pickup and the order shows in the store's account.
+  if (storeCode) {
+    const store = await storeByCode(storeCode);
+    if (!store) throw new HttpError(404, "This store link isn't active anymore");
+    fields.stops = [{ ...stopList[0], type: 'pickup', address: store.address, location: undefined,
+      contactName: stopList[0]?.contactName || store.name, contactPhone: stopList[0]?.contactPhone || store.phone || '' },
+    ...stopList.slice(1)];
+    fields.organizationId = store.id;
+  }
   const id = await db.withTx((client) => createOrder(client, GUEST, fields));
   const order = await getOrderFor(STAFF_VIEW, id);
   logEvent('guest_booking', cleanAttribution(b.attribution), { orderId: id, totalCents: order.priceCents });

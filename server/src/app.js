@@ -140,6 +140,11 @@ app.get(['/manifest.webmanifest', '/manifest-dispatch.webmanifest'], (req, res) 
   res.set('Cache-Control', 'no-cache');
   res.type('application/manifest+json').sendFile(path.join(WEB_DIR, 'app', req.path.slice(1)));
 });
+// Store counter QR codes point here (short enough to type): opens that store's delivery form.
+app.get('/s/:code', (req, res) => {
+  const base = String(process.env.PUBLIC_URL || '').replace(/\/$/, '');
+  res.redirect(302, `${base}/#/store/${encodeURIComponent(String(req.params.code).toLowerCase().slice(0, 16))}`);
+});
 app.use('/static', express.static(path.join(WEB_DIR, 'static'), {
   fallthrough: false,
   setHeaders: (res) => { webHeaders(res); res.set('Cache-Control', 'no-cache'); },

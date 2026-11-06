@@ -27,6 +27,7 @@ export function Layout({ children }) {
       { href: '/phone-app', label: 'Phone app & alerts', icon: 'user' },
     ] : []),
     ...(user?.role === 'shipper' ? [{ href: '/team', label: 'Team', icon: 'users', tab: true }] : []),
+    ...(user?.role === 'shipper' && user.organization?.storeCode ? [{ href: '/store-kit', label: 'Store delivery link', icon: 'list' }] : []),
     ...(user?.role === 'shipper' && user.organization?.billingMode === 'invoice' ? [{ href: '/invoices', label: 'Invoices', icon: 'list' }] : []),
     { href: '/account', label: 'Account', icon: 'user', tab: true },
   ];

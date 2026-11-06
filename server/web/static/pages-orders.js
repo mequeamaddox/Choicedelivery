@@ -204,7 +204,7 @@ export function ChargesNotice({ fees }) {
 }
 
 // multi: account customers and dispatch can add, reorder and remove stops; guests book one pickup and one drop-off.
-function StopEditor({ stops, setStops, multi = true }) {
+function StopEditor({ stops, setStops, multi = true, lockedPickup = null }) {
   const update = (i, patch) => setStops(stops.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const move = (i, d) => {
     const next = [...stops];
@@ -228,15 +228,17 @@ function StopEditor({ stops, setStops, multi = true }) {
             <button type="button" class="icon-btn" disabled=${i === stops.length - 1} onClick=${() => move(i, 1)} aria-label="Move down">↓</button>
             <button type="button" class="icon-btn" disabled=${stops.length <= 2} onClick=${() => remove(i)} aria-label="Remove stop">✕</button>
           </div>`}
-          <${Field} label="Address" hint=${s.location ? '✓ Located on the map' : 'Start typing and pick a suggestion so drivers get a map pin.'}>
+          ${i === 0 && lockedPickup ? html`<p class="store-banner"><span><strong>${lockedPickup.name}</strong><br /><span class="muted">${lockedPickup.pickupAddress}</span></span></p>`
+          : html`<${Field} label="Address" hint=${s.location ? '✓ Located on the map' : 'Start typing and pick a suggestion so drivers get a map pin.'}>
             <${AddressInput} required placeholder="Street, city, state, ZIP" value=${s.address}
               onChange=${(patch) => update(i, patch)} />
-          <//>
-          <div class="grid-2">
+          <//>`}
+          ${!(i === 0 && lockedPickup) && html`<div class="grid-2">
             <${Field} label="Contact name"><input value=${s.contactName} onInput=${(e) => update(i, { contactName: e.target.value })} /><//>
             <${Field} label="Contact phone"><input type="tel" value=${s.contactPhone} onInput=${(e) => update(i, { contactPhone: e.target.value })} /><//>
-          </div>
-          <${Field} label="Instructions for the driver"><input placeholder="Dock number, gate code, who to ask for…" value=${s.instructions}
+          </div>`}
+          <${Field} label=${i === 0 && lockedPickup ? 'What the driver picks up' : 'Instructions for the driver'}><input
+            placeholder=${i === 0 && lockedPickup ? 'Receipt or order number, and the items' : 'Dock number, gate code, who to ask for…'} value=${s.instructions}
             onInput=${(e) => update(i, { instructions: e.target.value })} /><//>
         </fieldset>`)}
       ${multi ? html`<button type="button" class="btn" onClick=${add}>+ Add another stop</button>`
@@ -254,12 +256,17 @@ function GuestShell({ children }) {
 }
 
 // guest: booking without an account (#/book). Card payment only; contact details go on the order.
-export function NewOrderPage({ guest = false }) {
+export function NewOrderPage({ guest = false, storeCode = null }) {
   const user = guest ? null : getUser();
   const staff = !guest && isStaff(user);
   const companies = useApi(staff ? '/organizations' : null);
   const pricing = useApi('/public/pricing');
   const [stops, setStops] = useState([blankStop('pickup'), blankStop('dropoff')]);
+  // Booked from a store's counter link: the store is always the pickup.
+  const store = useApi(storeCode ? `/public/store/${encodeURIComponent(storeCode)}` : null);
+  useEffect(() => {
+    if (store.data) setStops((cur) => [{ ...cur[0], address: store.data.pickupAddress, location: null, contactName: store.data.name }, ...cur.slice(1)]);
+  }, [store.data]);
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '', customerName: '', customerEmail: '', sendPayLink: true,
@@ -291,7 +298,7 @@ export function NewOrderPage({ guest = false }) {
   // From "Book This Delivery" on the website (or an emailed quote): fill in that quote's details once.
   const [fromQuote, setFromQuote] = useState(false);
   useEffect(() => {
-    const d = !fromForm && bookingDraft();
+    const d = !fromForm && !storeCode && bookingDraft();
     if (!d) return;
     clearBookingDraft();
     const text = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '');
@@ -364,7 +371,7 @@ export function NewOrderPage({ guest = false }) {
           stops,
           expectedCents: shownCents ?? (quote && !quote.needsReview ? quote.totalCents : undefined),
           customerName: v.customerName.trim(), customerEmail: v.customerEmail.trim(), customerPhone: v.customerPhone.trim(),
-          agreeTerms: v.agreeTerms, attribution: attribution(),
+          agreeTerms: v.agreeTerms, attribution: attribution(), storeCode: storeCode || undefined,
         } });
         if (r.status === 'checkout') {
           trackPixel('InitiateCheckout', { content_name: 'Guest booking' });
@@ -441,7 +448,10 @@ export function NewOrderPage({ guest = false }) {
   }
   return html`
     <${Shell}>
-      <${PageHeader} title=${guest ? 'Book a delivery' : 'New order'} subtitle=${guest
+      ${storeCode && store.error && html`<${Alert} error=${store.error} />`}
+      <${PageHeader} title=${storeCode ? (store.data ? `Delivery from ${store.data.name}` : 'Delivery from the store') : guest ? 'Book a delivery' : 'New order'} subtitle=${storeCode
+        ? 'Enter where your purchase is going. You\'ll see the price, pay by card, and get a live tracking link. No account needed.'
+        : guest
         ? html`No account needed. Pay by card and get email updates and a live tracking link. Book often? <a href="#/signup">Create a free account</a>.`
         : 'Drivers are notified as soon as you book.'} />
       ${fromQuote && html`<${Alert} tone="success">Your quote's addresses are filled in. Pick each address from the suggestions so the driver gets a map pin, add contact names and a pickup time, then book.<//>`}
@@ -450,7 +460,7 @@ export function NewOrderPage({ guest = false }) {
         <${Alert} error=${error} />
         <section class="card">
           <h2>Route</h2>
-          <${StopEditor} stops=${stops} setStops=${setStops} multi=${!guest} />
+          <${StopEditor} stops=${stops} setStops=${setStops} multi=${!guest} lockedPickup=${storeCode ? store.data : null} />
         </section>
         <section class="card">
           <h2>Service</h2>

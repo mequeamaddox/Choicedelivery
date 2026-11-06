@@ -1284,6 +1284,56 @@ test('a quote a customer saves keeps its price for 14 days', async () => {
   assert.ok(formula > 0);
 });
 
+test('store delivery link: a store’s customers book and pay for delivery from the store', async () => {
+  const stripe = require('../src/stripe');
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+  stripe.setFetch(async (url) => (url.endsWith('/checkout/sessions')
+    ? { ok: true, json: async () => ({ id: 'cs_store', url: 'https://checkout.stripe.com/pay/store' }) }
+    : { ok: true, json: async () => ({}) }));
+  try {
+    let r = await call('POST', '/organizations', { token: t.admin, body: { name: 'Big Bin Liquidation' } });
+    const storeOrg = r.data;
+    r = await call('POST', `/organizations/${storeOrg.id}/store-link`, { token: t.admin, body: {} });
+    assert.equal(r.status, 400, 'needs the store address first');
+    assert.equal((await call('POST', `/organizations/${storeOrg.id}/store-link`, { token: t.acme, body: {} })).status, 403);
+    r = await call('POST', `/organizations/${storeOrg.id}/store-link`, { token: t.admin, body: { address: '100 Bin Way, Columbia, SC 29201' } });
+    const code = r.data.storeCode;
+    assert.match(code, /^[a-f0-9]{8}$/);
+    r = await call('GET', `/public/store/${code}`);
+    assert.equal(r.data.name, 'Big Bin Liquidation');
+    assert.equal(r.data.pickupAddress, '100 Bin Way, Columbia, SC 29201');
+    assert.match(r.data.url, new RegExp(`/s/${code}$`));
+    const qr = await fetch(`${base}/public/store/${code}/qr.svg`);
+    assert.match(await qr.text(), /^<svg/);
+    const short = await fetch(`${base}/s/${code}`, { redirect: 'manual' });
+    assert.equal(short.status, 302);
+    assert.match(short.headers.get('location'), new RegExp(`#/store/${code}$`));
+
+    // The customer can't change the pickup: it's always the store.
+    r = await call('POST', '/public/book', { body: {
+      storeCode: code, vehicleType: 'Car', serviceLevel: 'standard', maxPieceLbs: 20, agreeTerms: true,
+      customerName: 'Carl Customer', customerEmail: 'carl@buyer.test', customerPhone: '803-555-0100',
+      stops: [{ type: 'pickup', address: '1 Somewhere Else St, Columbia, SC 29201', location: { lat: 34, lng: -81 } },
+        { type: 'dropoff', address: '9 Home Rd, Columbia, SC 29203', location: { lat: 34.05, lng: -81.02 } }],
+    } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    assert.equal(r.data.status, 'checkout');
+    const { rows: [o] } = await db.query(
+      'SELECT o.id, o.organization_id, o.is_guest, (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS pickup FROM orders o WHERE order_number = $1', [r.data.orderNumber]);
+    assert.equal(o.organization_id, storeOrg.id, 'shows in the store\'s account');
+    assert.equal(o.pickup, '100 Bin Way, Columbia, SC 29201');
+    assert.equal(o.is_guest, true, 'the customer pays');
+
+    await call('POST', `/organizations/${storeOrg.id}/store-link`, { token: t.admin, body: { enabled: false } });
+    assert.equal((await call('GET', `/public/store/${code}`)).status, 404, 'turned off');
+    await db.query('DELETE FROM orders WHERE id = $1', [o.id]);
+  } finally {
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

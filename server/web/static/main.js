@@ -11,6 +11,7 @@ import { InvoicesPage, InvoicePage, BillingPage } from './pages-invoices.js';
 import { ExpensesPage } from './pages-expenses.js';
 import { GigPage } from './pages-gig.js';
 import { PhoneAppPage, setupHomeScreenApp } from './pages-phone.js';
+import { StoreKitPage } from './pages-store.js';
 
 const MedicalSignupPage = () => html`<${SignupPage} medical=${true} />`;
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/signup/medical': MedicalSignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
@@ -37,6 +38,11 @@ function App() {
     return html`<${PayoutMethodPage} />`;
   }
   if (!ready) return html`<div class="page"><${Spinner} /></div>`;
+
+  // A store's counter QR code: its customers book the delivery of their purchase (always as a guest, so
+  // a cashier signed in to the store's account on the tablet still books for the customer).
+  const storeLink = match('/store/:code', path);
+  if (storeLink) return html`<${NewOrderPage} key=${storeLink.code} guest=${true} storeCode=${storeLink.code} />`;
 
   // Guest checkout from the website's "Book This Delivery"; signed-in customers get the normal form.
   if (path.split('?')[0] === '/book') {
@@ -85,6 +91,9 @@ function App() {
   if (path === '/expenses' && user.role === 'admin') return html`<${ExpensesPage} />`;
   if (path === '/gig' && isStaff(user)) return html`<${GigPage} />`;
   if (path === '/phone-app' && isStaff(user)) return html`<${PhoneAppPage} />`;
+  const storeKit = match('/store-kit/:id', path);
+  if (storeKit) return html`<${StoreKitPage} key=${storeKit.id} orgId=${storeKit.id} />`;
+  if (path === '/store-kit' && user.role === 'shipper') return html`<${StoreKitPage} />`;
   if (path === '/billing' && user.role === 'shipper') return html`<${BillingPage} />`;
   const invoice = match('/invoices/:id', path);
   if (invoice) return html`<${InvoicePage} key=${invoice.id} id=${invoice.id} />`;

@@ -521,3 +521,21 @@ fieldset.card { margin: 0; min-width: 0; }
 
 /* Guest checkout (#/book) */
 .guest-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+
+/* Store delivery link: the counter sign */
+.store-link-panel { border-top: 1px solid var(--border); padding-top: .75rem; margin-top: .75rem; }
+.store-link-panel h3 { margin: 0; }
+.inline.wrap { flex-wrap: wrap; }
+.store-sign { text-align: center; max-width: 34rem; margin: 1rem auto; padding: 2rem 1.5rem; }
+.store-sign h1 { font-size: 2.4rem; margin: .5rem 0; color: var(--teal, #0f766e); }
+.store-sign-logo { width: 220px; max-width: 70%; height: auto; }
+.store-sign-lead { font-size: 1.25rem; margin: 0 0 1rem; }
+.store-sign-qr { width: 280px; max-width: 80%; height: auto; display: block; margin: 0 auto 1rem; }
+.store-sign-steps { font-weight: 600; }
+.store-sign-url { font-family: ui-monospace, monospace; font-size: 1rem; overflow-wrap: anywhere; }
+.store-banner { display: flex; gap: .75rem; align-items: center; }
+@media print {
+  .store-sign { box-shadow: none; border: 0; margin: 0 auto; max-width: none; }
+  .store-sign h1 { font-size: 3rem; }
+  .store-sign-qr { width: 4in; }
+}
