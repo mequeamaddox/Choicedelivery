@@ -517,9 +517,7 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
               ${!needsApproval && html`<p class="muted small">${quote.note}</p>`}`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
-            ${payByCard && html`<p class="small"><strong>Pay after delivery:</strong> when you book, we place a hold on your card for the price
-              plus a small buffer for possible extra charges (like wait time). Your card is charged after delivery, and any unused hold is
-              released. Deliveries scheduled more than 5 days ahead are charged when booked.</p>`}
+            ${payByCard && html`<p class="small"><strong>Payment:</strong> your card is authorized when you book and charged after delivery.</p>`}
             ${!needsReview && !guest && html`<p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this price for 14 days under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>`}
           </div>
         </section>
