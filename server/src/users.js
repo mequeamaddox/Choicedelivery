@@ -6,13 +6,14 @@ const { HttpError, str } = require('./util');
 const USER_SELECT = `
   SELECT u.*, o.name AS organization_name, o.billing_mode AS organization_billing_mode, o.is_medical AS organization_is_medical, o.store_code AS organization_store_code,
          veh.type AS vehicle_type, veh.make AS vehicle_make, veh.model AS vehicle_model, veh.year AS vehicle_year,
-         veh.color AS vehicle_color, veh.plate AS vehicle_plate, docs.kinds AS doc_kinds, docs.photo_at
+         veh.color AS vehicle_color, veh.plate AS vehicle_plate, docs.kinds AS doc_kinds, docs.photo_at, agr.agreement_signed_at
   FROM users u
   LEFT JOIN organizations o ON o.id = u.organization_id
   LEFT JOIN LATERAL (SELECT * FROM vehicles v WHERE v.driver_id = u.id ORDER BY v.created_at LIMIT 1) veh ON true
   LEFT JOIN LATERAL (SELECT array_agg(d.kind ORDER BY d.kind) AS kinds,
                             max(d.updated_at) FILTER (WHERE d.kind = 'photo') AS photo_at
-                     FROM driver_documents d WHERE d.user_id = u.id) docs ON true`;
+                     FROM driver_documents d WHERE d.user_id = u.id) docs ON true
+  LEFT JOIN LATERAL (SELECT max(signed_at) AS agreement_signed_at FROM driver_agreements a WHERE a.user_id = u.id) agr ON true`;
 
 // ---- Driver profiles ----
 const DOC_KINDS = {
@@ -65,6 +66,8 @@ function driverChecklist(u) {
   if (!p.license?.number || !p.license?.expires) missing.push("Driver's license number and expiration");
   if (!p.insurance?.company || !p.insurance?.expires) missing.push('Insurance company and expiration');
   for (const k of REQUIRED_DOCS) if (!docs.has(k)) missing.push(DOC_KINDS[k]);
+  // Owners driving their own deliveries don't sign the contractor agreement.
+  if (!u.agreement_signed_at && !u.no_driver_pay) missing.push('Signed driver agreement');
   const expired = [];
   if (p.license?.expires && p.license.expires < today()) expired.push(`Driver's license expired ${p.license.expires}`);
   if (p.insurance?.expires && p.insurance.expires < today()) expired.push(`Insurance expired ${p.insurance.expires}`);
@@ -115,6 +118,7 @@ function publicUser(u, { includeLocation = false } = {}) {
     out.documents = u.doc_kinds || [];
     out.photoUrl = u.photo_at ? `/public/driver-photo/${u.id}?v=${new Date(u.photo_at).getTime()}` : null;
     out.checklist = driverChecklist(u);
+    out.agreementSignedAt = u.agreement_signed_at || null;
     out.workBlocker = driverWorkBlocker(u);
   }
   if (includeLocation) {

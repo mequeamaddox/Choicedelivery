@@ -29,6 +29,7 @@ module.exports = {
     paragraphs: [
       "Thanks for applying to drive with Choice Delivery. We'll review your application and email you when you're approved, usually within 1–2 business days.",
       'To speed it up, install the driver app, sign in with the email and password you just chose, and finish your profile: profile photo, vehicle, driver\'s license and insurance.',
+      `Then sign your driver agreement online (about 5 minutes): <a href="${base()}/#/driver/agreement">${base().replace(/^https?:\/\//, '')}/#/driver/agreement</a>. Sign in with the same email and password.`,
     ],
     button: { href: appPage(), text: 'Get the driver app' },
   })),

@@ -12,6 +12,7 @@ import { ExpensesPage } from './pages-expenses.js';
 import { GigPage } from './pages-gig.js';
 import { PhoneAppPage, setupHomeScreenApp } from './pages-phone.js';
 import { StoreKitPage } from './pages-store.js';
+import { DriverAgreementPage, SignedAgreementPage } from './pages-agreement.js';
 
 const MedicalSignupPage = () => html`<${SignupPage} medical=${true} />`;
 const PUBLIC = { '/login': LoginPage, '/signup': SignupPage, '/signup/medical': MedicalSignupPage, '/forgot': ForgotPage, '/drive': DriverSignupPage };
@@ -65,6 +66,7 @@ function App() {
     if (job) return html`<${DriverJobPage} key=${job.id} id=${job.id} />`;
     if (path === '/driver/history') return html`<${DriverHistoryPage} />`;
     if (path === '/driver/mileage') return html`<${DriverMileagePage} />`;
+    if (path === '/driver/agreement') return html`<${DriverAgreementPage} />`;
     if (path === '/account') return html`<${AccountPage} />`;
     navigate('/driver');
     return null;
@@ -103,6 +105,8 @@ function App() {
   if (path === '/account') return html`<${AccountPage} />`;
   if (path === '/team' && user.role === 'shipper') return html`<${TeamPage} />`;
   if (path === '/people' && isStaff(getUser())) return html`<${PeoplePage} />`;
+  const signedAgreement = isStaff(user) && match('/people/:id/agreement', path);
+  if (signedAgreement) return html`<${SignedAgreementPage} key=${signedAgreement.id} userId=${signedAgreement.id} />`;
   const person = match('/people/:id', path);
   if (person && isStaff(getUser())) return html`<${DriverDetailPage} key=${person.id} id=${person.id} />`;
   if (path === '/leads' && isStaff(getUser())) return html`<${LeadsPage} />`;

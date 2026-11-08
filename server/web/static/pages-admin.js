@@ -244,6 +244,9 @@ export function DriverDetailPage({ id }) {
               <dt>Expires</dt><dd class=${expired(p.insurance?.expires) ? 'danger-text' : ''}>${p.insurance?.expires || '—'}</dd>
               <dt>Emergency</dt><dd>${p.emergencyContact?.name ? `${p.emergencyContact.name} ${p.emergencyContact.phone || ''}` : '—'}</dd>
               <dt>Agreed to terms</dt><dd>${p.agreedAt ? formatDate(p.agreedAt) : '—'}</dd>
+              <dt>Driver agreement</dt><dd>${u.agreementSignedAt
+                ? html`Signed ${formatDate(u.agreementSignedAt)} · <a href=${`#/people/${u.id}/agreement`}>View / print</a>`
+                : u.noDriverPay ? 'Not needed (owner)' : html`<span class="danger-text">Not signed yet</span> <span class="muted small">· they sign at app.choicedeliverysc.com/#/driver/agreement</span>`}</dd>
             </dl>
           </section>
         </div>

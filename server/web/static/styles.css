@@ -539,3 +539,12 @@ fieldset.card { margin: 0; min-width: 0; }
   .store-sign h1 { font-size: 3rem; }
   .store-sign-qr { width: 4in; }
 }
+
+/* Driver agreement */
+.agreement-scroll { max-height: 55vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; padding: .25rem 1rem; background: var(--gray-bg, #f9fafb); }
+.agreement-text h3 { font-size: 1rem; margin: 1rem 0 .25rem; }
+.agreement-text p, .agreement-text li { font-size: .92rem; line-height: 1.5; }
+.agreement-text ul { padding-left: 1.25rem; margin: .25rem 0; }
+.agreement-parties { border-top: 2px solid var(--teal, #0f766e); margin-top: 1rem; padding-top: .5rem; }
+.agreement-sig { max-width: 320px; width: 100%; height: auto; border-bottom: 1px solid #111827; margin: .5rem 0; }
+@media print { .agreement-signed { box-shadow: none; border: 0; padding: 0; } .agreement-text h3 { break-after: avoid; } }

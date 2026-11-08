@@ -1334,6 +1334,33 @@ test('store delivery link: a store’s customers book and pay for delivery from 
   }
 });
 
+test('driver agreement: drivers fill out and sign it; dispatch sees the signed copy', async () => {
+  let r = await call('GET', '/auth/me', { token: t.d1 });
+  assert.ok(r.data.user.checklist.missing.includes('Signed driver agreement'), 'on the checklist until signed');
+  r = await call('GET', '/driver-agreement', { token: t.d1 });
+  assert.equal(r.status, 200);
+  assert.match(JSON.stringify(r.data.current.sections), /\$10\.00 per Job/, 'pay comes from the live settings');
+  assert.equal(r.data.signed, null);
+  assert.equal((await call('GET', '/driver-agreement', { token: t.acme })).status, 403);
+  const sig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const form = { legalName: 'Dana Driver', address: '12 Elm St', city: 'Columbia', state: 'sc', zip: '29201', phone: '803-555-0101',
+    consents: { contractor: true, background: true, agree: true }, signature: sig };
+  assert.equal((await call('POST', '/driver-agreement', { token: t.d1, body: { ...form, consents: { contractor: true } } })).status, 400, 'all boxes');
+  assert.equal((await call('POST', '/driver-agreement', { token: t.d1, body: { ...form, signature: '' } })).status, 400, 'signature');
+  assert.equal((await call('POST', '/driver-agreement', { token: t.d1, body: { ...form, legalName: 'Dana' } })).status, 400, 'full name');
+  r = await call('POST', '/driver-agreement', { token: t.d1, body: form });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.state, 'SC');
+  assert.ok(r.data.document.sections.length > 10, 'the exact text is kept with the signature');
+  r = await call('GET', '/auth/me', { token: t.d1 });
+  assert.ok(!r.data.user.checklist.missing.includes('Signed driver agreement'));
+  assert.ok(r.data.user.agreementSignedAt);
+  r = await call('GET', `/driver-agreement/${ids.d1}`, { token: t.dispatcher });
+  assert.equal(r.data.legalName, 'Dana Driver');
+  assert.equal(r.data.signature, sig);
+  assert.equal((await call('GET', `/driver-agreement/${ids.d1}`, { token: t.acme })).status, 403);
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges
@@ -1638,7 +1665,7 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     for (const kind of ['photo', 'license_front', 'insurance', 'vehicle']) {
       r = await call('PUT', `/users/me/documents/${kind}`, { token: dana, body: { data: png } });
     }
-    assert.equal(r.data.checklist.complete, true, JSON.stringify(r.data.checklist));
+    assert.deepEqual(r.data.checklist.missing, ['Signed driver agreement'], 'only the agreement left to sign');
     assert.ok(r.data.photoUrl);
     assert.equal((await call('GET', `/users/${danaId}/documents/insurance`, { token: t.dispatcher })).data.data, png, 'staff can review documents');
     assert.equal((await call('GET', `/users/${danaId}/documents/insurance`, { token: t.d1 })).status, 403, 'other drivers cannot');

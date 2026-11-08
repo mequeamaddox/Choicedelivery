@@ -90,8 +90,9 @@ function DriverStatusCard({ user }) {
       <h2>${title}</h2>
       <p>${user.workBlocker}</p>
       ${user.reviewNote && user.driverStatus !== 'applied' && html`<p class="small muted">${user.reviewNote}</p>`}
-      ${c.missing.length > 0 && html`<div class="small"><strong>Finish your profile in the driver app:</strong>
-        <ul>${c.missing.map((m) => html`<li>${m}</li>`)}</ul></div>`}
+      ${!user.agreementSignedAt && c.missing.includes('Signed driver agreement') && html`<a class="btn primary" href="#/driver/agreement">Sign your driver agreement</a>`}
+      ${c.missing.filter((m) => m !== 'Signed driver agreement').length > 0 && html`<div class="small"><strong>Finish your profile in the driver app:</strong>
+        <ul>${c.missing.filter((m) => m !== 'Signed driver agreement').map((m) => html`<li>${m}</li>`)}</ul></div>`}
       <a class="btn primary" href="#/driver-app">Get the driver app</a>
     </section>`;
 }
@@ -114,6 +115,8 @@ function DriverJobsList() {
   return html`
     <${Layout}>
       <${PageHeader} title="Jobs" />
+      ${getUser()?.checklist?.missing?.includes('Signed driver agreement') && html`<div class="alert warn" role="status">
+        <strong>Please sign your driver agreement.</strong> It takes about 5 minutes. <a href="#/driver/agreement">Sign it now →</a></div>`}
       <${OnlineToggle} />
       <${Alert} error=${error || mine.error || open.error} />
       <h2 class="section-title">Your active jobs</h2>
@@ -208,7 +211,7 @@ export function DriverHistoryPage() {
 }
 
 // ---------- Proof of delivery ----------
-function SignaturePad({ onChange }) {
+export function SignaturePad({ onChange }) {
   const canvas = useRef(null);
   const drawing = useRef(false);
   const hasInk = useRef(false);
