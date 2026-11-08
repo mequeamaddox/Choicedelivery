@@ -1,6 +1,9 @@
 // Small in-memory limiter for public (no-login) endpoints. Good enough for one server instance.
+const all = new Set(); // every limiter's counts, so tests can start fresh
+
 function rateLimit({ windowMs, max }) {
   const hits = new Map();
+  all.add(hits);
   setInterval(() => {
     const now = Date.now();
     for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
@@ -22,4 +25,6 @@ function rateLimit({ windowMs, max }) {
   };
 }
 
-module.exports = { rateLimit };
+const resetRateLimits = () => all.forEach((m) => m.clear());
+
+module.exports = { rateLimit, resetRateLimits };

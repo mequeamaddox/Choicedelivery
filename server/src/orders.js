@@ -439,6 +439,8 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     paymentStatus: o.payment_status,
     paidCents: o.paid_cents,
     tonuCents: o.tonu_cents || null,
+    holdCents: o.hold_cents ?? null,
+    holdExpiresAt: o.hold_expires_at || null,
     paidAt: o.paid_at,
     paymentMethod: o.payment_method,
     refundedCents: o.refunded_cents,
@@ -498,7 +500,7 @@ const STAFF_ONLY_EVENTS = ['email_sent', 'email_failed', 'terms_accepted'];
 
 // Drivers see what they earn, never what the customer pays.
 const PRICE_FIELDS = ['priceBreakdown', 'priceIsCustom', 'priceCents', 'currency', 'paidCents', 'paidAt', 'paymentMethod',
-  'refundedCents', 'extraChargesCents', 'balanceDueCents', 'paymentStatus'];
+  'refundedCents', 'extraChargesCents', 'balanceDueCents', 'paymentStatus', 'holdCents', 'holdExpiresAt', 'tonuCents'];
 function forDriver(out, o) {
   for (const k of PRICE_FIELDS) delete out[k];
   out.driverPayCents = o.driver_pay_cents;

@@ -82,14 +82,16 @@ const MESSAGES = {
     subject: `Additional charge on ${o.order_number}: ${money(charge.cents)}`,
     line: `An additional charge of <strong>${money(charge.cents)}</strong> was added to this order for
       <strong>${esc(CHARGE_KINDS[charge.kind] || charge.kind)}</strong>${charge.minutes != null ? ` (${charge.minutes} minutes)` : ''}${charge.description ? `: ${esc(charge.description)}` : ''}.
-      ${charge.status === 'due' ? 'You can pay it on the order page.' : 'It will be added to your account bill.'}
+      ${charge.status === 'due' ? 'You can pay it on the order page.' : charge.status === 'hold' ? 'It will be included when we charge the card you used, from the hold placed at booking. Nothing else to do.' : 'It will be added to your account bill.'}
       Questions? Email info@choicedeliverysc.com.`,
     button: charge.status === 'due' ? 'Pay now' : 'View order',
   }),
   cancelled: (o) => ({
     subject: `Order ${o.order_number} cancelled`,
     line: o.tonu_cents
-      ? `This order was cancelled after your driver was already on the way, so a ${money(o.tonu_cents)} TONU (truck ordered, not used) fee applies, as in our Terms.${o.refunded_cents ? ` The rest, ${money(o.refunded_cents)}, was refunded to your card.` : o.payment_status === 'invoice' ? ' It will be on your next invoice.' : ''} Questions? Email info@choicedeliverysc.com.`
+      ? `This order was cancelled after your driver was already on the way, so a ${money(o.tonu_cents)} TONU (truck ordered, not used) fee applies, as in our Terms.${o.refunded_cents ? ` The rest, ${money(o.refunded_cents)}, was refunded to your card.` : o.hold_cents ? ' Your card was charged that amount and the rest of the hold was released.' : o.payment_status === 'invoice' ? ' It will be on your next invoice.' : ''} Questions? Email info@choicedeliverysc.com.`
+      : o.payment_status === 'released'
+      ? 'This order was cancelled and the hold on your card was released, so you weren\'t charged. Depending on your bank, the pending hold can take a few days to drop off your statement. Questions? Email info@choicedeliverysc.com.'
       : `This order was cancelled${o.refunded_cents ? ` and ${money(o.refunded_cents)} was refunded to your card` : ''}. Questions? Email info@choicedeliverysc.com.`,
   }),
 };

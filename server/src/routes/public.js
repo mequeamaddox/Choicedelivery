@@ -189,20 +189,21 @@ router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(as
   res.set('Cache-Control', 'no-store');
   const { rows: [o] } = await db.query(
     `SELECT o.id, o.order_number, o.status, o.payment_status, o.price_cents, o.public_token, o.stripe_session_id,
-            o.payment_requested_at, o.customer_email,
+            o.payment_requested_at, o.customer_email, o.scheduled_at,
             (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS first_address,
             (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address
      FROM orders o WHERE o.public_token = $1`, [String(req.params.token)]).catch(() => ({ rows: [] }));
   const base = String(process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
   if (!o) return res.status(404).type('html').send(simplePage('Link not found', 'Check the link in your email, or email info@choicedeliverysc.com.'));
-  if (o.payment_status === 'paid') return res.redirect(303, `${base}/#/track/${o.public_token}`);
+  if (['paid', 'authorized'].includes(o.payment_status)) return res.redirect(303, `${base}/#/track/${o.public_token}`);
   const payable = o.payment_requested_at || o.payment_status === 'unpaid';
   if (!payable || ['cancelled', 'quote'].includes(o.status) || ['waived', 'refunded'].includes(o.payment_status) || !(o.price_cents >= 50) || !stripe.enabled()) {
     return res.type('html').send(simplePage('Nothing to pay right now', `Order ${escapeHtml(o.order_number)} doesn't need a card payment. Questions? Email info@choicedeliverysc.com.`));
   }
   if (o.stripe_session_id) await stripe.expireCheckoutSession(o.stripe_session_id).catch(() => {});
   const session = await stripe.createCheckoutSession({
-    orderId: o.id, orderNumber: o.order_number, amountCents: o.price_cents,
+    orderId: o.id, orderNumber: o.order_number,
+    ...require('../card-holds').checkoutAmounts({ priceCents: o.price_cents, scheduledAt: o.scheduled_at }),
     description: `${o.first_address} → ${o.last_address}`.slice(0, 450),
     customerEmail: o.customer_email || undefined,
     successUrl: `${base}/#/track/${o.public_token}?paid=1`,
@@ -275,7 +276,7 @@ router.post('/book', limitBookings, asyncH(async (req, res) => {
   const base = String(process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
   const track = `${base}/#/track/${order.trackingUrlToken}`;
   const session = await stripe.createCheckoutSession({
-    orderId: id, orderNumber: order.orderNumber, amountCents: order.priceCents,
+    orderId: id, orderNumber: order.orderNumber, ...require('../card-holds').checkoutAmounts(order),
     description: `${order.stops[0]?.address} → ${order.stops[order.stops.length - 1]?.address}`.slice(0, 450),
     customerEmail: order.customerEmail,
     successUrl: `${track}?paid=1`,

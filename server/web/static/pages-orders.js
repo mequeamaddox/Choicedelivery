@@ -517,7 +517,9 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
               ${!needsApproval && html`<p class="muted small">${quote.note}</p>`}`
               : html`<p class="muted small">Enter the addresses to see your price.</p>`}
             ${staff && html`<p class="muted small">Dispatch can set a custom price below.</p>`}
-            ${payByCard && html`<p class="small"><strong>Payment:</strong> you'll pay by card on Stripe's secure page after booking. Drivers are notified once it's paid.</p>`}
+            ${payByCard && html`<p class="small"><strong>Pay after delivery:</strong> when you book, we place a hold on your card for the price
+              plus a small buffer for possible extra charges (like wait time). Your card is charged after delivery, and any unused hold is
+              released. Deliveries scheduled more than 5 days ahead are charged when booked.</p>`}
             ${!needsReview && !guest && html`<p class="muted small">Not ready yet? <strong>Save quote</strong> keeps this price for 14 days under Orders → Quotes so you can book${payByCard ? ' and pay' : ''} later.</p>`}
           </div>
         </section>
@@ -601,7 +603,7 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
           <a class="btn" href=${guest ? 'https://choicedeliverysc.com' : '#/orders'}>Cancel</a>
           ${!needsReview && !guest && html`<button type="button" class="btn" disabled=${busy || !!pieceProblem} onClick=${(e) => submit(e, true)}
             title="Keep this price for 14 days and book it later from Orders → Quotes">Save quote</button>`}
-          <button class="btn primary" disabled=${busy || !!pieceProblem}>${busy ? 'Sending…' : needsReview ? 'Request a price' : needsApproval ? 'Request approval' : payByCard ? 'Book & pay' : 'Book delivery'}</button>
+          <button class="btn primary" disabled=${busy || !!pieceProblem}>${busy ? 'Sending…' : needsReview ? 'Request a price' : needsApproval ? 'Request approval' : 'Book delivery'}</button>
         </div>
       </form>
     <//>`;
@@ -758,7 +760,8 @@ function PaymentPanel({ order, onChange, setError }) {
     setPayLink(r);
     onChange(r.order);
   };
-  const canRequest = staff && !cancelled && payments.data?.enabled && !['paid', 'refunded'].includes(order.paymentStatus) && order.priceCents >= 50;
+  const canRequest = staff && !cancelled && payments.data?.enabled && !['paid', 'refunded', 'authorized', 'released'].includes(order.paymentStatus) && order.priceCents >= 50;
+  const held = order.paymentStatus === 'authorized';
   return html`
     <section class="card">
       <h2>Payment <span class=${`badge ${st.tone}`}>${st.label}</span></h2>
@@ -766,6 +769,7 @@ function PaymentPanel({ order, onChange, setError }) {
         <dt>Price</dt><dd>${formatMoney(order.priceCents)}</dd>
         ${order.paidCents != null && html`<dt>Paid</dt><dd>${formatMoney(order.paidCents)}${order.paymentMethod ? ` · ${order.paymentMethod}` : ''}${order.paidAt ? ` · ${formatDate(order.paidAt)}` : ''}</dd>`}
         ${order.refundedCents != null && html`<dt>Refunded</dt><dd>${formatMoney(order.refundedCents)}</dd>`}
+        ${held && html`<dt>Card hold</dt><dd>${formatMoney(order.holdCents)}${order.holdExpiresAt ? html` <span class="muted small">· until ${formatDate(order.holdExpiresAt)}</span>` : ''}</dd>`}
         ${staff && (order.customerName || order.customerEmail) && html`<dt>Customer</dt><dd>${[order.customerName, order.customerEmail].filter(Boolean).join(' · ')}</dd>`}
         ${staff && order.paymentRequestedAt && order.paymentStatus !== 'paid' && html`<dt>Payment link</dt><dd>Sent ${formatDate(order.paymentRequestedAt)}</dd>`}
       </dl>
@@ -782,14 +786,20 @@ function PaymentPanel({ order, onChange, setError }) {
       ${order.paymentStatus === 'unpaid' && !cancelled && html`
         ${justPaid
           ? html`<p class="small">Thanks! We're confirming your payment with Stripe; this updates automatically.</p>`
-          : html`<p class="small">Drivers are notified as soon as this order is paid.</p>`}
+          : html`<p class="small">Drivers are notified once your card is added. Your card is held, then charged after delivery.</p>`}
         ${payments.data?.enabled && !justPaid && html`
           <${ActionButton} class="btn primary block" onError=${setError} onClick=${() => startCheckout(order.id)}>
-            Pay ${formatMoney(order.priceCents)} by card
+            Add card for ${formatMoney(order.priceCents)}
           <//>`}`}
+      ${held && html`<p class="small">${staff
+        ? 'The card is charged automatically 2 hours after delivery: the price plus any extra charges marked "From card hold". The rest of the hold is released.'
+        : 'Your card is on hold. It\'s charged after delivery for the price plus any extra charges, and the rest of the hold is released.'}</p>
+        ${staff && !cancelled && html`<${ActionButton} class="btn small" onError=${setError}
+          confirmText=${`Charge the card now (${formatMoney(order.priceCents)} plus any extra charges in the hold)?`}
+          onClick=${async () => onChange(await api(`/orders/${order.id}/charge-card`, { method: 'POST' }))}>Charge card now<//>`}`}
       ${staff && !cancelled && html`
         <div class="actions">
-          ${order.paymentStatus !== 'paid' && html`
+          ${!['paid', 'authorized'].includes(order.paymentStatus) && html`
             <${ActionButton} class="btn small" onError=${setError} onClick=${record('paid', 'cash')}>Paid in cash<//>
             <${ActionButton} class="btn small" onError=${setError} onClick=${record('paid', 'check')}>Paid by check<//>`}
           ${order.paymentStatus !== 'invoice' && order.paymentMethod !== 'card' && html`
@@ -797,7 +807,8 @@ function PaymentPanel({ order, onChange, setError }) {
           ${order.paymentStatus !== 'waived' && order.paymentMethod !== 'card' && html`
             <${ActionButton} class="btn small" onError=${setError} confirmText="Deliver this order at no charge?" onClick=${record('waived')}>No charge<//>`}
         </div>
-        ${order.paymentMethod === 'card' && html`<p class="muted small">Paid by card. Cancelling the order refunds the card automatically.</p>`}`}
+        ${order.paymentMethod === 'card' && !held && order.paymentStatus === 'paid' && html`<p class="muted small">Paid by card. Cancelling the order refunds the card automatically.</p>`}
+        ${held && html`<p class="muted small">Cancelling the order releases the hold, so the customer isn't charged.</p>`}`}
     </section>`;
 }
 
@@ -805,6 +816,7 @@ const ADD_ON_LABELS = { loading_help: 'Loading/unloading help', inside_delivery:
 const CHARGE_STATUS = {
   due: { label: 'Due', tone: 'amber' }, paid: { label: 'Paid', tone: 'green' },
   invoice: { label: 'On account', tone: 'blue' }, waived: { label: 'Removed', tone: 'gray' },
+  hold: { label: 'From card hold', tone: 'blue' },
 };
 
 // Same rule as the server: free minutes, then each started block is billed.
@@ -1007,7 +1019,7 @@ function QuotePanel({ order, onChange, setError }) {
           <strong>This price is locked until ${formatDate(order.priceLockedUntil)}.</strong> Changing the addresses, vehicle, weight, service or add-ons gives a new price.${order.scheduledAt ? ' If the pickup time has passed, it\'s booked for as soon as possible.' : ''}</p>`
         : html`<p class="small muted">Not booked yet, so no driver has been notified. The price is rechecked when you book (time of day, weekends, holidays, demand and weather can change it)${order.scheduledAt ? '; if the pickup time has passed, it\'s booked for as soon as possible' : ''}.</p>`}
       <${ActionButton} class="btn primary block" onError=${setError} onClick=${book}>
-        ${notice ? `Book at ${formatMoney(order.priceCents)}` : payByCard ? `Book & pay ${formatMoney(order.priceCents)}` : `Book for ${formatMoney(order.priceCents)}`}
+        ${notice ? `Book at ${formatMoney(order.priceCents)}` : `Book for ${formatMoney(order.priceCents)}`}
       <//>
     </section>`;
 }
@@ -1053,13 +1065,13 @@ export function OrderPage({ id }) {
           ${!isQuote && order.status !== 'cancelled' && html`<${ActionButton} class="btn" onError=${setError}
             onClick=${async () => navigate(`/shipping-forms/${(await api(`/shipping-forms/from-order/${order.id}`, { method: 'POST' })).code}`)}>
             Print shipping label<//>`}
-          ${canCancel && staff && ['accepted', 'at_pickup'].includes(order.status) && ['paid', 'invoice'].includes(order.paymentStatus) ? html`
+          ${canCancel && staff && ['accepted', 'at_pickup'].includes(order.status) && ['paid', 'invoice', 'authorized'].includes(order.paymentStatus) ? html`
             <${ActionButton} class="btn danger" onError=${setError}
-              confirmText=${`Cancel and keep the $50 TONU fee? The driver is already on the way. ${order.paymentStatus === 'paid' ? `The customer is refunded ${formatMoney(Math.max(0, (order.paidCents || 0) - 5000))}` : 'The $50 goes on their next invoice'}, and the driver gets their share.`}
+              confirmText=${`Cancel and keep the $50 TONU fee? The driver is already on the way. ${order.paymentStatus === 'paid' ? `The customer is refunded ${formatMoney(Math.max(0, (order.paidCents || 0) - 5000))}` : order.paymentStatus === 'authorized' ? 'The $50 is charged from their card hold and the rest is released' : 'The $50 goes on their next invoice'}, and the driver gets their share.`}
               onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: { tonu: true } }))}>Cancel: keep $50 TONU<//>
             <${ActionButton} class="btn" onError=${setError}
-              confirmText="Cancel with a full refund? The driver will be notified and no fee is kept."
-              onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel: full refund<//>`
+              confirmText="Cancel with no fee? The driver will be notified, and the customer gets a full refund or their card hold is released."
+              onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel: no fee<//>`
           : canCancel && html`<${ActionButton} class="btn danger" onError=${setError}
             confirmText="Cancel this order? The driver (if any) will be notified."
             onClick=${async () => setOverride(await api(`/orders/${order.id}/cancel`, { method: 'POST', body: {} }))}>Cancel order<//>`}

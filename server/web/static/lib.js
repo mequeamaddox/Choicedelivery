@@ -225,6 +225,8 @@ export const PAYMENT_STATUS = {
   invoice: { label: 'Invoiced account', tone: 'blue' },
   waived: { label: 'No charge', tone: 'gray' },
   refunded: { label: 'Refunded', tone: 'gray' },
+  authorized: { label: 'Card on hold', tone: 'blue' },
+  released: { label: 'Hold released', tone: 'gray' },
 };
 
 // Sends the browser to Stripe's secure checkout page for an order.

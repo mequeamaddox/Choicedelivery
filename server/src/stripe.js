@@ -54,9 +54,18 @@ async function createCheckoutSession(params) {
   }
 }
 
+// holdBufferCents: put a hold on the card instead of charging it (price + this buffer for possible extra
+// charges); the card is charged after delivery for the price plus any extras, and the rest is released.
 function checkoutSession({
   orderId, orderNumber, amountCents, description, customerEmail, successUrl, cancelUrl, name, metadata = {}, paymentMethodTypes,
+  holdBufferCents = 0,
 }) {
+  const hold = holdBufferCents > 0;
+  const meta = { order_id: orderId, order_number: orderNumber, ...metadata, ...(hold ? { hold: '1' } : {}) };
+  const item = (cents, title, desc) => ({
+    quantity: 1,
+    price_data: { currency: 'usd', unit_amount: cents, product_data: { name: title, description: desc || undefined } },
+  });
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     success_url: successUrl,
@@ -64,18 +73,24 @@ function checkoutSession({
     customer_email: customerEmail || undefined,
     client_reference_id: orderId,
     payment_method_types: paymentMethodTypes,
-    metadata: { order_id: orderId, order_number: orderNumber, ...metadata },
-    payment_intent_data: { metadata: { order_id: orderId, order_number: orderNumber, ...metadata } },
-    line_items: [{
-      quantity: 1,
-      price_data: {
-        currency: 'usd',
-        unit_amount: amountCents,
-        product_data: { name: name || `Choice Delivery ${orderNumber}`, description: description || undefined },
-      },
-    }],
+    metadata: meta,
+    payment_intent_data: { metadata: meta, ...(hold ? { capture_method: 'manual' } : {}) },
+    line_items: [
+      item(amountCents, name || `Choice Delivery ${orderNumber}`, description),
+      ...(hold ? [item(holdBufferCents, 'Hold for possible extra charges',
+        'Only used for extra charges such as wait time or a heavier shipment. Released if not needed.')] : []),
+    ],
+    ...(hold ? { custom_text: { submit: { message:
+      'Your card is only held now. We charge it after your delivery is done, for your delivery price plus any extra charges, and release the rest of the hold.' } } } : {}),
   });
 }
+
+const getPaymentIntent = (id) => stripeRequest('GET', `/payment_intents/${encodeURIComponent(id)}?expand[]=latest_charge`);
+// Charges a held card (once): any amount up to the hold; the rest is released.
+const capturePaymentIntent = (id, amountCents) => stripeRequest('POST', `/payment_intents/${encodeURIComponent(id)}/capture`,
+  { amount_to_capture: amountCents }, { idempotencyKey: `capture-${id}-${amountCents}` });
+const cancelPaymentIntent = (id) => stripeRequest('POST', `/payment_intents/${encodeURIComponent(id)}/cancel`, {},
+  { idempotencyKey: `cancel-${id}` });
 
 const expireCheckoutSession = (id) => stripeRequest('POST', `/checkout/sessions/${encodeURIComponent(id)}/expire`, {});
 
@@ -220,7 +235,8 @@ const instantPayout = ({ accountId, cents, payoutId }) => stripeRequest('POST', 
 }, { account: accountId, idempotencyKey: `instant-${payoutId}` });
 
 module.exports = {
-  enabled, mode, publishableKey, retireOtherModeAccounts, setFetch, createCheckoutSession, expireCheckoutSession, refund, verifyWebhook, encode,
+  enabled, mode, publishableKey, retireOtherModeAccounts, setFetch, createCheckoutSession, expireCheckoutSession, refund,
+  getPaymentIntent, capturePaymentIntent, cancelPaymentIntent, verifyWebhook, encode,
   ensureWebhook, webhookReady,
   createDriverAccount, getAccount, createAccountLink, createLoginLink, transferToDriver, instantPayout, createAccountSession,
   addExternalAccount, makeDefaultExternalAccount, removeExternalAccount,

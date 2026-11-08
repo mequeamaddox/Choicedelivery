@@ -12,6 +12,7 @@ const { emailShipper, alertStaffOfBooking, emailPaymentRequest, notifyStaffOfRev
 const { buildCustody, custodyEmailHtml } = require('../custody');
 const { sendMail } = require('../mailer');
 const { haversineMiles } = require('../geocode');
+const holds = require('../card-holds');
 const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS, TONU_CENTS } = require('../pricing');
 
@@ -166,7 +167,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   }
   const b = req.body || {};
   if (b.priceCents !== undefined && !isStaff(req.user)) throw new HttpError(403, 'Only dispatch can set a price');
-  if (req.user.role === 'shipper' && current.paymentStatus === 'paid'
+  if (req.user.role === 'shipper' && ['paid', 'authorized'].includes(current.paymentStatus)
     && ['stops', 'serviceLevel', 'scheduledAt', 'weight', 'addOns', 'maxPieceLbs', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
     throw new HttpError(409, 'This order is already paid; contact dispatch to change the route, service, time, weight or add-ons');
   }
@@ -343,10 +344,16 @@ router.post('/:id/cancel', requireRole('shipper', 'admin', 'dispatcher'), asyncH
               o.driver_pay_is_custom, d.no_driver_pay
        FROM orders o LEFT JOIN users d ON d.id = o.driver_id WHERE o.id = $1 FOR UPDATE OF o`, [current.id]);
     const paidByCard = o.payment_status === 'paid' && o.stripe_payment_intent;
-    if (tonu && !paidByCard && o.payment_status !== 'invoice') {
+    const held = o.payment_status === 'authorized';
+    if (tonu && !paidByCard && !held && o.payment_status !== 'invoice') {
       throw new HttpError(409, "There's no payment to keep the TONU fee from. Cancel without it, or add a charge.");
     }
     const keep = tonu ? Math.min(TONU_CENTS, paidByCard ? o.paid_cents : TONU_CENTS) : 0;
+    // A card on hold: release it, or charge just the TONU fee from it (the rest is released).
+    if (held) {
+      if (keep) await holds.charge(current.id, { actorId: req.user.id, amountCents: keep, reason: 'tonu', client });
+      else await holds.release(current.id, { actorId: req.user.id, client });
+    }
     // Card payments are refunded (less the TONU fee); the refund happens before the order is cancelled.
     let refundedCents = null;
     if (paidByCard && o.paid_cents - keep > 0) {
@@ -432,7 +439,7 @@ router.post('/:id/checkout', requireRole('shipper', 'admin', 'dispatcher'), asyn
   const session = await stripe.createCheckoutSession({
     orderId: order.id,
     orderNumber: order.orderNumber,
-    amountCents: order.priceCents,
+    ...holds.checkoutAmounts(order),
     description: `${order.stops[0]?.address} → ${order.stops[order.stops.length - 1]?.address}`,
     customerEmail,
     successUrl: `${base}/#/orders/${order.id}?paid=1`,
@@ -485,6 +492,9 @@ router.post('/:id/payment', requireRole('admin', 'dispatcher'), asyncH(async (re
   if (order.paymentStatus === 'paid' && order.paymentMethod === 'card' && status !== 'paid') {
     throw new HttpError(409, 'This order was paid by card; cancel it to refund instead');
   }
+  if (order.paymentStatus === 'authorized') {
+    throw new HttpError(409, 'The customer\'s card is on hold for this order. Use "Charge card now", or cancel the order to release it.');
+  }
   await db.withTx(async (client) => {
     await client.query(
       `UPDATE orders SET payment_status = $2,
@@ -522,13 +532,15 @@ router.post('/:id/charges', requireRole('admin', 'dispatcher'), asyncH(async (re
       ? 'That wait is within the free time, so there is nothing to charge' : 'Enter an amount');
   }
   const stopId = b.stopId && order.stops.some((st) => st.id === b.stopId) ? b.stopId : null;
-  // Card customers pay extra charges online; everyone else is billed to their account.
+  // Card customers pay extra charges online; everyone else is billed to their account. With a card on
+  // hold, a charge that fits in the hold is taken from it when the card is charged after delivery.
   const byCard = order.paymentMethod === 'card' || order.paymentStatus === 'unpaid';
+  const fromHold = order.paymentStatus === 'authorized' && cents <= await holds.holdRoom(db, order.id);
   await db.withTx(async (client) => {
     const { rows: [c] } = await client.query(
       `INSERT INTO order_charges (order_id, kind, description, cents, minutes, stop_id, status, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [order.id, b.kind, str(b.description).slice(0, 300), cents, minutes, stopId, byCard ? 'due' : 'invoice', req.user.id]);
+      [order.id, b.kind, str(b.description).slice(0, 300), cents, minutes, stopId, fromHold ? 'hold' : byCard ? 'due' : 'invoice', req.user.id]);
     await recordEvent(client, order.id, req.user.id, 'charge_added', { chargeId: c.id, kind: b.kind, cents, minutes });
     await client.query('UPDATE orders SET updated_at = now() WHERE id = $1', [order.id]);
     await refreshDriverPay(client, order.id);
@@ -536,6 +548,15 @@ router.post('/:id/charges', requireRole('admin', 'dispatcher'), asyncH(async (re
   const updated = await getOrderFor(req.user, order.id);
   emailShipper(order.id, 'charge_added', { charge: updated.charges[updated.charges.length - 1] });
   res.status(201).json(updated);
+}));
+
+// Dispatch charges a held card now instead of waiting (price plus extra charges in the hold).
+router.post('/:id/charge-card', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const order = await getOrderFor(req.user, req.params.id);
+  if (order.paymentStatus !== 'authorized') throw new HttpError(409, 'There is no card on hold for this order');
+  if (order.status === 'cancelled') throw new HttpError(409, 'Order is cancelled');
+  await holds.charge(order.id, { actorId: req.user.id, reason: 'dispatch' });
+  res.json(await getOrderFor(req.user, order.id));
 }));
 
 // Dispatch sets what the driver earns for this order. Body: { cents } (null goes back to the

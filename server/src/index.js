@@ -113,6 +113,7 @@ async function start() {
 
   // Gig customers' addresses are deleted a day after the route (the shift log keeps no addresses).
   require('./gig').startPurgeTimer();
+  require('./card-holds').startChargeTimer();
 }
 
 start();

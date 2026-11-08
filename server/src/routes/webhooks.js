@@ -26,7 +26,19 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
         [session.metadata.invoice_id, session.id]);
       return res.json({ received: true });
     }
-    const paidEvent = (event.type === 'checkout.session.completed' && session.payment_status === 'paid')
+    // A card hold (charged after delivery): record it, then send the job to drivers like a paid order.
+    const held = event.type === 'checkout.session.completed' && session.metadata?.hold === '1' && !session.metadata?.kind
+      ? await require('../card-holds').recordHold(session) : undefined;
+    if (held !== undefined && !held?.charged) {
+      const orderId = session.metadata.order_id || session.client_reference_id;
+      if (held?.status === 'pending' && held.was === 'unpaid') {
+        const order = await getOrderFor(SYSTEM, orderId);
+        notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
+        alertStaffOfBooking(orderId);
+      }
+      return res.json({ received: true });
+    }
+    const paidEvent = (event.type === 'checkout.session.completed' && (session.payment_status === 'paid' || held?.charged))
       || event.type === 'checkout.session.async_payment_succeeded';
     if (paidEvent) {
       const orderId = session.metadata?.order_id || session.client_reference_id;

@@ -1361,6 +1361,102 @@ test('driver agreement: drivers fill out and sign it; dispatch sees the signed c
   assert.equal((await call('GET', `/driver-agreement/${ids.d1}`, { token: t.acme })).status, 403);
 });
 
+test('card holds: card held at booking, charged after delivery with extras from the hold; cancel releases it', async () => {
+  const stripe = require('../src/stripe');
+  const holds = require('../src/card-holds');
+  const crypto = require('crypto');
+  process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
+  const calls = [];
+  const intents = {};
+  stripe.setFetch(async (url, opts) => {
+    const body = new URLSearchParams(opts.body || '');
+    calls.push({ url, body });
+    if (url.endsWith('/checkout/sessions')) {
+      const id = `cs_hold_${calls.length}`;
+      intents[id] = Number(body.get('line_items[0][price_data][unit_amount]')) + Number(body.get('line_items[1][price_data][unit_amount]') || 0);
+      return { ok: true, json: async () => ({ id, url: 'https://checkout.stripe.com/pay/hold' }) };
+    }
+    const m = url.match(/payment_intents\/(pi_[a-z0-9_]+)(\/(capture|cancel))?/);
+    if (m && !m[2]) return { ok: true, json: async () => ({ id: m[1], status: 'requires_capture', amount: intents[m[1]], amount_capturable: intents[m[1]],
+      latest_charge: { payment_method_details: { card: { capture_before: Math.floor(Date.now() / 1000) + 6 * 86400 } } } }) };
+    if (m && m[3] === 'capture') return { ok: true, json: async () => ({ id: m[1], status: 'succeeded', amount_received: Number(body.get('amount_to_capture')) }) };
+    if (m && m[3] === 'cancel') return { ok: true, json: async () => ({ id: m[1], status: 'canceled' }) };
+    if (url.includes('/expire')) return { ok: true, json: async () => ({}) };
+    return { ok: false, status: 404, json: async () => ({ error: { message: `unexpected ${url}` } }) };
+  });
+  const webhook = (event) => {
+    const payload = JSON.stringify(event);
+    const ts = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', 'whsec_test').update(`${ts}.${payload}`).digest('hex');
+    return fetch(`${base}/webhooks/stripe`, { method: 'POST', body: payload, headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${ts},v1=${sig}` } });
+  };
+  const book = async (email) => {
+    const r = await call('POST', '/public/book', { body: {
+      vehicleType: 'Car', serviceLevel: 'standard', maxPieceLbs: 10, agreeTerms: true, customerName: 'Hal Hold', customerEmail: email, customerPhone: '803-555-0123',
+      stops: [{ type: 'pickup', address: '1 Main St, Columbia, SC 29201', location: { lat: 34, lng: -81 } },
+        { type: 'dropoff', address: '2 Oak Ave, Columbia, SC 29203', location: { lat: 34.05, lng: -81.03 } }],
+    } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    const { rows: [o] } = await db.query('SELECT id, price_cents, stripe_session_id FROM orders WHERE order_number = $1', [r.data.orderNumber]);
+    const pi = `pi_${o.stripe_session_id.replace(/\W/g, '_')}`;
+    intents[pi] = intents[o.stripe_session_id];
+    await webhook({ type: 'checkout.session.completed', data: { object: {
+      id: o.stripe_session_id, payment_status: 'unpaid', amount_total: intents[pi], payment_intent: pi, metadata: { order_id: o.id, hold: '1' } } } });
+    return { ...o, pi };
+  };
+  try {
+    const a = await book('hal1@hold.test');
+    const session = calls.find((c) => c.url.endsWith('/checkout/sessions')).body;
+    assert.equal(session.get('payment_intent_data[capture_method]'), 'manual', 'the card is only held');
+    assert.equal(Number(session.get('line_items[1][price_data][unit_amount]')), holds.bufferFor(a.price_cents), 'plus a buffer for extras');
+    let r = await call('GET', `/orders/${a.id}`, { token: t.dispatcher });
+    assert.equal(r.data.paymentStatus, 'authorized');
+    assert.equal(r.data.holdCents, a.price_cents + holds.bufferFor(a.price_cents));
+    r = await call('GET', '/orders?status=pending', { token: t.d1 });
+    assert.ok(r.data.some((o) => o.id === a.id), 'drivers get the job once the card is held');
+
+    // An extra charge that fits comes out of the hold; one that doesn't gets a payment link.
+    r = await call('POST', `/orders/${a.id}/charges`, { token: t.dispatcher, body: { kind: 'wait_time', cents: 500 } });
+    assert.equal(r.data.charges.at(-1).status, 'hold');
+    r = await call('POST', `/orders/${a.id}/charges`, { token: t.dispatcher, body: { kind: 'other', cents: 99900 } });
+    assert.equal(r.data.charges.at(-1).status, 'due');
+    assert.equal((await call('POST', `/orders/${a.id}/payment`, { token: t.dispatcher, body: { status: 'paid', method: 'cash' } })).status, 409);
+
+    // Delivered: charged 2 hours later for the price plus the extra in the hold.
+    await db.query("UPDATE orders SET status = 'completed', completed_at = now() - interval '3 hours' WHERE id = $1", [a.id]);
+    assert.ok(await holds.chargeDue() >= 1);
+    r = await call('GET', `/orders/${a.id}`, { token: t.dispatcher });
+    assert.equal(r.data.paymentStatus, 'paid');
+    assert.equal(r.data.paidCents, a.price_cents + 500);
+    assert.equal(r.data.charges.find((c) => c.kind === 'wait_time').status, 'paid');
+    const cap = calls.find((c) => c.url.endsWith(`${a.pi}/capture`));
+    assert.equal(cap.body.get('amount_to_capture'), String(a.price_cents + 500));
+
+    // Cancelled before a driver: the hold is released, no charge.
+    const b = await book('hal2@hold.test');
+    r = await call('POST', `/orders/${b.id}/cancel`, { token: t.dispatcher, body: {} });
+    assert.equal(r.data.paymentStatus, 'released');
+    assert.ok(calls.some((c) => c.url.endsWith(`${b.pi}/cancel`)));
+
+    // Cancelled after the driver is on the way: the TONU fee comes out of the hold.
+    const c = await book('hal3@hold.test');
+    assert.equal((await call('POST', `/orders/${c.id}/accept`, { token: t.d1 })).status, 200);
+    r = await call('POST', `/orders/${c.id}/cancel`, { token: t.dispatcher, body: { tonu: true } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.paymentStatus, 'paid');
+    assert.equal(r.data.paidCents, Math.min(5000, c.price_cents + holds.bufferFor(c.price_cents)));
+    await db.query('UPDATE orders SET driver_pay_cents = 0 WHERE id = $1', [c.id]);
+
+    // Far-off bookings are charged at booking.
+    assert.equal(holds.checkoutAmounts({ priceCents: 4000, scheduledAt: new Date(Date.now() + 9 * 86400e3) }).holdBufferCents, 0);
+  } finally {
+    require('../src/rate-limit').resetRateLimits(); // this test's bookings count against the guest limit
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

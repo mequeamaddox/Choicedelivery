@@ -27,6 +27,8 @@ router.get('/:token', asyncH(async (req, res) => {
     // A card order that hasn't been paid yet (e.g. a guest who left the payment page) can be paid from here.
     paymentDue: o.payment_status === 'unpaid' && o.status !== 'cancelled' ? { amountCents: o.price_cents } : null,
     paid: o.payment_status === 'paid' ? { amountCents: o.paid_cents } : null,
+    // Card on hold: charged after delivery.
+    held: o.payment_status === 'authorized' ? { amountCents: o.price_cents } : null,
     driver: o.driver_name ? {
       name: o.driver_name.split(' ')[0],
       vehicle: o.driver_vehicle || null,

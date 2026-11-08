@@ -223,7 +223,7 @@ export function TrackPage({ token: raw }) {
   const justPaid = new URLSearchParams(query || '').get('paid') === '1';
   const { data, error, loading } = useApi(`/track/${encodeURIComponent(token)}`, { pollMs: 15000 });
   // Back from the payment page: count the booking once (Meta Pixel).
-  useEffect(() => { if (justPaid && data?.paid) trackPurchase({ id: data.orderNumber, priceCents: data.paid.amountCents }); }, [justPaid, !!data?.paid]);
+  useEffect(() => { if (justPaid && (data?.paid || data?.held)) trackPurchase({ id: data.orderNumber, priceCents: (data.paid || data.held).amountCents }); }, [justPaid, !!(data?.paid || data?.held)]);
   return html`
     <div class="track">
       <header class="track-header"><${Logo} /></header>
@@ -242,9 +242,10 @@ export function TrackPage({ token: raw }) {
               ${data.driver.location && html` Last seen ${timeAgo(data.driver.locationUpdatedAt)}${' · '}<a href=${mapsLink(data.driver.location)} target="_blank" rel="noopener">view on map</a>`}</p>`}
             ${justPaid && data.paid && html`<${Alert} tone="success">Thanks! Your payment went through and your delivery is booked.
               We emailed your confirmation, and this page updates as your driver picks up and delivers.<//>`}
+            ${justPaid && data.held && html`<${Alert} tone="success">You're booked! Your card is on hold and is charged after your delivery is done.<//>`}
             ${justPaid && !data.paid && data.paymentDue && html`<${Alert} tone="success">Thanks! We're confirming your payment; this page updates in a moment.<//>`}
             ${!justPaid && data.paymentDue && html`<div class="alert warn" role="status"><strong>Payment needed:</strong> this delivery is booked
-              once it's paid. <a class="btn primary small" href=${`/public/pay/${encodeURIComponent(token)}`}>Pay ${formatMoney(data.paymentDue.amountCents)} by card</a></div>`}
+              once your card is added. You're charged after delivery. <a class="btn primary small" href=${`/public/pay/${encodeURIComponent(token)}`}>Add card for ${formatMoney(data.paymentDue.amountCents)}</a></div>`}
             ${data.completedAt && html`<p>Delivered ${formatDate(data.completedAt)}.</p>`}
             ${data.status !== 'cancelled' && html`<${LiveMap} stops=${data.stops} driver=${data.driver} />`}
             ${data.driver?.location && html`<p class="muted small">The map updates on its own while the driver is on the way.</p>`}
