@@ -407,4 +407,36 @@ async function alertStaffOfCustodyException(orderId, stopId) {
   }
 }
 
-module.exports = { inviteCustomer, alertStaffOfCustodyException, emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };
+// Card orders that were booked but not paid (the customer left the payment page): tell dispatch once,
+// 20 minutes after booking, with the customer's contact details so they can follow up.
+async function alertStaffOfUnpaidBookings() {
+  const { rows } = await db.query(
+    `SELECT o.id, o.order_number, o.price_cents, o.customer_name, o.customer_email, o.customer_phone, o.service_level,
+            u.name AS shipper_name, u.email AS shipper_email, org.name AS company,
+            (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS first_address,
+            (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address
+     FROM orders o LEFT JOIN users u ON u.id = o.created_by LEFT JOIN organizations org ON org.id = o.organization_id
+     WHERE o.status = 'pending' AND o.payment_status = 'unpaid' AND NOT o.is_demo
+       AND o.created_at < now() - interval '20 minutes' AND o.created_at > now() - interval '3 days'
+       AND NOT EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.type = 'unpaid_alert')`);
+  const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+  for (const o of rows) {
+    await db.query("INSERT INTO order_events (order_id, actor_id, type, data) VALUES ($1, NULL, 'unpaid_alert', '{}')", [o.id]);
+    const who = o.customer_name || o.company || o.shipper_name || 'Customer';
+    const contact = [o.customer_email || o.shipper_email, o.customer_phone].filter(Boolean).join(' · ');
+    notifyStaff('orders', { title: `Booked but not paid: ${o.order_number}`, body: `${who} · ${money(o.price_cents)} · ${contact}`, url: `/#/orders/${o.id}` });
+    await sendMail({
+      to: staffInbox(),
+      subject: `Booked but not paid yet: ${o.order_number} ${money(o.price_cents)}${o.service_level === 'rush' ? ' (RUSH)' : ''} · ${who}`,
+      html: `<p><strong>${esc(o.order_number)}</strong> was booked 20+ minutes ago but the card step wasn't finished, so drivers haven't been sent.</p>
+        <p><strong>Customer:</strong> ${esc(who)}${contact ? ` · ${esc(contact)}` : ''}<br>
+        <strong>Route:</strong> ${esc(o.first_address)} &rarr; ${esc(o.last_address)}<br>
+        <strong>Price:</strong> ${money(o.price_cents)}${o.service_level === 'rush' ? ' · Rush' : ''}</p>
+        <p>They already got an email with a payment link. A quick call or text often saves the booking.</p>
+        <p><a href="${base}/#/orders/${o.id}">Open the order</a></p>`,
+    }).catch((e) => console.error('Unpaid booking alert failed:', e.message));
+  }
+  return rows.length;
+}
+
+module.exports = { alertStaffOfUnpaidBookings, inviteCustomer, alertStaffOfCustodyException, emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };

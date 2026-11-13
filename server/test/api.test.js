@@ -1496,6 +1496,24 @@ test('an address that cannot be found on the map is priced by hand, never booked
   }
 });
 
+test('a card order booked but not paid alerts dispatch once, 20 minutes later', async () => {
+  const mailer = require('../src/mailer');
+  const { alertStaffOfUnpaidBookings } = require('../src/notify');
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); });
+  try {
+    await db.query("UPDATE orders SET status = 'cancelled' WHERE status = 'pending' AND payment_status = 'unpaid'");
+    const r = await call('POST', '/orders', { token: t.dispatcher, body: { ...orderBody(), customerName: 'Una Paid', customerEmail: 'una@paid.test' } });
+    await db.query("UPDATE orders SET payment_status = 'unpaid', created_at = now() - interval '25 minutes' WHERE id = $1", [r.data.id]);
+    assert.equal(await alertStaffOfUnpaidBookings(), 1);
+    assert.ok(mails.some((m) => /Booked but not paid yet/.test(m.subject) && /una@paid\.test/.test(m.html)));
+    assert.equal(await alertStaffOfUnpaidBookings(), 0, 'only once');
+    await call('POST', `/orders/${r.data.id}/cancel`, { token: t.dispatcher });
+  } finally {
+    mailer.setSender(null);
+  }
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

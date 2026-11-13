@@ -124,7 +124,10 @@ async function chargeDue() {
 
 function startChargeTimer() {
   if (!stripe.enabled()) return;
-  setInterval(() => { chargeDue().catch((e) => console.error('Card hold charging failed:', e.message)); }, 10 * 60 * 1000).unref();
+  setInterval(() => {
+    chargeDue().catch((e) => console.error('Card hold charging failed:', e.message));
+    require('./notify').alertStaffOfUnpaidBookings().catch((e) => console.error('Unpaid booking alerts failed:', e.message));
+  }, 10 * 60 * 1000).unref();
 }
 
 module.exports = { HOLD_MAX_DAYS_AHEAD, bufferFor, checkoutAmounts, recordHold, holdRoom, charge, release, chargeDue, startChargeTimer };
