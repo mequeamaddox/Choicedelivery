@@ -78,6 +78,10 @@ const MESSAGES = {
     line: `Your shipment was delivered${extra?.printedName ? ` and signed for by ${esc(extra.printedName)}` : ''}. ${o.creator_role === 'shipper'
       ? 'Proof of delivery is on the order page.' : "Reply to this email if you'd like a copy of the delivery photo."}`,
   }),
+  payment_receipt: (o, extra) => ({
+    subject: `Receipt for ${o.order_number}: ${money(extra.cents)}`,
+    line: `Your card was charged <strong>${money(extra.cents)}</strong> for delivery ${esc(o.order_number)}. Thank you for choosing Choice Delivery!`,
+  }),
   charge_added: (o, { charge }) => ({
     subject: `Additional charge on ${o.order_number}: ${money(charge.cents)}`,
     line: `An additional charge of <strong>${money(charge.cents)}</strong> was added to this order for
@@ -439,4 +443,39 @@ async function alertStaffOfUnpaidBookings() {
   return rows.length;
 }
 
-module.exports = { alertStaffOfUnpaidBookings, inviteCustomer, alertStaffOfCustodyException, emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };
+// Tells the owner/dispatch (email + phone alert) when an order is picked up, delivered or paid, for every
+// order (including ones dispatch booked). Never throws.
+async function alertStaffOfProgress(orderId, kind, extra = {}) {
+  try {
+    const { rows: [o] } = await db.query(
+      `SELECT o.id, o.order_number, o.price_cents, o.paid_cents, o.is_demo, o.customer_name, o.service_level,
+              d.name AS driver_name, org.name AS company, u.name AS shipper_name,
+              (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence LIMIT 1) AS first_address,
+              (SELECT address FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS last_address,
+              (SELECT printed_name FROM stops WHERE order_id = o.id ORDER BY sequence DESC LIMIT 1) AS received_by
+       FROM orders o LEFT JOIN users d ON d.id = o.driver_id LEFT JOIN organizations org ON org.id = o.organization_id
+       LEFT JOIN users u ON u.id = o.created_by WHERE o.id = $1`, [orderId]);
+    if (!o || o.is_demo) return;
+    const who = o.company || o.customer_name || o.shipper_name || 'Customer';
+    const cents = extra.cents ?? o.paid_cents ?? o.price_cents;
+    const msg = {
+      picked_up: { title: `Picked up: ${o.order_number}`, body: `${o.driver_name || 'The driver'} picked up ${who}'s shipment, on the way to ${o.last_address}.` },
+      delivered: { title: `Delivered: ${o.order_number}`, body: `${o.driver_name || 'The driver'} delivered to ${o.last_address}${o.received_by ? `, signed by ${o.received_by}` : ''}.` },
+      paid: { title: `Paid: ${o.order_number} ${money(cents)}`, body: `${who} paid ${money(cents)} by card.` },
+    }[kind];
+    if (!msg) return;
+    const base = process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com';
+    notifyStaff(kind === 'paid' ? 'payments' : 'orders', { ...msg, url: `/#/orders/${o.id}` });
+    await sendMail({
+      to: staffInbox(),
+      subject: `${msg.title} · ${who}`,
+      html: `<p><strong>${esc(msg.title)}</strong></p><p>${esc(msg.body)}</p>
+        <p style="color:#4b5563">${esc(o.first_address)} &rarr; ${esc(o.last_address)}</p>
+        <p><a href="${base}/#/orders/${o.id}">Open the order</a></p>`,
+    });
+  } catch (e) {
+    console.error(`Staff ${kind} alert failed:`, e.message);
+  }
+}
+
+module.exports = { alertStaffOfProgress, alertStaffOfUnpaidBookings, inviteCustomer, alertStaffOfCustodyException, emailShipper, alertStaffOfBooking, alertStaffOfSignup, welcomeShipper, emailPaymentRequest, notifyStaffOfReview };

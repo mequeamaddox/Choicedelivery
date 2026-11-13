@@ -8,7 +8,7 @@ const {
 const { notifyDriversOfOrder, notifyUser } = require('../push');
 const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
-const { emailShipper, alertStaffOfBooking, emailPaymentRequest, notifyStaffOfReview, alertStaffOfCustodyException } = require('../notify');
+const { alertStaffOfProgress, emailShipper, alertStaffOfBooking, emailPaymentRequest, notifyStaffOfReview, alertStaffOfCustodyException } = require('../notify');
 const { buildCustody, custodyEmailHtml } = require('../custody');
 const { sendMail } = require('../mailer');
 const { haversineMiles } = require('../geocode');
@@ -323,6 +323,7 @@ router.post('/:id/mark-delivered', requireRole('admin', 'dispatcher'), asyncH(as
   });
   if (!done) throw new HttpError(409, 'This order changed; refresh and try again');
   emailShipper(current.id, 'delivered');
+  alertStaffOfProgress(current.id, 'delivered');
   chargeHeldCard(current.id);
   if (current.driver?.id) {
     notifyUser(current.driver.id, 'Order marked delivered', `Dispatch marked ${current.orderNumber} delivered`, { orderId: current.id })
@@ -692,8 +693,12 @@ router.post('/:id/stops/:stopId/complete', driverOnly, asyncH(async (req, res) =
   const stop = updated.stops.find((s) => s.id === req.params.stopId);
   if (updated.status === 'completed') {
     emailShipper(updated.id, 'delivered', { printedName: str(printedName) });
+    alertStaffOfProgress(updated.id, 'delivered');
     chargeHeldCard(updated.id);
-  } else if (stop?.type === 'pickup' && updated.status === 'in_transit') emailShipper(updated.id, 'picked_up');
+  } else if (stop?.type === 'pickup' && updated.status === 'in_transit') {
+    emailShipper(updated.id, 'picked_up');
+    alertStaffOfProgress(updated.id, 'picked_up');
+  }
   res.json(updated);
 }));
 

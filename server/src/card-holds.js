@@ -82,6 +82,12 @@ async function charge(orderId, { actorId = null, amountCents = null, reason, cli
       await client.query("UPDATE order_charges SET status = 'waived' WHERE order_id = $1 AND status = 'hold'", [o.id]);
     }
     await recordEvent(client, o.id, actorId, 'paid', { cents: got, method: 'card', fromHold: true, reason });
+    // After the transaction commits: receipt to the customer, alert to the owner.
+    setImmediate(() => {
+      const notify = require('./notify');
+      notify.emailShipper(o.id, 'payment_receipt', { cents: got });
+      notify.alertStaffOfProgress(o.id, 'paid', { cents: got });
+    });
     return got;
   });
 }

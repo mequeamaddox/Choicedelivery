@@ -919,7 +919,7 @@ test('shippers get status emails with a tracking link; opt-out and demo respecte
     await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
     await settle();
     assert.equal(sent.length, 0, 'opted-out shippers get no emails');
-    assert.equal(staff.length, 2, "the owner is still alerted when the customer's emails are off");
+    assert.equal(staff.filter((m) => /^New /.test(m.subject)).length, 2, "the owner is still alerted when the customer's emails are off");
     await call('PUT', '/users/me', { token: t.acme, body: { emailUpdates: true } });
 
     r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
@@ -1458,7 +1458,11 @@ test('card holds: card held at booking, charged after delivery with extras from 
     assert.equal(r.data.paidCents, Math.min(5000, c.price_cents));
     await db.query('UPDATE orders SET driver_pay_cents = 0 WHERE id = $1', [c.id]);
 
-    // Delivered (here marked by dispatch): the card is charged right away, not hours later.
+    // Delivered (here marked by dispatch): the card is charged right away, not hours later; the customer gets
+    // a receipt and the owner hears about the delivery and the payment.
+    const mailer = require('../src/mailer');
+    const mails = [];
+    mailer.setSender(async (m) => { mails.push(m); });
     const d = await book('hal4@hold.test');
     r = await call('POST', `/orders/${d.id}/mark-delivered`, { token: t.dispatcher, body: { reason: 'Driver phone died' } });
     assert.equal(r.status, 200, JSON.stringify(r.data));
@@ -1466,6 +1470,11 @@ test('card holds: card held at booking, charged after delivery with extras from 
     r = await call('GET', `/orders/${d.id}`, { token: t.dispatcher });
     assert.equal(r.data.paymentStatus, 'paid', 'charged at delivery');
     assert.equal(r.data.paidCents, d.price_cents);
+    await new Promise((res) => setTimeout(res, 300));
+    assert.ok(mails.some((m) => m.to === 'hal4@hold.test' && /Receipt for/.test(m.subject)), 'customer receipt');
+    assert.ok(mails.some((m) => m.to === 'info@choicedeliverysc.com' && /^Delivered:/.test(m.subject)), 'owner told it was delivered');
+    assert.ok(mails.some((m) => m.to === 'info@choicedeliverysc.com' && /^Paid:/.test(m.subject)), 'owner told it was paid');
+    mailer.setSender(null);
 
     // Far-off bookings are charged at booking.
     assert.equal(holds.checkoutAmounts({ priceCents: 4000, scheduledAt: new Date(Date.now() + 9 * 86400e3) }).hold, false);

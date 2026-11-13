@@ -92,6 +92,8 @@ router.post('/stripe', express.raw({ type: '*/*', limit: '1mb' }), async (req, r
         const order = await getOrderFor(SYSTEM, orderId);
         notifyDriversOfOrder(order).catch((e) => console.error('Push notify failed:', e));
         alertStaffOfBooking(orderId);
+      } else if (updated) {
+        require('../notify').alertStaffOfProgress(orderId, 'paid', { cents: session.amount_total });
       }
     }
     res.json({ received: true });
