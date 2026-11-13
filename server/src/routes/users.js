@@ -102,6 +102,11 @@ router.put('/me/availability', requireUser, requireRole('driver'), asyncH(async 
   if (req.body?.online) {
     const blocker = driverWorkBlocker(await getUser(req.user.id));
     if (blocker) throw new HttpError(409, blocker);
+  } else {
+    // The customer follows the driver on the map until the job is done.
+    const { rows: [busy] } = await db.query(
+      "SELECT order_number FROM orders WHERE driver_id = $1 AND status IN ('accepted', 'at_pickup', 'in_transit', 'at_dropoff') LIMIT 1", [req.user.id]);
+    if (busy) throw new HttpError(409, `Finish your job first (${busy.order_number}). You can go offline once it's delivered.`);
   }
   await db.query('UPDATE users SET is_online = $1 WHERE id = $2', [!!req.body?.online, req.user.id]);
   res.json({ online: !!req.body?.online });
@@ -115,8 +120,10 @@ router.post('/invite', requireRole('admin', 'dispatcher'), asyncH(async (req, re
   const b = req.body || {};
   if (!str(b.name)) throw new HttpError(400, 'Name is required');
   const { user, token } = await db.withTx(async (client) => {
+    // Invited drivers wait for review like drivers who apply: dispatch approves them once their license,
+    // insurance and agreement are in.
     const u = await createUser({ email: b.email, password: crypto.randomBytes(24).toString('hex'), name: b.name,
-      phoneNumber: b.phoneNumber, role: 'driver' }, client);
+      phoneNumber: b.phoneNumber, role: 'driver', driverStatus: 'applied' }, client);
     if (b.vehicleType) await setVehicle(u.id, { type: b.vehicleType }, client);
     const t = crypto.randomBytes(32).toString('hex');
     await client.query(

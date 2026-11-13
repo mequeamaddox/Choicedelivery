@@ -36,12 +36,16 @@ function hereNow() {
   });
 }
 
-function OnlineToggle() {
+function useOnline() {
   const me = useApi('/users/me');
   const [online, setOnline] = useState(null);
-  const [error, setError] = useState(null);
   useEffect(() => { if (me.data) setOnline(!!me.data.isOnline); }, [me.data]);
   useEffect(() => { if (online) startSharing(); else stopSharing(); }, [online]);
+  return [online, setOnline];
+}
+
+function OnlineToggle({ online, setOnline }) {
+  const [error, setError] = useState(null);
   if (online === null) return null;
   const toggle = async () => {
     setError(null);
@@ -54,7 +58,7 @@ function OnlineToggle() {
     <div class=${`online-toggle ${online ? 'on' : ''}`}>
       <div>
         <strong>${online ? "You're online" : "You're offline"}</strong>
-        <div class="small">${online ? 'Sharing your location with dispatch while this page is open.' : 'Go online to get new job alerts and share your location.'}</div>
+        <div class="small">${online ? 'Sharing your location with dispatch while this page is open.' : 'Go online to see and accept jobs, get job alerts and share your location.'}</div>
       </div>
       <button type="button" class=${`btn ${online ? '' : 'primary'}`} onClick=${toggle}>${online ? 'Go offline' : 'Go online'}</button>
       ${error && html`<${Alert} error=${error} />`}
@@ -107,11 +111,13 @@ export function DriverJobsPage() {
 function DriverJobsList() {
   const alertsOn = useJobAlertsOn();
   const mine = useApi(`/orders?mine=true&status=${ACTIVE_STATUSES.join(',')}`, { pollMs: 15000 });
-  const open = useApi('/orders?status=pending', { pollMs: 15000 });
+  const [online, setOnline] = useOnline();
+  const open = useApi(online ? `/orders?status=pending&on=1` : null, { pollMs: 15000 });
   const [error, setError] = useState(null);
   const available = (open.data || []).filter((o) => !o.driver);
   const accept = (id) => async () => {
     await api(`/orders/${id}/accept`, { method: 'POST' });
+    setOnline(true);
     navigate(`/driver/job/${id}`);
   };
   return html`
@@ -121,14 +127,15 @@ function DriverJobsList() {
         even when the app is closed. <a href="#/driver/alerts">Set it up →</a></div>`}
       ${getUser()?.checklist?.missing?.includes('Signed driver agreement') && html`<div class="alert warn" role="status">
         <strong>Please sign your driver agreement.</strong> It takes about 5 minutes. <a href="#/driver/agreement">Sign it now →</a></div>`}
-      <${OnlineToggle} />
+      <${OnlineToggle} online=${online} setOnline=${setOnline} />
       <${Alert} error=${error || mine.error || open.error} />
       <h2 class="section-title">Your active jobs</h2>
       ${mine.loading ? html`<${Spinner} />` : !mine.data?.length ? html`<p class="muted">No active jobs. Accept one below.</p>` : html`
         <div class="job-list">${mine.data.map((o) => html`<${JobCard} key=${o.id} o=${o}
           action=${html`<button class="btn primary block">Continue →</button>`} />`)}</div>`}
       <h2 class="section-title">Available jobs</h2>
-      ${open.loading ? html`<${Spinner} />` : !available.length ? html`
+      ${online === false ? html`<${Empty} title="Go online to see jobs">Tap <strong>Go online</strong> above. Open jobs show up here, and you'll get alerts for new ones.<//>`
+      : open.loading || online === null ? html`<${Spinner} />` : !available.length ? html`
         <${Empty} title="No open jobs right now">New jobs appear here automatically.<//>` : html`
         <div class="job-list">${available.map((o) => html`<${JobCard} key=${o.id} o=${o}
           action=${html`<span onClick=${(e) => e.stopPropagation()}>

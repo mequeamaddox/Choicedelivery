@@ -85,6 +85,8 @@ test('first account becomes admin; later registration needs staff', async () => 
     assert.equal(r.status, 201);
     ids[n] = r.data.user.id;
     t[n] = (await call('POST', '/auth/login', { body: { email: `${n}@test.com`, password: 'password1' } })).data.token;
+    // Drivers see open jobs only while online.
+    await call('PUT', '/users/me/availability', { token: t[n], body: { online: true } });
   }
 
   r = await call('POST', '/auth/register', { token: t.dispatcher, body: { email: 'a2@test.com', password: 'password1', role: 'admin' } });
@@ -271,6 +273,7 @@ test('profiles, vehicles, availability and staff views', async () => {
   r = await call('PUT', '/users/me', { token: t.d1, body: { vehicleType: 'Cargo Van' } });
   assert.equal(r.data.vehicleType, 'Cargo Van', 'updates the same vehicle');
   await call('PUT', '/users/me/availability', { token: t.d1, body: { online: true } });
+  await call('PUT', '/users/me/availability', { token: t.d2, body: { online: false } });
 
   r = await call('GET', '/users?role=driver&online=true', { token: t.dispatcher });
   assert.deepEqual(r.data.map((u) => u.email), ['d1@test.com']);
@@ -1549,6 +1552,27 @@ test('drivers on the website (iPhone) turn on job alerts and get new jobs as pho
   }
 });
 
+test('drivers must be online to see open jobs; taking a job puts them online; no going offline mid-job', async () => {
+  let r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody() });
+  const job = r.data;
+  await call('PUT', '/users/me/availability', { token: t.d1, body: { online: false } });
+  r = await call('GET', '/orders?status=pending', { token: t.d1 });
+  assert.ok(!r.data.some((o) => o.id === job.id), 'offline: no open jobs');
+  await call('PUT', '/users/me/availability', { token: t.d1, body: { online: true } });
+  r = await call('GET', '/orders?status=pending', { token: t.d1 });
+  assert.ok(r.data.some((o) => o.id === job.id), 'online: open jobs show');
+  // Dispatch assigns a job to an offline driver: they go online so tracking starts.
+  await call('PUT', '/users/me/availability', { token: t.d1, body: { online: false } });
+  await call('POST', `/orders/${job.id}/assign`, { token: t.dispatcher, body: { driverId: ids.d1 } });
+  assert.equal((await call('GET', '/users/me', { token: t.d1 })).data.isOnline, true);
+  r = await call('PUT', '/users/me/availability', { token: t.d1, body: { online: false } });
+  assert.equal(r.status, 409, 'can\'t go offline with a job underway');
+  assert.match(r.data.message, /Finish your job first/);
+  await call('POST', `/orders/${job.id}/cancel`, { token: t.dispatcher });
+  assert.equal((await call('PUT', '/users/me/availability', { token: t.d1, body: { online: false } })).status, 200, 'free to go offline after');
+  await call('PUT', '/users/me/availability', { token: t.d1, body: { online: true } });
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges
@@ -1896,11 +1920,12 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     assert.ok(sent.some((m) => /on hold/.test(m.subject) && m.html.includes('Missed two pickups')));
     await call('POST', `/orders/${o2.id}/cancel`, { token: t.admin });
 
-    // Invites: approved right away, email links to choosing a password (valid 7 days).
+    // Invites: wait for review like applicants; the email links to choosing a password (valid 7 days).
     sent.length = 0;
     r = await call('POST', '/users/invite', { token: t.dispatcher, body: { name: 'Ivy Invite', email: 'ivy@drivers.test', vehicleType: 'Minivan' } });
     assert.equal(r.status, 201);
-    assert.equal(r.data.driverStatus, 'approved');
+    assert.equal(r.data.driverStatus, 'applied', 'invited drivers wait for approval');
+    assert.equal((await call('POST', `/users/${r.data.id}/review`, { token: t.dispatcher, body: { status: 'approved' } })).data.driverStatus, 'approved');
     await settle();
     const invite = sent.find((m) => m.to === 'ivy@drivers.test');
     const resetToken = invite.html.match(/#\/reset\/([a-f0-9]{64})/)[1];

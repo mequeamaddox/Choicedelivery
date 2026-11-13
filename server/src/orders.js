@@ -364,8 +364,10 @@ function visibilityFilter(user, params) {
   params.push(user.id);
   // Drivers never see sample (demo) orders. Unpaid card orders stay hidden until payment clears.
   // Drivers who aren't approved yet (applied, rejected, suspended) see no open jobs.
+  // Open jobs are for approved drivers who are online (going online starts location sharing).
   const openPool = user.driver_status && user.driver_status !== 'approved' ? 'FALSE'
-    : "(o.status = 'pending' AND o.driver_id IS NULL AND o.payment_status <> 'unpaid')";
+    : `(o.status = 'pending' AND o.driver_id IS NULL AND o.payment_status <> 'unpaid'
+        AND EXISTS (SELECT 1 FROM users me WHERE me.id = $${params.length} AND me.is_online))`;
   return `NOT o.is_demo AND (o.driver_id = $${params.length} OR ${openPool})`;
 }
 

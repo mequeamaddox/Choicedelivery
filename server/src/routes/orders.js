@@ -625,6 +625,7 @@ router.post('/:id/assign', requireRole('admin', 'dispatcher'), asyncH(async (req
       [req.params.id, driverId]
     );
     await recordEvent(client, req.params.id, req.user.id, driverId ? 'assigned' : 'unassigned', { driverId });
+    if (driverId) await client.query('UPDATE users SET is_online = true WHERE id = $1', [driverId]); // so tracking starts
     await refreshDriverPay(client, req.params.id); // owners who drive aren't paid out
   });
   const pushFailed = (e) => console.error('Push notify failed:', e);
@@ -658,6 +659,8 @@ router.post('/:id/accept', driverOnly, asyncH(async (req, res) => {
       [req.params.id, req.user.id]
     ).catch(() => ({ rows: [] }));
     if (!rows[0]) throw new HttpError(409, 'This job is no longer available');
+    // Taking a job puts the driver online, so the customer can follow them on the map.
+    await client.query('UPDATE users SET is_online = true WHERE id = $1', [req.user.id]);
     await recordEvent(client, req.params.id, req.user.id, 'accepted');
     await refreshDriverPay(client, req.params.id); // owners who drive aren't paid out
   });
