@@ -70,14 +70,41 @@ async function searchAddresses(query) {
   return results;
 }
 
+// Typed or pasted addresses often have extras the map search chokes on ("United States", a missing
+// comma before the state, double spaces). Returns what to try, best first: the cleaned address, the
+// street without the house number (not every house is on the map), then the ZIP code's area.
+function addressVariants(address) {
+  const clean = String(address || '')
+    .replace(/[\r\n]+/g, ', ')
+    .replace(/,?\s*(united states( of america)?|u\.?s\.?a\.?)\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*/g, ', ')
+    // "Dr Columbia, SC" -> "Dr, Columbia, SC"; "Columbia SC 29223" -> "Columbia, SC 29223"
+    .replace(/([a-z.])(?<!\bwest)\s+(West Columbia|Columbia|Lexington|Irmo|Chapin|Cayce|Blythewood|Elgin|Greer|Greenville|Spartanburg|Charleston|Florence|Sumter|Aiken|Rock Hill|Orangeburg|Camden|Newberry)(?=\s*,|\s+(SC|NC|GA)\b)/i, '$1, $2')
+    .replace(/([A-Za-z.])\s+(SC|NC|GA)\b/, '$1, $2')
+    .replace(/(,\s*)+/g, ', ')
+    .replace(/^,\s*|,\s*$/g, '')
+    .trim();
+  const out = [clean];
+  const noNumber = clean.replace(/^\d+[A-Za-z]?\s+/, '');
+  if (noNumber !== clean) out.push(noNumber);
+  const zip = clean.match(/\b(\d{5})(?:-\d{4})?\s*$/)?.[1] || clean.match(/\b(\d{5})\b/)?.[1];
+  if (zip) out.push(zip);
+  return [...new Set(out.filter((x) => x.length >= 3))];
+}
+
 // A stop's map location: the one picked from the suggestions, else the best match for the typed
 // address (null when it can't be found). Quotes and orders both use this so they price the same.
 async function locate(address, given) {
   const loc = parseLocation(given);
   if (loc) return loc;
-  const q = String(address || '').trim();
-  if (!q) return null;
-  try { return (await searchAddresses(q))[0]?.location || null; } catch { return null; }
+  for (const q of addressVariants(address)) {
+    try {
+      const hit = (await searchAddresses(q))[0]?.location;
+      if (hit) return hit;
+    } catch { return null; }
+  }
+  return null;
 }
 
 // Straight-line distance in miles.
@@ -90,4 +117,4 @@ function haversineMiles(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-module.exports = { setFetch, searchAddresses, locate, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES };
+module.exports = { setFetch, searchAddresses, locate, addressVariants, haversineMiles, HOME_BASE, SERVICE_RADIUS_MILES };

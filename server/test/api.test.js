@@ -34,7 +34,8 @@ const orderBody = (extra = {}) => ({
   maxPieceLbs: 20,
   stops: [
     { type: 'pickup', address: '1 Main St', contactName: 'Warehouse', location: { lat: 34, lng: -81 } },
-    { type: 'dropoff', address: '2 Oak Ave', contactName: 'Jane', contactPhone: '555' },
+    // Same spot as the pickup: no distance fee, and the driver's GPS check passes at both stops.
+    { type: 'dropoff', address: '2 Oak Ave', contactName: 'Jane', contactPhone: '555', location: { lat: 34, lng: -81 } },
   ],
   ...extra,
 });
@@ -42,10 +43,19 @@ const orderBody = (extra = {}) => ({
 const AT_PICKUP = { lat: 34, lng: -81, accuracy: 10 }; // where orderBody's pickup is
 const t = {}; // tokens
 const ids = {};
+const fakeGeocoder = async (url) => {
+  const q = new URL(url).searchParams.get('q') || '';
+  let h = 0;
+  for (const ch of q) h = (h * 31 + ch.charCodeAt(0)) % 1000;
+  return { ok: true, json: async () => [{ lat: String(34 + h / 20000), lon: String(-81 - h / 20000), display_name: q,
+    address: { house_number: '1', road: q, city: 'Columbia', state: 'South Carolina', postcode: '29201' } }] };
+};
 
 before(async () => {
-  // No real address lookups in tests: typed addresses without a location stay unlocated.
-  require('../src/geocode').setFetch(async () => ({ ok: true, json: async () => [] }));
+  // No real address lookups in tests: any typed address is "found" near downtown Columbia (a spot that
+  // depends on the text, so different addresses are a few miles apart). Tests of addresses that can't be
+  // found set their own lookup.
+  require('../src/geocode').setFetch(fakeGeocoder);
   await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await db.migrate();
   server = app.listen(0);
@@ -174,9 +184,9 @@ test('full delivery flow with shipper visibility and tracking', async () => {
   assert.equal(r.data.status, 'in_transit');
   assert.equal(r.data.stops[0].completedDistanceM, 0);
 
-  await call('PUT', '/users/me/location', { token: t[winner], body: { lat: 34.01, lng: -81.02 } });
+  await call('PUT', '/users/me/location', { token: t[winner], body: { lat: 34.001, lng: -81.001 } });
   r = await call('GET', `/orders/${order.id}`, { token: t.acme });
-  assert.deepEqual(r.data.driver.location, { lat: 34.01, lng: -81.02 }, 'shipper sees live driver location');
+  assert.deepEqual(r.data.driver.location, { lat: 34.001, lng: -81.001 }, 'shipper sees live driver location');
   r = await call('GET', `/track/${order.trackingUrlToken}`);
   assert.equal(r.status, 200);
   assert.equal(r.data.status, 'in_transit');
@@ -191,8 +201,8 @@ test('full delivery flow with shipper visibility and tracking', async () => {
   assert.equal(r.status, 400, 'a delivery needs a photo and a signature');
   assert.match(r.data.message, /photo and the receiver's signature/);
   r = await call('POST', `/orders/${order.id}/stops/${dropoff.id}/complete`, { token: t[winner], body: { photo: 'data:image/jpeg;base64,AA', signature: 'data:s', printedName: 'Jane' } });
-  assert.equal(r.data.status, 'completed');
-  assert.equal(r.data.stops[1].completedDistanceM, null, "the drop-off address isn't on the map, so there's no distance");
+  assert.equal(r.data.status, "completed", JSON.stringify(r.data).slice(0, 300));
+  assert.ok(r.data.stops[1].completedDistanceM < 500, 'GPS distance from the drop-off is recorded');
   assert.ok(r.data.completedAt);
   assert.deepEqual(r.data.events.map((e) => e.type),
     ['created', 'accepted', 'stop_arrived', 'stop_completed', 'stop_arrived', 'stop_completed', 'completed']);
@@ -407,8 +417,8 @@ test('orders are priced on the server by distance; dispatch can override', async
   r = await call('POST', '/orders', { token: t.acme, body: orderBody({ serviceLevel: 'teleport' }) });
   assert.equal(r.status, 400);
   r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
-  assert.equal(r.data.priceCents, 2500 + surchargeTotal(r.data.priceBreakdown), 'without map locations no distance fee');
-  assert.equal(r.data.distanceMiles, null);
+  assert.equal(r.data.priceCents, 2500 + surchargeTotal(r.data.priceBreakdown), 'no distance fee for a short trip');
+  assert.equal(r.data.distanceMiles, 0);
   await call('POST', `/orders/${r.data.id}/cancel`, { token: t.admin });
 
   r = await call('PATCH', `/orders/${id}`, { token: t.dispatcher, body: { priceCents: 9900 } });
@@ -564,7 +574,7 @@ test('address suggestions and distance-aware quotes', async () => {
   geocode.setFetch(async () => ({ ok: false, status: 503 }));
   r = await call('GET', '/public/geocode?q=somewhere%20new');
   assert.equal(r.status, 502, 'lookup outages degrade gracefully');
-  geocode.setFetch(async () => ({ ok: true, json: async () => [] }));
+  geocode.setFetch(fakeGeocoder);
 });
 
 test('landing page is served on www; the app on other hosts', async () => {
@@ -1454,6 +1464,35 @@ test('card holds: card held at booking, charged after delivery with extras from 
     require('../src/rate-limit').resetRateLimits(); // this test's bookings count against the guest limit
     delete process.env.STRIPE_SECRET_KEY;
     delete process.env.STRIPE_WEBHOOK_SECRET;
+  }
+});
+
+test('an address that cannot be found on the map is priced by hand, never booked at the base price', async () => {
+  const geocode = require('../src/geocode');
+  assert.deepEqual(geocode.addressVariants('100 Willow Oak Dr Columbia, SC  29223 United States'),
+    ['100 Willow Oak Dr, Columbia, SC 29223', 'Willow Oak Dr, Columbia, SC 29223', '29223'], 'cleaned up, then street, then ZIP');
+  const asked = [];
+  geocode.setFetch(async (url) => {
+    const q = new URL(url).searchParams.get('q');
+    asked.push(q);
+    // Only the ZIP code is on the map.
+    return { ok: true, json: async () => (q === '29224' ? [{ lat: '34.1', lon: '-80.9', address: { state: 'South Carolina', postcode: '29224' } }] : []) };
+  });
+  try {
+    assert.deepEqual(await geocode.locate('9 Nowhere Ln Columbia SC 29224, USA'), { lat: 34.1, lng: -80.9 }, 'falls back to the ZIP code');
+    assert.ok(asked.includes('9 Nowhere Ln, Columbia, SC 29224'));
+    const body = orderBody();
+    body.stops[0] = { type: 'pickup', address: 'Somewhere Unmappable Rd' };
+    let r = await call('POST', '/public/quote', { body: { stops: body.stops, vehicleType: 'Car' } });
+    assert.equal(r.data.needsReview, true, 'the quote says we\'ll price it');
+    r = await call('POST', '/orders', { token: t.acme, body });
+    assert.equal(r.status, 201);
+    assert.equal(r.data.status, 'quote', 'held, not booked');
+    assert.equal(r.data.reviewStatus, 'needed');
+    assert.match(r.data.priceBreakdown.reviewReasons.join(' '), /find one of the addresses on the map/);
+    await call('DELETE', `/orders/${r.data.id}`, { token: t.acme });
+  } finally {
+    geocode.setFetch(fakeGeocoder);
   }
 });
 
@@ -2637,9 +2676,9 @@ test('chain of custody: counts and seals at every handoff, exceptions flagged, p
     r = await call('PATCH', `/orders/${id}`, { token: t.dispatcher, body: { sealNumber: 'OTHER' } });
     assert.equal(r.status, 409, 'custody settings are fixed after pickup');
 
-    await call('POST', `/orders/${id}/stops/${dropoff.id}/arrive`, { token: t.d1, body: {} });
+    await call('POST', `/orders/${id}/stops/${dropoff.id}/arrive`, { token: t.d1, body: { location: { lat: 34, lng: -81 } } });
     r = await call('POST', `/orders/${id}/stops/${dropoff.id}/complete`, { token: t.d1,
-      body: { photo: 'data:image/jpeg;base64,AA', signature: 'data:s', printedName: 'Nurse Joy', pieceCount: 2, sealNumber: 'TB-4471' } });
+      body: { photo: 'data:image/jpeg;base64,AA', location: { lat: 34, lng: -81 }, signature: 'data:s', printedName: 'Nurse Joy', pieceCount: 2, sealNumber: 'TB-4471' } });
     assert.equal(r.status, 200, 'a short count is recorded, not blocked');
     assert.equal(r.data.status, 'completed');
     await settle();
@@ -2716,8 +2755,8 @@ test('invoices: Net 30 accounts are billed monthly, sent, paid by check or onlin
     const [pickup, dropoff] = r.data.stops;
     await call('POST', `/orders/${id}/stops/${pickup.id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
     await call('POST', `/orders/${id}/stops/${pickup.id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
-    await call('POST', `/orders/${id}/stops/${dropoff.id}/arrive`, { token: t.d1, body: {} });
-    r = await call('POST', `/orders/${id}/stops/${dropoff.id}/complete`, { token: t.d1, body: { photo: 'data:p', signature: 'data:s', printedName: 'Yard' } });
+    await call('POST', `/orders/${id}/stops/${dropoff.id}/arrive`, { token: t.d1, body: { location: { lat: 34, lng: -81 } } });
+    r = await call('POST', `/orders/${id}/stops/${dropoff.id}/complete`, { token: t.d1, body: { location: { lat: 34, lng: -81 }, photo: 'data:p', signature: 'data:s', printedName: 'Yard' } });
     assert.equal(r.data.status, 'completed');
     r = await call('POST', `/orders/${id}/charges`, { token: t.dispatcher, body: { kind: 'wait_time', cents: 750, description: 'Held at the counter' } });
     assert.equal(r.status, 201, JSON.stringify(r.data));
@@ -2780,8 +2819,8 @@ test('invoices: Net 30 accounts are billed monthly, sent, paid by check or onlin
     r = await call('POST', `/orders/${id2}/accept`, { token: t.d1 });
     await call('POST', `/orders/${id2}/stops/${r.data.stops[0].id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
     await call('POST', `/orders/${id2}/stops/${r.data.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
-    await call('POST', `/orders/${id2}/stops/${r.data.stops[1].id}/arrive`, { token: t.d1, body: {} });
-    await call('POST', `/orders/${id2}/stops/${r.data.stops[1].id}/complete`, { token: t.d1, body: { photo: 'data:p', signature: 'data:s' } });
+    await call('POST', `/orders/${id2}/stops/${r.data.stops[1].id}/arrive`, { token: t.d1, body: { location: { lat: 34, lng: -81 } } });
+    await call('POST', `/orders/${id2}/stops/${r.data.stops[1].id}/complete`, { token: t.d1, body: { location: { lat: 34, lng: -81 }, photo: 'data:p', signature: 'data:s' } });
     invoice = (await call('POST', '/invoices', { token: t.dispatcher, body: { organizationId: orgId } })).data;
     process.env.STRIPE_SECRET_KEY = 'sk_test_x';
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
@@ -2952,8 +2991,8 @@ test('expenses: the owner logs expenses with receipts and sees money in, driver 
   r = await call('POST', `/orders/${testRun}/accept`, { token: t.d1 });
   await call('POST', `/orders/${testRun}/stops/${r.data.stops[0].id}/arrive`, { token: t.d1, body: { location: AT_PICKUP } });
   await call('POST', `/orders/${testRun}/stops/${r.data.stops[0].id}/complete`, { token: t.d1, body: { signature: 'data:x', location: AT_PICKUP } });
-  await call('POST', `/orders/${testRun}/stops/${r.data.stops[1].id}/arrive`, { token: t.d1, body: {} });
-  r = await call('POST', `/orders/${testRun}/stops/${r.data.stops[1].id}/complete`, { token: t.d1, body: { photo: 'data:p', signature: 'data:s' } });
+  await call('POST', `/orders/${testRun}/stops/${r.data.stops[1].id}/arrive`, { token: t.d1, body: { location: { lat: 34, lng: -81 } } });
+  r = await call('POST', `/orders/${testRun}/stops/${r.data.stops[1].id}/complete`, { token: t.d1, body: { location: { lat: 34, lng: -81 }, photo: 'data:p', signature: 'data:s' } });
   assert.equal(r.data.status, 'completed');
   let after = await monthNow();
   assert.equal(after.revenueCents, before.revenueCents, 'an unpaid order dispatch booked is not money in');

@@ -113,6 +113,7 @@ function custodyFields(body, current = {}, medical = !!current.custodyRequired) 
 // actor is a user, or GUEST for someone booking from the website without an account (card payment only).
 const GUEST = Object.freeze({ id: null, role: 'guest', organization_id: null });
 
+const UNLOCATED_REASON = "We couldn't find one of the addresses on the map";
 const QUOTE_LOCK_DAYS = 14;
 // A quote's price holds for 14 days: it's kept when they book, whatever the time of day, demand or weather.
 // Not for prices dispatch still has to set (review) or set by hand (those are kept anyway).
@@ -325,6 +326,12 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
     addOns: o.add_ons,
     fees: await getFees(client),
   });
+  // An address that couldn't be put on the map has no distance, so the formula would only charge the base
+  // price: hold it for a price by hand instead (dispatch can fix the address or set the price).
+  if (stops.some((s) => !s.location)) {
+    breakdown.needsReview = true;
+    breakdown.reviewReasons = [...(breakdown.reviewReasons || []), UNLOCATED_REASON];
+  }
   await client.query(
     `UPDATE orders SET distance_miles = $2, price_breakdown = $3,
        price_cents = CASE WHEN price_is_custom THEN price_cents

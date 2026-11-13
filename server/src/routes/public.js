@@ -307,6 +307,11 @@ async function priceQuote(b) {
     vehicleType: typeof b.vehicleType === 'string' ? b.vehicleType : null,
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
   });
+  // An address we couldn't put on the map: priced by hand rather than at the base price.
+  if (locations.some((l) => !l)) {
+    quote.needsReview = true;
+    quote.reviewReasons = [...(quote.reviewReasons || []), "We couldn't find one of the addresses on the map. Check it, or pick it from the suggestions"];
+  }
   const outOfArea = locations.some((l) => l && haversineMiles(HOME_BASE, l) > SERVICE_RADIUS_MILES);
   const pieceProblem = pieceWeightProblem({
     maxPieceLbs: b.maxPieceLbs, weightLbs: quote.weightLbs, pieces: b.numberOfPieces, addOns: fees.offerHelp ? addOns : [],
