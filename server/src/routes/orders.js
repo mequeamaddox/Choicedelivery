@@ -13,6 +13,10 @@ const { buildCustody, custodyEmailHtml } = require('../custody');
 const { sendMail } = require('../mailer');
 const { haversineMiles } = require('../geocode');
 const holds = require('../card-holds');
+// Delivered: charge a held card right away (price plus extras in the hold; the rest is released). If it
+// fails, the every-10-minutes job retries it and dispatch is alerted.
+const chargeHeldCard = (orderId) => holds.charge(orderId, { reason: 'delivered' })
+  .catch((e) => console.error(`Charging the held card for ${orderId} failed:`, e.message));
 const { getUser, driverWorkBlocker } = require('../users');
 const { isServiceLevel, normalizeServiceLevel, getFees, waitCharge, CHARGE_KINDS, TONU_CENTS } = require('../pricing');
 
@@ -319,6 +323,7 @@ router.post('/:id/mark-delivered', requireRole('admin', 'dispatcher'), asyncH(as
   });
   if (!done) throw new HttpError(409, 'This order changed; refresh and try again');
   emailShipper(current.id, 'delivered');
+  chargeHeldCard(current.id);
   if (current.driver?.id) {
     notifyUser(current.driver.id, 'Order marked delivered', `Dispatch marked ${current.orderNumber} delivered`, { orderId: current.id })
       .catch((e) => console.error('Push notify failed:', e));
@@ -685,8 +690,10 @@ router.post('/:id/stops/:stopId/complete', driverOnly, asyncH(async (req, res) =
   const updated = await getOrderFor(req.user, req.params.id);
   if (updated.custodyRequired) alertStaffOfCustodyException(updated.id, req.params.stopId);
   const stop = updated.stops.find((s) => s.id === req.params.stopId);
-  if (updated.status === 'completed') emailShipper(updated.id, 'delivered', { printedName: str(printedName) });
-  else if (stop?.type === 'pickup' && updated.status === 'in_transit') emailShipper(updated.id, 'picked_up');
+  if (updated.status === 'completed') {
+    emailShipper(updated.id, 'delivered', { printedName: str(printedName) });
+    chargeHeldCard(updated.id);
+  } else if (stop?.type === 'pickup' && updated.status === 'in_transit') emailShipper(updated.id, 'picked_up');
   res.json(updated);
 }));
 

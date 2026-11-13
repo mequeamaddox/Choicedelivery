@@ -790,7 +790,7 @@ function PaymentPanel({ order, onChange, setError }) {
             Add card for ${formatMoney(order.priceCents)}
           <//>`}`}
       ${held && html`<p class="small">${staff
-        ? 'The card is charged automatically 2 hours after delivery: the price plus any extra charges marked "From card hold". The rest of the hold is released.'
+        ? 'The card is charged automatically as soon as the delivery is completed: the price plus any extra charges marked "From card hold". The rest of the hold is released. Add wait time or other extras before the driver finishes; anything added after goes out as a payment link.'
         : 'Your card is on hold. It\'s charged after delivery for the price plus any extra charges, and the rest of the hold is released.'}</p>
         ${staff && !cancelled && html`<${ActionButton} class="btn small" onError=${setError}
           confirmText=${`Charge the card now (${formatMoney(order.priceCents)} plus any extra charges in the hold)?`}

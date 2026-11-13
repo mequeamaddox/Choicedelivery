@@ -1461,6 +1461,15 @@ test('card holds: card held at booking, charged after delivery with extras from 
     assert.equal(r.data.paidCents, Math.min(5000, c.price_cents + holds.bufferFor(c.price_cents)));
     await db.query('UPDATE orders SET driver_pay_cents = 0 WHERE id = $1', [c.id]);
 
+    // Delivered (here marked by dispatch): the card is charged right away, not hours later.
+    const d = await book('hal4@hold.test');
+    r = await call('POST', `/orders/${d.id}/mark-delivered`, { token: t.dispatcher, body: { reason: 'Driver phone died' } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    await new Promise((res) => setTimeout(res, 200));
+    r = await call('GET', `/orders/${d.id}`, { token: t.dispatcher });
+    assert.equal(r.data.paymentStatus, 'paid', 'charged at delivery');
+    assert.equal(r.data.paidCents, d.price_cents);
+
     // Far-off bookings are charged at booking.
     assert.equal(holds.checkoutAmounts({ priceCents: 4000, scheduledAt: new Date(Date.now() + 9 * 86400e3) }).holdBufferCents, 0);
   } finally {

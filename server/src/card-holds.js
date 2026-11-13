@@ -7,7 +7,7 @@ const db = require('./db');
 const stripe = require('./stripe');
 
 const HOLD_MAX_DAYS_AHEAD = 5;
-const CHARGE_AFTER_DELIVERY_MINUTES = 120; // time for dispatch to add wait time etc. before the card is charged
+const CHARGE_AFTER_DELIVERY_MINUTES = 5; // the card is charged at delivery; this catches any that didn't go through
 
 // The buffer held on top of the price: a quarter of it, at least $15 and at most $75.
 const bufferFor = (priceCents) => Math.min(7500, Math.max(1500, Math.round((priceCents * 0.25) / 100) * 100));
