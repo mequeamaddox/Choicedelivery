@@ -54,13 +54,12 @@ async function createCheckoutSession(params) {
   }
 }
 
-// holdBufferCents: put a hold on the card instead of charging it (price + this buffer for possible extra
-// charges); the card is charged after delivery for the price plus any extras, and the rest is released.
+// hold: put a hold on the card for the price instead of charging it; the card is charged when the delivery
+// is done. holdBufferCents (optional) holds extra on top for possible extra charges, released if unused.
 function checkoutSession({
   orderId, orderNumber, amountCents, description, customerEmail, successUrl, cancelUrl, name, metadata = {}, paymentMethodTypes,
-  holdBufferCents = 0,
+  hold = false, holdBufferCents = 0,
 }) {
-  const hold = holdBufferCents > 0;
   const meta = { order_id: orderId, order_number: orderNumber, ...metadata, ...(hold ? { hold: '1' } : {}) };
   const item = (cents, title, desc) => ({
     quantity: 1,
@@ -77,11 +76,11 @@ function checkoutSession({
     payment_intent_data: { metadata: meta, ...(hold ? { capture_method: 'manual' } : {}) },
     line_items: [
       item(amountCents, name || `Choice Delivery ${orderNumber}`, description),
-      ...(hold ? [item(holdBufferCents, 'Hold for possible extra charges',
+      ...(hold && holdBufferCents > 0 ? [item(holdBufferCents, 'Hold for possible extra charges',
         'Only used for extra charges such as wait time or a heavier shipment. Released if not needed.')] : []),
     ],
     ...(hold ? { custom_text: { submit: { message:
-      'Your card is only held now. We charge it after your delivery is done, for your delivery price plus any extra charges, and release the rest of the hold.' } } } : {}),
+      'Your card is authorized now and charged when your delivery is done.' } } } : {}),
   });
 }
 

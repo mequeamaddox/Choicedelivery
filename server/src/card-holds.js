@@ -9,13 +9,14 @@ const stripe = require('./stripe');
 const HOLD_MAX_DAYS_AHEAD = 5;
 const CHARGE_AFTER_DELIVERY_MINUTES = 5; // the card is charged at delivery; this catches any that didn't go through
 
-// The buffer held on top of the price: a quarter of it, at least $15 and at most $75.
-const bufferFor = (priceCents) => Math.min(7500, Math.max(1500, Math.round((priceCents * 0.25) / 100) * 100));
+// The hold is exactly the delivery price (the owner's choice: what the customer sees is what's held). Extra
+// charges go out as their own payment link.
+const bufferFor = () => 0;
 
 // Checkout amounts for an order: hold when pickup is ASAP or within HOLD_MAX_DAYS_AHEAD days.
 function checkoutAmounts({ priceCents, scheduledAt }) {
   const far = scheduledAt && new Date(scheduledAt) - Date.now() > HOLD_MAX_DAYS_AHEAD * 86400e3;
-  return { amountCents: priceCents, holdBufferCents: far ? 0 : bufferFor(priceCents) };
+  return { amountCents: priceCents, hold: !far, holdBufferCents: far ? 0 : bufferFor(priceCents) };
 }
 
 // Checkout finished on a hold session: record the hold. Returns { id, status, was } like a payment, or null.

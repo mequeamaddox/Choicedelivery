@@ -1422,17 +1422,15 @@ test('card holds: card held at booking, charged after delivery with extras from 
     const a = await book('hal1@hold.test');
     const session = calls.find((c) => c.url.endsWith('/checkout/sessions')).body;
     assert.equal(session.get('payment_intent_data[capture_method]'), 'manual', 'the card is only held');
-    assert.equal(Number(session.get('line_items[1][price_data][unit_amount]')), holds.bufferFor(a.price_cents), 'plus a buffer for extras');
+    assert.equal(session.get('line_items[1][price_data][unit_amount]'), null, 'the hold is exactly the price');
     let r = await call('GET', `/orders/${a.id}`, { token: t.dispatcher });
     assert.equal(r.data.paymentStatus, 'authorized');
-    assert.equal(r.data.holdCents, a.price_cents + holds.bufferFor(a.price_cents));
+    assert.equal(r.data.holdCents, a.price_cents);
     r = await call('GET', '/orders?status=pending', { token: t.d1 });
     assert.ok(r.data.some((o) => o.id === a.id), 'drivers get the job once the card is held');
 
-    // An extra charge that fits comes out of the hold; one that doesn't gets a payment link.
+    // With no room in the hold, an extra charge gets its own payment link.
     r = await call('POST', `/orders/${a.id}/charges`, { token: t.dispatcher, body: { kind: 'wait_time', cents: 500 } });
-    assert.equal(r.data.charges.at(-1).status, 'hold');
-    r = await call('POST', `/orders/${a.id}/charges`, { token: t.dispatcher, body: { kind: 'other', cents: 99900 } });
     assert.equal(r.data.charges.at(-1).status, 'due');
     assert.equal((await call('POST', `/orders/${a.id}/payment`, { token: t.dispatcher, body: { status: 'paid', method: 'cash' } })).status, 409);
 
@@ -1441,10 +1439,9 @@ test('card holds: card held at booking, charged after delivery with extras from 
     assert.ok(await holds.chargeDue() >= 1);
     r = await call('GET', `/orders/${a.id}`, { token: t.dispatcher });
     assert.equal(r.data.paymentStatus, 'paid');
-    assert.equal(r.data.paidCents, a.price_cents + 500);
-    assert.equal(r.data.charges.find((c) => c.kind === 'wait_time').status, 'paid');
+    assert.equal(r.data.paidCents, a.price_cents);
     const cap = calls.find((c) => c.url.endsWith(`${a.pi}/capture`));
-    assert.equal(cap.body.get('amount_to_capture'), String(a.price_cents + 500));
+    assert.equal(cap.body.get('amount_to_capture'), String(a.price_cents));
 
     // Cancelled before a driver: the hold is released, no charge.
     const b = await book('hal2@hold.test');
@@ -1458,7 +1455,7 @@ test('card holds: card held at booking, charged after delivery with extras from 
     r = await call('POST', `/orders/${c.id}/cancel`, { token: t.dispatcher, body: { tonu: true } });
     assert.equal(r.status, 200);
     assert.equal(r.data.paymentStatus, 'paid');
-    assert.equal(r.data.paidCents, Math.min(5000, c.price_cents + holds.bufferFor(c.price_cents)));
+    assert.equal(r.data.paidCents, Math.min(5000, c.price_cents));
     await db.query('UPDATE orders SET driver_pay_cents = 0 WHERE id = $1', [c.id]);
 
     // Delivered (here marked by dispatch): the card is charged right away, not hours later.
@@ -1471,7 +1468,7 @@ test('card holds: card held at booking, charged after delivery with extras from 
     assert.equal(r.data.paidCents, d.price_cents);
 
     // Far-off bookings are charged at booking.
-    assert.equal(holds.checkoutAmounts({ priceCents: 4000, scheduledAt: new Date(Date.now() + 9 * 86400e3) }).holdBufferCents, 0);
+    assert.equal(holds.checkoutAmounts({ priceCents: 4000, scheduledAt: new Date(Date.now() + 9 * 86400e3) }).hold, false);
   } finally {
     require('../src/rate-limit').resetRateLimits(); // this test's bookings count against the guest limit
     delete process.env.STRIPE_SECRET_KEY;
