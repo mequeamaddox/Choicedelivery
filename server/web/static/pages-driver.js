@@ -374,7 +374,7 @@ export function DriverJobPage({ id }) {
 
       <section class="card">
         <h2>Route</h2>
-        <${StopTimeline} stops=${order.stops} showProof=${mine} />
+        <${StopTimeline} stops=${order.stops} showProof=${mine} orderStatus=${order.status} />
       </section>
       ${order.notes.length > 0 && html`
         <section class="card"><h2>Notes</h2>

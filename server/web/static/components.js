@@ -135,17 +135,22 @@ export function PageHeader({ title, subtitle, actions }) {
 // Vertical route: pickups and drop-offs in order, with progress and proof.
 const feetOrMiles = (m) => (m >= 1609 ? `${(m / 1609.34).toFixed(1)} mi` : `${Math.round(m * 3.281)} ft`);
 
-export function StopTimeline({ stops, showProof = false }) {
+// orderStatus: the next stop shows "Driver on the way" once a driver has the job, instead of "Not started".
+export function StopTimeline({ stops, showProof = false, orderStatus = null }) {
+  const onTheWay = ['accepted', 'at_pickup', 'in_transit', 'at_dropoff'].includes(orderStatus);
+  const nextIdx = stops.findIndex((s) => s.status !== 'completed');
   return html`
     <ol class="route">
-      ${stops.map((s) => html`
+      ${stops.map((s, i) => html`
         <li class=${`stop ${s.status}`}>
           <span class="stop-dot" aria-hidden="true"></span>
           <div class="stop-body">
             <div class="stop-head">
               <span class="stop-type">${s.type === 'pickup' ? 'Pickup' : 'Drop-off'}</span>
               <span class="muted small">${s.status === 'completed' ? `Done ${formatDate(s.completedAt)}`
-                : s.status === 'arrived' ? `Driver arrived ${formatDate(s.arrivedAt)}` : 'Not started'}</span>
+                : s.status === 'arrived' ? `Driver arrived ${formatDate(s.arrivedAt)}`
+                : onTheWay && i === nextIdx ? html`<strong class="on-the-way">Driver on the way</strong>`
+                : orderStatus === 'pending' && i === 0 ? 'Waiting for a driver' : 'Not started'}</span>
             </div>
             <a class="stop-address" href=${mapsLink(s.location, s.address)} target="_blank" rel="noopener">${s.address}</a>
             ${(s.contactName || s.contactPhone) && html`<div class="small">${s.contactName}${s.contactName && s.contactPhone ? ' · ' : ''}${s.contactPhone && html`<a href=${`tel:${s.contactPhone}`}>${s.contactPhone}</a>`}</div>`}

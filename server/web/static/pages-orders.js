@@ -1081,7 +1081,7 @@ export function OrderPage({ id }) {
           <section class="card">
             <h2>Route</h2>
             ${order.status !== 'cancelled' && html`<${LiveMap} stops=${order.stops} driver=${order.driver} />`}
-            <${StopTimeline} stops=${order.stops} showProof=${true} />
+            <${StopTimeline} stops=${order.stops} showProof=${true} orderStatus=${order.status} />
           </section>
           <section class="card">
             <h2>Notes</h2>

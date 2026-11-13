@@ -249,7 +249,7 @@ export function TrackPage({ token: raw }) {
             ${data.completedAt && html`<p>Delivered ${formatDate(data.completedAt)}.</p>`}
             ${data.status !== 'cancelled' && html`<${LiveMap} stops=${data.stops} driver=${data.driver} />`}
             ${data.driver?.location && html`<p class="muted small">The map updates on its own while the driver is on the way.</p>`}
-            <${StopTimeline} stops=${data.stops} />
+            <${StopTimeline} stops=${data.stops} orderStatus=${data.status} />
           </div>`}
       </main>
     </div>`;
