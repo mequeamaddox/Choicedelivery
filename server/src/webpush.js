@@ -85,17 +85,26 @@ async function notifyUserDevices(userId, message) {
   return deliver(rows, message);
 }
 
+// Drivers only get job alerts.
+const DRIVER_KINDS = { jobs: 'New jobs, and changes to jobs you\'re on' };
+const kindsFor = (role) => (role === 'driver' ? DRIVER_KINDS : KINDS);
+
 async function config(userId) {
   const { publicKey } = await vapidKeys();
-  const { rows: [u] } = await db.query('SELECT push_prefs FROM users WHERE id = $1', [userId]);
+  const { rows: [u] } = await db.query('SELECT push_prefs, role FROM users WHERE id = $1', [userId]);
   const { rows: [{ n }] } = await db.query('SELECT count(*)::int AS n FROM web_push_subscriptions WHERE user_id = $1', [userId]);
   const prefs = u?.push_prefs || {};
-  return { publicKey, devices: n, kinds: Object.entries(KINDS).map(([key, label]) => ({ key, label, on: prefs[key] !== false })) };
+  return { publicKey, devices: n, kinds: Object.entries(kindsFor(u?.role)).map(([key, label]) => ({ key, label, on: prefs[key] !== false })) };
+}
+
+async function wants(userId, kind) {
+  const { rows: [u] } = await db.query('SELECT push_prefs FROM users WHERE id = $1', [userId]);
+  return !!u && u.push_prefs?.[kind] !== false;
 }
 
 async function setPrefs(userId, changes) {
-  const clean = Object.fromEntries(Object.entries(changes || {}).filter(([k, v]) => KINDS[k] && typeof v === 'boolean'));
+  const clean = Object.fromEntries(Object.entries(changes || {}).filter(([k, v]) => (KINDS[k] || DRIVER_KINDS[k]) && typeof v === 'boolean'));
   await db.query('UPDATE users SET push_prefs = push_prefs || $2::jsonb WHERE id = $1', [userId, JSON.stringify(clean)]);
 }
 
-module.exports = { KINDS, notifyStaff, notifyUserDevices, subscribe, unsubscribe, config, setPrefs, setSender, vapidKeys };
+module.exports = { KINDS, DRIVER_KINDS, wants, notifyStaff, notifyUserDevices, subscribe, unsubscribe, config, setPrefs, setSender, vapidKeys };

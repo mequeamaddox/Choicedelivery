@@ -22,11 +22,13 @@ async function notifyDriversOfOrder(order, { excludeDriverId = null } = {}) {
   if (order.status !== 'pending' || order.driver) return;
   const { rows } = await db.query(
     `SELECT u.id, u.push_token, u.is_online, u.no_driver_pay,
-            EXISTS (SELECT 1 FROM order_driver_alerts a WHERE a.order_id = $1 AND a.driver_id = u.id) AS alerted
+            EXISTS (SELECT 1 FROM order_driver_alerts a WHERE a.order_id = $1 AND a.driver_id = u.id) AS alerted,
+            EXISTS (SELECT 1 FROM web_push_subscriptions w WHERE w.user_id = u.id) AS has_web
      FROM users u
-     WHERE u.role = 'driver' AND u.is_active AND u.driver_status = 'approved' AND NOT u.is_demo AND u.push_token IS NOT NULL`,
+     WHERE u.role = 'driver' AND u.is_active AND u.driver_status = 'approved' AND NOT u.is_demo`,
     [order.id]);
-  const eligible = rows.filter((r) => isExpoToken(r.push_token)
+  // Android app drivers (Expo push) and iPhone drivers using the website with job alerts on (web push).
+  const eligible = rows.filter((r) => (isExpoToken(r.push_token) || r.has_web)
     && (r.no_driver_pay || (!r.alerted && r.id !== excludeDriverId)));
   // Regular drivers: online ones if any are online. Owners: always, online or not.
   const regular = eligible.filter((r) => !r.no_driver_pay);
@@ -37,14 +39,19 @@ async function notifyDriversOfOrder(order, { excludeDriverId = null } = {}) {
   const payText = pay?.driver_pay_cents != null ? `$${(pay.driver_pay_cents / 100).toFixed(2)} · ` : '';
   const pickup = order.stops.find((s) => s.type === 'pickup');
   const dropoff = [...order.stops].reverse().find((s) => s.type === 'dropoff');
-  await sendExpo(recipients.map((r) => ({
+  const title = order.serviceLevel === 'rush' ? 'New RUSH job available' : 'New job available';
+  const body = `${payText}${order.distanceMiles != null ? `${order.distanceMiles} mi · ` : ''}${pickup?.address} → ${dropoff?.address}`;
+  await sendExpo(recipients.filter((r) => isExpoToken(r.push_token)).map((r) => ({
     to: r.push_token,
     sound: 'default',
     channelId: 'jobs', // the driver app's high-priority Android channel
-    title: order.serviceLevel === 'rush' ? 'New RUSH job available' : 'New job available',
-    body: `${payText}${order.distanceMiles != null ? `${order.distanceMiles} mi · ` : ''}${pickup?.address} → ${dropoff?.address}`,
+    title,
+    body,
     data: { orderId: order.id, requestId: order.id },
   })));
+  for (const r of recipients.filter((x) => x.has_web)) {
+    await webAlert(r.id, { title, body, url: '/#/driver', tag: `job-${order.id}` });
+  }
   await db.query(
     `INSERT INTO order_driver_alerts (order_id, driver_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT DO NOTHING`,
     [order.id, recipients.map((r) => r.id)]);
@@ -54,6 +61,17 @@ async function notifyUser(userId, title, body, data = {}) {
   const { rows } = await db.query('SELECT push_token FROM users WHERE id = $1', [userId]);
   if (isExpoToken(rows[0]?.push_token)) {
     await sendExpo([{ to: rows[0].push_token, sound: 'default', channelId: 'jobs', title, body, data }]);
+  }
+  await webAlert(userId, { title, body, url: data.orderId ? `/#/driver/job/${data.orderId}` : '/#/driver', tag: data.orderId ? `job-${data.orderId}` : undefined });
+}
+
+// Web push to a driver's phone (the website with job alerts turned on). Never throws.
+async function webAlert(userId, message) {
+  try {
+    const webpush = require('./webpush');
+    if (await webpush.wants(userId, 'jobs')) await webpush.notifyUserDevices(userId, message);
+  } catch (e) {
+    console.error('Web job alert failed:', e.message);
   }
 }
 

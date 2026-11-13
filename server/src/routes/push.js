@@ -5,7 +5,7 @@ const { asyncH, HttpError } = require('../util');
 const webpush = require('../webpush');
 
 const router = express.Router();
-router.use(requireAuth, requireRole('admin', 'dispatcher'));
+router.use(requireAuth, requireRole('admin', 'dispatcher', 'driver'));
 
 router.get('/', asyncH(async (req, res) => res.json(await webpush.config(req.user.id))));
 
@@ -27,8 +27,11 @@ router.patch('/prefs', asyncH(async (req, res) => {
 }));
 
 router.post('/test', asyncH(async (req, res) => {
+  const driver = req.user.role === 'driver';
   const sent = await webpush.notifyUserDevices(req.user.id, {
-    title: 'Choice Dispatch', body: "Alerts are working. You'll get one like this for new orders.", url: '/#/', tag: 'test',
+    title: driver ? 'Choice Driver' : 'Choice Dispatch',
+    body: driver ? "Job alerts are working. You'll get one like this when a new job comes in." : "Alerts are working. You'll get one like this for new orders.",
+    url: driver ? '/#/driver' : '/#/', tag: 'test',
   });
   if (!sent) throw new HttpError(409, "Couldn't reach this phone. Turn alerts off and on again.");
   res.json({ sent });

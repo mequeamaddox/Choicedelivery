@@ -1,4 +1,5 @@
 // Driver portal: works in any phone browser at app.choicedeliverysc.com, no app install needed.
+import { useJobAlertsOn } from './pages-phone.js';
 import {
   html, useState, useEffect, useRef, api, navigate, useApi, getUser, formatDate, timeAgo, mapsLink, STATUS, ACTIVE_STATUSES,
   SERVICE_LEVEL_LABELS, formatMoney, currentPath,
@@ -104,6 +105,7 @@ export function DriverJobsPage() {
 }
 
 function DriverJobsList() {
+  const alertsOn = useJobAlertsOn();
   const mine = useApi(`/orders?mine=true&status=${ACTIVE_STATUSES.join(',')}`, { pollMs: 15000 });
   const open = useApi('/orders?status=pending', { pollMs: 15000 });
   const [error, setError] = useState(null);
@@ -115,6 +117,8 @@ function DriverJobsList() {
   return html`
     <${Layout}>
       <${PageHeader} title="Jobs" />
+      ${alertsOn === false && html`<div class="alert warn" role="status"><strong>Turn on job alerts</strong> so new jobs reach this phone
+        even when the app is closed. <a href="#/driver/alerts">Set it up →</a></div>`}
       ${getUser()?.checklist?.missing?.includes('Signed driver agreement') && html`<div class="alert warn" role="status">
         <strong>Please sign your driver agreement.</strong> It takes about 5 minutes. <a href="#/driver/agreement">Sign it now →</a></div>`}
       <${OnlineToggle} />

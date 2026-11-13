@@ -1514,6 +1514,41 @@ test('a card order booked but not paid alerts dispatch once, 20 minutes later', 
   }
 });
 
+test('drivers on the website (iPhone) turn on job alerts and get new jobs as phone alerts', async () => {
+  const webpush = require('../src/webpush');
+  const { notifyDriversOfOrder } = require('../src/push');
+  const pushed = [];
+  webpush.setSender(async (sub, payload) => { pushed.push({ endpoint: sub.endpoint, ...JSON.parse(payload) }); });
+  try {
+    let r = await call('POST', '/auth/driver-signup', { body: { name: 'Ivy Phone', email: 'ivy@iphone.test', password: 'password1', phoneNumber: '8035550111',
+      city: 'Columbia', zip: '29201', vehicle: { type: 'Car', make: 'Honda', model: 'Fit', year: '2018', color: 'Blue', plate: 'IVY1' }, agreed: true } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    const ivy = r.data.token;
+    const ivyId = r.data.user.id;
+    await db.query("UPDATE users SET driver_status = 'approved', is_online = true WHERE id = $1", [ivyId]);
+    r = await call('GET', '/push', { token: ivy });
+    assert.deepEqual(r.data.kinds.map((k) => k.key), ['jobs'], 'drivers only get job alerts');
+    r = await call('POST', '/push/subscribe', { token: ivy, body: { subscription: { endpoint: 'https://push.example.com/ivy', keys: { p256dh: 'p', auth: 'a' } } } });
+    assert.equal(r.data.devices, 1);
+    r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody() });
+    pushed.length = 0;
+    await notifyDriversOfOrder(r.data);
+    const alert = pushed.find((x) => x.endpoint === 'https://push.example.com/ivy');
+    assert.ok(alert, 'the iPhone driver got the job');
+    assert.match(alert.title, /New (RUSH )?job available/);
+    assert.equal(alert.url, '/#/driver');
+    await call('PATCH', '/push/prefs', { token: ivy, body: { jobs: false } });
+    pushed.length = 0;
+    await db.query('DELETE FROM order_driver_alerts WHERE order_id = $1', [r.data.id]);
+    await notifyDriversOfOrder(r.data);
+    assert.ok(!pushed.some((x) => x.endpoint === 'https://push.example.com/ivy'), 'turned off');
+    await call('POST', `/orders/${r.data.id}/cancel`, { token: t.dispatcher });
+    await db.query("UPDATE users SET is_online = false, is_active = false WHERE id = $1", [ivyId]);
+  } finally {
+    webpush.setSender(null);
+  }
+});
+
 test('weight tiers, extra stops, add-ons and wait time are priced like the fee settings say', () => {
   const { calculatePrice, waitCharge, parseWeightLbs, DEFAULT_FEES } = require('../src/pricing');
   const at = new Date('2026-09-29T14:00:00Z'); // Tuesday 10am in Columbia: no time surcharges

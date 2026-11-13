@@ -136,7 +136,7 @@ app.get('/sw.js', (req, res) => {
   res.set({ 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' });
   res.type('application/javascript').sendFile(path.join(WEB_DIR, 'app', 'sw.js'));
 });
-app.get(['/manifest.webmanifest', '/manifest-dispatch.webmanifest'], (req, res) => {
+app.get(['/manifest.webmanifest', '/manifest-dispatch.webmanifest', '/manifest-driver.webmanifest'], (req, res) => {
   res.set('Cache-Control', 'no-cache');
   res.type('application/manifest+json').sendFile(path.join(WEB_DIR, 'app', req.path.slice(1)));
 });

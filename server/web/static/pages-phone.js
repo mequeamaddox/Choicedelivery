@@ -19,14 +19,22 @@ const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in win
 
 export function setupHomeScreenApp(user) {
   const staff = !!user && isStaff(user);
+  const driver = user?.role === 'driver';
   const link = document.getElementById('app-manifest');
-  const want = staff ? '/manifest-dispatch.webmanifest' : '/manifest.webmanifest';
+  const want = staff ? '/manifest-dispatch.webmanifest' : driver ? '/manifest-driver.webmanifest' : '/manifest.webmanifest';
   if (link && link.getAttribute('href') !== want) link.setAttribute('href', want);
   const title = document.querySelector('meta[name="apple-mobile-web-app-title"]');
-  if (title) title.setAttribute('content', staff ? 'Choice Dispatch' : 'Choice Delivery');
+  if (title) title.setAttribute('content', staff ? 'Choice Dispatch' : driver ? 'Choice Driver' : 'Choice Delivery');
   const icon = document.querySelector('link[rel="apple-touch-icon"]');
   if (icon) icon.setAttribute('href', staff ? '/static/dispatch-icon-192.png' : '/static/app-icon-192.png');
-  if (staff && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+  if ((staff || driver) && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+}
+
+// For the driver portal: job alerts are on for this phone/browser (undefined while checking).
+export function useJobAlertsOn() {
+  const [on, setOn] = useState(undefined);
+  useEffect(() => { currentSubscription().then((s) => setOn(!!s)).catch(() => setOn(false)); }, []);
+  return on;
 }
 
 // The browser wants the key as bytes.
@@ -41,7 +49,8 @@ async function currentSubscription() {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
-function InstallCard() {
+function InstallCard({ driver = false }) {
+  const app = driver ? 'Choice Driver' : 'Choice Dispatch';
   const [, rerender] = useState(0);
   useEffect(() => {
     const fn = () => rerender((n) => n + 1);
@@ -49,34 +58,36 @@ function InstallCard() {
     return () => installListeners.delete(fn);
   }, []);
   if (standalone()) {
-    return html`<section class="card"><h2>1. App installed ✓</h2><p class="small muted">You're using Choice Dispatch from your home screen.</p></section>`;
+    return html`<section class="card"><h2>1. App installed ✓</h2><p class="small muted">You're using ${app} from your home screen.</p></section>`;
   }
   return html`
     <section class="card stack">
-      <h2>1. Put Choice Dispatch on your home screen</h2>
+      <h2>1. Put ${app} on your home screen</h2>
       ${installPrompt ? html`
         <p class="small">It opens full screen with its own icon, and you stay logged in.</p>
         <div><button class="btn primary" onClick=${async () => { installPrompt.prompt(); await installPrompt.userChoice.catch(() => null); installPrompt = null; rerender((n) => n + 1); }}>
-          Install Choice Dispatch</button></div>`
+          Install ${app}</button></div>`
       : isIos() ? html`
         <ol class="small">
           <li>Open this page in <strong>Safari</strong>.</li>
           <li>Tap the <strong>Share</strong> button (the square with an arrow).</li>
           <li>Tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
-          <li>Open <strong>Choice Dispatch</strong> from your home screen and come back to this page to turn on alerts.</li>
-        </ol>`
+          <li>Open <strong>${app}</strong> from your home screen, log in, and come back to this page to turn on alerts.</li>
+        </ol>
+        <p class="small"><strong>iPhone:</strong> job alerts only work from the home screen icon, not from Safari itself (iOS 16.4 or newer).</p>`
       : html`
         <ol class="small">
           <li>Open this page in <strong>Chrome</strong> on your phone.</li>
           <li>Tap the <strong>⋮</strong> menu at the top right.</li>
           <li>Tap <strong>Add to Home screen</strong> (or <strong>Install app</strong>), then <strong>Install</strong>.</li>
-          <li>Open <strong>Choice Dispatch</strong> from your home screen and come back to this page to turn on alerts.</li>
+          <li>Open <strong>${app}</strong> from your home screen and come back to this page to turn on alerts.</li>
         </ol>`}
-      <p class="small muted">Log in here with your owner login. Your Choice Driver app stays logged in to your driver account; they're separate apps.</p>
+      ${!driver && html`<p class="small muted">Log in here with your owner login. Your Choice Driver app stays logged in to your driver account; they're separate apps.</p>`}
     </section>`;
 }
 
-function AlertsCard() {
+function AlertsCard({ driver = false }) {
+  const app = driver ? 'Choice Driver' : 'Choice Dispatch';
   const r = useApi('/push');
   const [sub, setSub] = useState(undefined);
   const [error, setError] = useState(null);
@@ -85,7 +96,7 @@ function AlertsCard() {
   const cfg = r.data;
   if (!pushSupported()) {
     return html`<section class="card"><h2>2. Phone alerts</h2>
-      <p class="small">${isIos() ? 'On iPhone, alerts work once Choice Dispatch is on your home screen. Open it from there and come back to this page.'
+      <p class="small">${isIos() ? `On iPhone, alerts work once ${app} is on your home screen. Open it from there and come back to this page.`
         : "This browser can't show alerts. Open this page in Chrome."}</p></section>`;
   }
   const blocked = Notification.permission === 'denied';
@@ -122,16 +133,26 @@ function AlertsCard() {
               <${ActionButton} class="btn" onError=${setError} onClick=${turnOff}>Turn off on this phone<//>
             </div>`
           : blocked
-          ? html`<p class="small">Alerts are blocked for this app. In your phone's <strong>Settings → Apps → Chrome (or Choice Dispatch) → Notifications</strong>, allow them, then reload this page.</p>`
-          : html`<p class="small">Get an alert on this phone for new orders, quotes waiting on you and more. Your phone will ask to allow notifications: tap <strong>Allow</strong>.</p>
+          ? html`<p class="small">Alerts are blocked for this app. In your phone's <strong>Settings → ${isIos() ? 'Notifications' : 'Apps → Chrome'} → ${app}</strong>, allow them, then reload this page.</p>`
+          : html`<p class="small">${driver ? 'Get an alert on this phone when a new job comes in, even when the app is closed.' : 'Get an alert on this phone for new orders, quotes waiting on you and more.'} Your phone will ask to allow notifications: tap <strong>Allow</strong>.</p>
             <div><${ActionButton} class="btn primary" onError=${setError} onClick=${turnOn}>Turn on alerts<//></div>`}
-        <h3>What to alert me about</h3>
+        ${!driver && html`<h3>What to alert me about</h3>`}
         <ul class="plain-list">${cfg.kinds.map((k) => html`<li key=${k.key}>
           <label class="inline"><input type="checkbox" checked=${k.on}
             onChange=${async (e) => { try { await api('/push/prefs', { method: 'PATCH', body: { [k.key]: e.target.checked } }); r.reload(); } catch (err) { setError(err); } }} />
             ${k.label}</label></li>`)}</ul>
-        <p class="small muted">These are for you only. Your email alerts keep coming too.${cfg.devices > 1 ? ` Alerts are on for ${cfg.devices} phones or browsers.` : ''}</p>`}
+        <p class="small muted">${driver ? 'Go online on the Jobs page to get alerts for open jobs.' : 'These are for you only. Your email alerts keep coming too.'}${cfg.devices > 1 ? ` Alerts are on for ${cfg.devices} phones or browsers.` : ''}</p>`}
     </section>`;
+}
+
+// Drivers using the website (e.g. on iPhone): put it on the home screen and turn on job alerts.
+export function DriverAlertsPage() {
+  return html`
+    <${Layout}>
+      <${PageHeader} title="Job alerts" subtitle="Get new jobs on this phone, like the Android driver app." />
+      <${InstallCard} driver=${true} />
+      <${AlertsCard} driver=${true} />
+    <//>`;
 }
 
 export function PhoneAppPage() {

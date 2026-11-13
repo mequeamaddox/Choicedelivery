@@ -10,7 +10,7 @@ import { CustodyPage } from './pages-custody.js';
 import { InvoicesPage, InvoicePage, BillingPage } from './pages-invoices.js';
 import { ExpensesPage } from './pages-expenses.js';
 import { GigPage } from './pages-gig.js';
-import { PhoneAppPage, setupHomeScreenApp } from './pages-phone.js';
+import { PhoneAppPage, DriverAlertsPage, setupHomeScreenApp } from './pages-phone.js';
 import { StoreKitPage } from './pages-store.js';
 import { DriverAgreementPage, SignedAgreementPage } from './pages-agreement.js';
 
@@ -67,6 +67,7 @@ function App() {
     if (path === '/driver/history') return html`<${DriverHistoryPage} />`;
     if (path === '/driver/mileage') return html`<${DriverMileagePage} />`;
     if (path === '/driver/agreement') return html`<${DriverAgreementPage} />`;
+    if (path === '/driver/alerts') return html`<${DriverAlertsPage} />`;
     if (path === '/account') return html`<${AccountPage} />`;
     navigate('/driver');
     return null;
