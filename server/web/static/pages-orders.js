@@ -669,8 +669,11 @@ function DispatchPanel({ order, onChange, setError }) {
   const [pay, setPay] = useState(order.driverPayCents == null ? '' : (order.driverPayCents / 100).toFixed(2));
   useEffect(() => { setPay(order.driverPayCents == null ? '' : (order.driverPayCents / 100).toFixed(2)); }, [order.driverPayCents]);
   const closed = ['completed', 'cancelled'].includes(order.status);
+  // Shown right under the pay buttons: the page's error banner is off-screen on a phone down here.
+  const [payError, setPayError] = useState(null);
   const setDriverPay = (cents) => async () => onChange(await api(`/orders/${order.id}/driver-pay`, { method: 'PUT', body: { cents } }));
   const payDriver = (viaStripe) => async () => {
+    setPayError(null);
     await api(viaStripe ? '/payouts/pay-stripe' : '/payouts/mark-paid', { method: 'POST', body: { orderIds: [order.id] } });
     onChange(await api(`/orders/${order.id}`));
   };
@@ -723,11 +726,15 @@ function DispatchPanel({ order, onChange, setError }) {
           ${order.driverPaidAt
             ? html`<p class="small"><span class="badge green">Driver paid</span> ${formatMoney(order.driverPayCents)} on ${formatDate(order.driverPaidAt)}</p>`
             : order.driver.directDeposit
-            ? html`<${ActionButton} class="btn primary block" onError=${setError} onClick=${payDriver(true)}
+            ? html`<${ActionButton} class="btn primary block" onError=${setPayError} onClick=${payDriver(true)}
                 confirmText=${`Send ${formatMoney(order.driverPayCents)} to ${order.driver.name} now by direct deposit?`}>Pay driver ${formatMoney(order.driverPayCents)}<//>
-              <p class="muted small">Or leave it: it goes out free in Wednesday's 9 AM payout.</p>`
-            : html`<${ActionButton} class="btn block" onError=${setError} onClick=${payDriver(false)}
+              <${Alert} error=${payError} />
+              <p class="muted small">Or leave it: it goes out free in Wednesday's 9 AM payout.</p>
+              <${ActionButton} class="btn small" onError=${setPayError} onClick=${payDriver(false)}
+                confirmText=${`Mark ${formatMoney(order.driverPayCents)} as paid to ${order.driver.name}? Only do this after you've sent the money another way (Cash App, Zelle, check).`}>Paid another way? Mark paid<//>`
+            : html`<${ActionButton} class="btn block" onError=${setPayError} onClick=${payDriver(false)}
                 confirmText=${`${order.driver.name} hasn't set up direct deposit. Mark ${formatMoney(order.driverPayCents)} as paid another way (Cash App, Zelle, check)?`}>Mark driver paid ${formatMoney(order.driverPayCents)}<//>
+              <${Alert} error=${payError} />
               <p class="muted small">${order.driver.name} hasn't set up direct deposit, so pay them another way and mark it here.</p>`}
         </div>`}
       ${['pending', ...ACTIVE_STATUSES].includes(order.status) && html`
