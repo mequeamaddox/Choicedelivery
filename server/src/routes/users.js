@@ -3,7 +3,7 @@ const db = require('../db');
 const { requireAuth, requireRole, ROLES } = require('../auth');
 const crypto = require('crypto');
 const {
-  USER_SELECT, publicUser, getUser, createUser, setVehicleType, setVehicle, mergeDriverProfile, driverWorkBlocker, DOC_KINDS,
+  USER_SELECT, publicUser, getUser, createUser, setVehicleType, setVehicle, mergeDriverProfile, driverWorkBlocker, driverChecklist, SCREENING, DOC_KINDS,
 } = require('../users');
 const driverEmails = require('../driver-emails');
 const { refreshDriverPay } = require('../orders');
@@ -120,10 +120,11 @@ router.post('/invite', requireRole('admin', 'dispatcher'), asyncH(async (req, re
   const b = req.body || {};
   if (!str(b.name)) throw new HttpError(400, 'Name is required');
   const { user, token } = await db.withTx(async (client) => {
-    // Invited drivers wait for review like drivers who apply: dispatch approves them once their license,
-    // insurance and agreement are in.
+    // Invited drivers wait for review like drivers who apply, but dispatch may approve them before their
+    // checklist is done (a rush job); they finish it afterwards.
     const u = await createUser({ email: b.email, password: crypto.randomBytes(24).toString('hex'), name: b.name,
       phoneNumber: b.phoneNumber, role: 'driver', driverStatus: 'applied' }, client);
+    await client.query(`UPDATE users SET driver_profile = driver_profile || '{"invited": true}'::jsonb WHERE id = $1`, [u.id]);
     if (b.vehicleType) await setVehicle(u.id, { type: b.vehicleType }, client);
     const t = crypto.randomBytes(32).toString('hex');
     await client.query(
@@ -141,6 +142,13 @@ router.post('/:id/review', requireRole('admin', 'dispatcher'), asyncH(async (req
   if (!['approved', 'rejected', 'suspended'].includes(status)) throw new HttpError(400, 'status must be approved, rejected or suspended');
   const target = await getUser(req.params.id).catch(() => null);
   if (!target || target.role !== 'driver') throw new HttpError(404, 'Driver not found');
+  // Drivers who applied themselves are approved only once everything is in. Drivers dispatch invited
+  // can be approved right away and finish their checklist later.
+  if (status === 'approved' && target.driver_status === 'applied' && !target.driver_profile?.invited) {
+    const c = driverChecklist(target);
+    const left = [...c.missing, ...c.screening];
+    if (left.length) throw new HttpError(409, `Can't approve yet. Still missing: ${left.join(', ')}.`);
+  }
   await db.query(
     `UPDATE users SET driver_status = $2, review_note = $3, reviewed_at = now(), reviewed_by = $4,
        is_online = CASE WHEN $2 = 'approved' THEN is_online ELSE false END, updated_at = now() WHERE id = $1`,
@@ -152,6 +160,22 @@ router.post('/:id/review', requireRole('admin', 'dispatcher'), asyncH(async (req
     else driverEmails.suspended(updated, str(note));
   }
   res.json(publicUser(updated, { includeLocation: true }));
+}));
+
+// Staff record a screening step for a driver: the driving record (mvr) or the background check.
+// { item: 'mvr' | 'background', done: true | false }
+router.post('/:id/screening', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const { item, done } = req.body || {};
+  if (!SCREENING[item]) throw new HttpError(400, `item must be one of: ${Object.keys(SCREENING).join(', ')}`);
+  if (typeof done !== 'boolean') throw new HttpError(400, 'done must be true or false');
+  const target = await getUser(req.params.id).catch(() => null);
+  if (!target || target.role !== 'driver') throw new HttpError(404, 'Driver not found');
+  const screening = { ...(target.driver_profile?.screening || {}) };
+  if (done) screening[item] = { at: new Date().toISOString(), by: req.user.id };
+  else delete screening[item];
+  await db.query(`UPDATE users SET driver_profile = driver_profile || jsonb_build_object('screening', $2::jsonb),
+    updated_at = now() WHERE id = $1`, [target.id, JSON.stringify(screening)]);
+  res.json(publicUser(await getUser(target.id), { includeLocation: true }));
 }));
 
 // GET /users?role=driver&online=true

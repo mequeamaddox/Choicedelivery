@@ -6,7 +6,7 @@ const db = require('./db');
 const { getFees } = require('./pricing');
 const { HttpError, str } = require('./util');
 
-const VERSION = '2026-11-08';
+const VERSION = '2026-11-17';
 const pct = (n) => `${Number(n)}%`;
 const money = (c) => `$${(c / 100).toFixed(2)}`;
 
@@ -15,10 +15,16 @@ function sections(fees) {
   return [
     ['Term', 'This Agreement starts on the date Company approves Driver to drive in the Choice Driver app and continues until either Party ends it. Either Party may end it at any time, for any reason, by written notice (text message, email or the app is enough). Jobs Driver has already accepted should be completed or handed back to dispatch before Driver stops.'],
     ['The Services', 'Driver will pick up and deliver shipments for Company’s customers ("Jobs"), mainly in Columbia and the Midlands of South Carolina, using the Choice Driver app. Company offers Jobs through the app; Driver decides whether to accept each one.', [
-      'Driver chooses when to go online, which Jobs to accept, and the route to take. There are no required hours, shifts or minimum number of Jobs.',
+      'Driver chooses when to go online, which Jobs to accept, and the route to take. There are no required hours, shifts or minimum number of Jobs, except on a Scheduled Route that Driver chooses to accept (see Scheduled Routes).',
+      'Only Driver personally does the Services. Driver will not let anyone else use Driver’s app account, accept or carry Jobs for Driver, or ride along to do the work, and will not subcontract, assign or hand off any Job except back to dispatch.',
       'Driver may work for other companies and delivery apps. While carrying a Company shipment, Driver will not pick up or carry another company’s orders, so every Company shipment goes straight from pickup to drop-off.',
       'Once Driver accepts a Job, Driver agrees to complete it as booked, including the pickup time and, for Rush Jobs, driving directly to the drop-off.',
     ]],
+    ['Scheduled Routes', 'Company may also offer scheduled routes: recurring Jobs on set days and times, usually for one customer ("Scheduled Routes"). Accepting a Scheduled Route is Driver’s choice. Before Driver accepts, Company will give Driver the route’s days, times, stops, pay and the customer’s requirements in the app or in a written route sheet. Once Driver accepts a Scheduled Route, Driver will:', [
+      'run it on the agreed days and times, and follow the route sheet and the customer’s requirements (for example, the customer’s training, ID badge, background check or drug test);',
+      'give Company at least 24 hours’ notice before missing a route day, except in an emergency, so the route can be covered; and',
+      'give Company at least 7 days’ notice before stopping the route for good.',
+    ], 'Company may take a Scheduled Route back from Driver if Driver misses a route day without notice or the customer asks for a different driver. Pay for a Scheduled Route is the amount in its route sheet, if different from the Payment Amount section.'],
     ['Driver Requirements', 'To accept Jobs, Driver must have, and keep:', [
       'an age of at least 21 and a valid driver’s license;',
       'a registered, safe and clean vehicle that fits the Jobs Driver accepts;',
@@ -33,7 +39,7 @@ function sections(fees) {
       `${pct(d.extrasPercent)} of extra charges the customer pays for that Job (for example wait time, return trips, failed attempts, or the cancellation fee when a customer cancels after Driver is on the way).`,
     ], 'Job Pay is never more than the customer’s price for the Job. Company may change these rates for future Jobs with at least 7 days’ notice in the app or by email; Jobs already accepted are paid at the rate shown when accepted. Tips, if a customer gives one, belong to Driver.'],
     ['Payment Method', 'Company pays Driver weekly, by direct deposit every Wednesday, for all completed Jobs not yet paid. Driver sets up the payout account in the app. Driver may also cash out earned Job Pay sooner with instant pay; a fee of $1.50 plus 1.5% is taken out of instant payouts. If a Job is disputed (for example, missing proof of delivery or a damage claim), Company may hold that Job’s pay until it is resolved and will tell Driver why.'],
-    ['Expenses and Taxes', 'Driver pays all costs of doing the Services, including the vehicle, fuel, maintenance, tolls, parking, phone and data. Company does not withhold Social Security, Medicare or income taxes; Driver is solely responsible for all taxes on Job Pay. Driver will give Company a completed IRS Form W-9, and Company will issue a Form 1099 as the law requires.'],
+    ['Expenses and Taxes', 'Driver pays all costs of doing the Services, including the vehicle, fuel, maintenance, tolls, parking, phone and data. Company does not withhold Social Security, Medicare or income taxes; Driver is solely responsible for all taxes on Job Pay. Before Company pays Driver, Driver will give Company correct taxpayer information (legal name, address and Social Security or Employer Identification Number), certified as on IRS Form W-9, through the payout setup in the app (Stripe) or on a completed Form W-9. Company may hold Job Pay until it has this information, and will issue a Form 1099 as the law requires.'],
     ['Doing the Job: the App and Proof of Delivery', 'For every Job, Driver will:', [
       'use the Choice Driver app to accept the Job, mark arrival at each stop, and complete each stop;',
       'take a clear photo and get the recipient’s signature and printed name at drop-off (and at pickup when the app asks), and scan the package barcode when there is one;',
@@ -48,11 +54,11 @@ function sections(fees) {
       'refuse any shipment that looks unsafe or that Company’s Terms do not allow (such as hazardous materials, weapons, cash or illegal items), and tell dispatch.',
     ], `Customers are responsible for loading and unloading. Driver is not required to lift anything and may decline a Job that Driver can’t safely handle. If a Job is booked with loading help, no single piece will be over ${fees.maxPieceLbs} lbs.`],
     ['Safety and Conduct', 'Driver will obey all traffic laws, use the phone only hands-free while driving, and be courteous and professional with customers. Driver will never drive or do the Services under the influence of alcohol, marijuana, or any drug that impairs driving. Doing so ends this Agreement immediately.'],
-    ['Accidents, Damage and Loss', 'Driver will report any accident, injury, or damaged, lost or stolen shipment to Company immediately, and in any case before the end of that day. Company carries cargo insurance for customers’ shipments. Driver is responsible for Driver’s own vehicle, auto insurance and any injury to Driver. Driver agrees to repay Company for any loss, including any insurance deductible, caused by Driver’s theft, intentional act, gross negligence, or failure to follow the Handling Shipments section.'],
+    ['Accidents, Damage and Loss', 'Driver will report any accident, injury, or damaged, lost or stolen shipment to Company immediately, and in any case before the end of that day. Company carries cargo insurance for customers’ shipments. Driver is responsible for Driver’s own vehicle, auto insurance and any injury to Driver. Driver agrees to repay Company for any loss, including any insurance deductible, caused by Driver’s theft, intentional act, gross negligence, or failure to follow the Handling Shipments section. If a customer charges Company a fine, credit or chargeback because Driver, without a good reason, missed a pickup or delivery time, failed to follow the customer’s instructions or the route sheet, or failed to get proof of delivery, Company may deduct that amount from Driver’s Job Pay after showing Driver the charge and the reason.'],
     ['Confidentiality and Privacy', 'Customer names, addresses, phone numbers, delivery details, photos, signatures and any medical or legal information Driver sees are confidential. Driver will use them only to do the Services and will not share them, post them online, or keep copies, during or after this Agreement. Driver will not take photos other than those the app asks for.'],
     ['Company’s Customers', 'During this Agreement and for 12 months after it ends, Driver will not use Company’s confidential information to take Company’s customers’ deliveries directly or for another courier.'],
     ['Independent Contractor Status', 'Driver is an independent contractor, not an employee, partner, agent or joint venturer of Company. Driver is not eligible for employee benefits, workers’ compensation or unemployment benefits through Company. Driver has no authority to sign or promise anything on Company’s behalf. Driver controls how the Services are performed, subject to the customer’s instructions and this Agreement.'],
-    ['Indemnity', 'Driver will defend and hold Company harmless from claims, costs and damages, including reasonable attorney’s fees, caused by Driver’s negligence, unsafe driving, breaking the law, or breaking this Agreement.'],
+    ['Indemnity', 'Driver will defend and hold Company harmless from claims, costs and damages, including reasonable attorney’s fees, caused by Driver’s negligence, unsafe driving, breaking the law, or breaking this Agreement. This section, Confidentiality and Privacy, and Company’s Customers stay in effect after this Agreement ends.'],
     ['Return of Property', 'When this Agreement ends, Driver will return any Company property (such as bags, coolers, signs or ID badges) and any shipment still in Driver’s possession. Company may hold final pay until these are returned.'],
     ['Deactivation', 'Company may stop offering Jobs to Driver at once for: an unsafe driving record, a failed background check, a lapse in license or insurance, impairment, theft or tampering, falsifying proof of delivery, sharing customer information, or repeated customer complaints or missed Jobs. Driver will be paid for Jobs completed before deactivation, less any amount owed under the Accidents, Damage and Loss section.'],
     ['Governing Law', 'This Agreement is governed by the laws of the State of South Carolina. Any lawsuit about this Agreement will be brought in the courts of Richland County, South Carolina.'],
@@ -67,7 +73,7 @@ async function current() {
   return {
     version: VERSION,
     title: 'Independent Contractor Driver Agreement',
-    intro: 'This Agreement is between Choice Delivery SC, a courier service based in Columbia, South Carolina ("Company"), and the driver who signs below ("Driver"). In exchange for the promises in this Agreement, Company and Driver (the "Parties") agree as follows:',
+    intro: 'This Agreement is between I M Maddox LLC, doing business as Choice Delivery, a courier service based in Columbia, South Carolina ("Company"), and the driver who signs below ("Driver"). In exchange for the promises in this Agreement, Company and Driver (the "Parties") agree as follows:',
     sections: sections(fees),
   };
 }

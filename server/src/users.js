@@ -25,6 +25,8 @@ const DOC_KINDS = {
   registration: 'Vehicle registration',
 };
 const REQUIRED_DOCS = ['photo', 'license_front', 'insurance', 'vehicle'];
+// Screening dispatch does and records (the driver doesn't upload these).
+const SCREENING = { mvr: 'Driving record (MVR) checked', background: 'Background check cleared' };
 
 const clip = (v, n = 120) => str(v).slice(0, n);
 const isoDate = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(str(v)) ? str(v) : '');
@@ -66,12 +68,16 @@ function driverChecklist(u) {
   if (!p.license?.number || !p.license?.expires) missing.push("Driver's license number and expiration");
   if (!p.insurance?.company || !p.insurance?.expires) missing.push('Insurance company and expiration');
   for (const k of REQUIRED_DOCS) if (!docs.has(k)) missing.push(DOC_KINDS[k]);
-  // Owners driving their own deliveries don't sign the contractor agreement.
+  if (!str(p.emergencyContact?.name) || !str(p.emergencyContact?.phone)) missing.push('Emergency contact (name and phone)');
+  // Owners driving their own deliveries aren't paid out and don't sign the contractor agreement.
+  if (!u.no_driver_pay && !u.stripe_payouts_enabled) missing.push('Direct deposit and tax info (payout setup)');
   if (!u.agreement_signed_at && !u.no_driver_pay) missing.push('Signed driver agreement');
+  // Dispatch's own checks, shown to staff only.
+  const screening = u.no_driver_pay ? [] : Object.keys(SCREENING).filter((k) => !p.screening?.[k]?.at).map((k) => SCREENING[k]);
   const expired = [];
   if (p.license?.expires && p.license.expires < today()) expired.push(`Driver's license expired ${p.license.expires}`);
   if (p.insurance?.expires && p.insurance.expires < today()) expired.push(`Insurance expired ${p.insurance.expires}`);
-  return { complete: missing.length === 0, missing, expired };
+  return { complete: missing.length === 0, missing, screening, expired };
 }
 
 // Where drivers send questions (email, so applicants don't need to phone in).
@@ -185,5 +191,5 @@ async function setVehicleType(driverId, type, client = db) {
 
 module.exports = {
   USER_SELECT, publicUser, getUser, createUser, setVehicleType, setVehicle, mergeDriverProfile, driverChecklist,
-  driverWorkBlocker, DOC_KINDS, REQUIRED_DOCS,
+  driverWorkBlocker, driverChecklist, DOC_KINDS, REQUIRED_DOCS, SCREENING,
 };

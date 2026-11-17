@@ -193,7 +193,22 @@ export function DriverDetailPage({ id }) {
             ${u.checklist?.expired?.length > 0 && html`<${Alert}>${u.checklist.expired.join('. ')}. They can't take jobs until they upload new ones.<//>`}
             ${u.checklist?.missing?.length > 0 && html`<div class="small"><strong>Still missing:</strong> ${u.checklist.missing.join(', ')}.</div>`}
             ${u.checklist?.complete && !u.checklist?.expired?.length && html`<p class="small">✓ Profile complete</p>`}
+            ${u.driverStatus === 'applied' && html`<p class="small muted">${p.invited
+              ? 'Invited by dispatch: you can approve now and they finish the rest later.'
+              : 'Applied on their own: you can approve once the profile and screening are complete.'}</p>`}
           </section>
+          ${!u.noDriverPay && html`<section class="card">
+            <h2>Screening</h2>
+            ${[['mvr', 'Driving record (MVR) checked'], ['background', 'Background check cleared']].map(([item, label]) => {
+              const done = p.screening?.[item]?.at;
+              return html`<div class="inline wrap" key=${item}>
+                <span>${done ? '✓' : '○'} ${label}${done ? html` <span class="small muted">· ${formatDate(done)}</span>` : ''}</span>
+                <${ActionButton} class="btn small" onError=${setActionError}
+                  onClick=${async () => { await api(`/users/${u.id}/screening`, { method: 'POST', body: { item, done: !done } }); reload(); }}>
+                  ${done ? 'Undo' : 'Mark done'}<//>
+              </div>`;
+            })}
+          </section>`}
           <section class="card">
             <h2>Documents</h2>
             <div class="doc-grid">

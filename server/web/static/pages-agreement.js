@@ -75,9 +75,7 @@ export function DriverAgreementPage() {
         <div class="card no-print stack">
           <p><strong>✓ Signed ${formatDate(d.signed.signedAt)}.</strong> Thank you! Here's your copy.</p>
           <div class="inline wrap">
-            <button class="btn primary" onClick=${() => window.print()}>Print / Save as PDF</button>
-            ${d.signed.version !== d.current.version && html`<button class="btn" onClick=${() => setSigning(true)}>Review and sign the updated agreement</button>`}
-          </div>
+            <button class="btn primary" onClick=${() => window.print()}>Print / Save as PDF</button>          </div>
         </div>
         <${SignedCopy} a=${d.signed} driverName=${getUser()?.name} />`
       : html`
