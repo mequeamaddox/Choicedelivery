@@ -190,6 +190,91 @@ export function BillingPage() {
     <//>`;
 }
 
+// New custom invoice (#/invoices/new): bill a company or anyone for lines typed by hand.
+const todayYmd = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+const toCents = (v) => Math.round(Number(String(v || '').replace(/[$,\s]/g, '')) * 100) || 0;
+const blankLine = () => ({ day: todayYmd(), description: '', qty: '1', rate: '' });
+
+export function NewInvoicePage() {
+  const companies = useApi('/organizations');
+  const [orgId, setOrgId] = useState('');
+  const [bill, setBill] = useState({ name: '', email: '', address: '' });
+  const [terms, setTerms] = useState('0');
+  const [memo, setMemo] = useState('');
+  const [lines, setLines] = useState([blankLine()]);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const setLine = (i, patch) => setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const lineCents = (l) => Math.round((Number(l.qty) || 0) * toCents(l.rate));
+  const total = lines.reduce((t, l) => t + lineCents(l), 0);
+  const org = (companies.data || []).find((c) => c.id === orgId);
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(null); setBusy(true);
+    try {
+      const i = await api('/invoices/custom', { method: 'POST', body: {
+        organizationId: orgId || undefined,
+        billToName: orgId ? undefined : bill.name, billToEmail: bill.email || undefined, billToAddress: bill.address || undefined,
+        termsDays: Number(terms), memo: memo || undefined,
+        lines: lines.filter((l) => l.description || l.rate).map((l) => ({
+          day: l.day, cents: lineCents(l),
+          description: Number(l.qty) !== 1 && l.qty ? `${l.description} (${l.qty} × ${formatMoney(toCents(l.rate))})` : l.description,
+        })),
+      } });
+      navigate(`/invoices/${i.id}`);
+    } catch (err) { setError(err); window.scrollTo(0, 0); } finally { setBusy(false); }
+  };
+  return html`
+    <${Layout}>
+      <a class="back" href="#/invoices">← Invoices</a>
+      <${PageHeader} title="New invoice" subtitle="Bill anyone for anything: work outside the app, a flat fee, a day rate. You'll review it before it's sent." />
+      <form class="stack" onSubmit=${submit}>
+        <${Alert} error=${error || companies.error} />
+        <section class="card stack">
+          <h2>Bill to</h2>
+          <${Field} label="Company" hint="Pick a company you have, or leave it on Someone else and type their details.">
+            <select value=${orgId} onChange=${(e) => setOrgId(e.target.value)}>
+              <option value="">Someone else</option>
+              ${(companies.data || []).filter((c) => !c.isDemo).map((c) => html`<option value=${c.id}>${c.name}</option>`)}
+            </select><//>
+          ${orgId ? html`<p class="small muted">Sent to ${org?.billingEmail || "the email you enter when sending"}.
+            You can also type a different email below.</p>` : html`
+            <${Field} label="Name or business"><input required maxlength="200" value=${bill.name} onInput=${(e) => setBill({ ...bill, name: e.target.value })} /><//>`}
+          <div class="grid-2">
+            <${Field} label=${orgId ? 'Email (optional, instead of theirs)' : 'Email'}><input type="email" maxlength="200" value=${bill.email}
+              onInput=${(e) => setBill({ ...bill, email: e.target.value })} /><//>
+            <${Field} label="Address (optional)"><input maxlength="300" value=${bill.address} onInput=${(e) => setBill({ ...bill, address: e.target.value })} /><//>
+          </div>
+          <${Field} label="Due"><select value=${terms} onChange=${(e) => setTerms(e.target.value)}>
+            <option value="0">Due on receipt</option><option value="15">Net 15</option><option value="30">Net 30</option>
+            <option value="45">Net 45</option><option value="60">Net 60</option></select><//>
+        </section>
+        <section class="card stack">
+          <h2>Lines</h2>
+          ${lines.map((l, i) => html`<div class="invoice-line stack-sm" key=${i}>
+            <div class="grid-2">
+              <${Field} label="Description"><input maxlength="400" placeholder="e.g. Walmart delivery route" value=${l.description}
+                onInput=${(e) => setLine(i, { description: e.target.value })} /><//>
+              <${Field} label="Date"><input type="date" value=${l.day} onInput=${(e) => setLine(i, { day: e.target.value })} /><//>
+              <${Field} label="Quantity" hint="Hours, stops, days… or 1."><input type="number" min="0" step="any" inputmode="decimal" value=${l.qty}
+                onInput=${(e) => setLine(i, { qty: e.target.value })} /><//>
+              <${Field} label="Price each ($)"><input inputmode="decimal" placeholder="0.00" value=${l.rate}
+                onInput=${(e) => setLine(i, { rate: e.target.value })} /><//>
+            </div>
+            <div class="row-between"><span class="small muted">Line total <strong>${formatMoney(lineCents(l))}</strong></span>
+              ${lines.length > 1 && html`<button type="button" class="link" onClick=${() => setLines(lines.filter((_, j) => j !== i))}>Remove line</button>`}</div>
+          </div>`)}
+          <div><button type="button" class="btn small" onClick=${() => setLines([...lines, blankLine()])}>+ Add a line</button></div>
+          <${Field} label="Note on the invoice (optional)"><textarea rows="2" maxlength="1000" value=${memo} onInput=${(e) => setMemo(e.target.value)}
+            placeholder="e.g. Thank you for your business!"></textarea><//>
+          <div class="row-between"><strong>Total ${formatMoney(total)}</strong>
+            <button class="btn primary" disabled=${busy || total <= 0}>${busy ? 'Creating…' : 'Create invoice'}</button></div>
+          <p class="small muted">It isn't emailed yet: you'll see it first, then tap Send invoice.</p>
+        </section>
+      </form>
+    <//>`;
+}
+
 export function InvoicesPage() {
   const staff = isStaff(getUser());
   const list = useApi('/invoices');
@@ -210,8 +295,9 @@ export function InvoicesPage() {
   const accounts = acc.data?.accounts || [];
   return html`
     <${Layout}>
-      <${PageHeader} title="Invoices" subtitle=${staff ? 'Companies billed on account (Net 30 and other terms).' : 'Invoices for your company.'}
-        actions=${staff && html`<${ActionButton} class="btn" onError=${setError} confirmText="Create invoices for every account's deliveries through the end of last month?"
+      <${PageHeader} title="Invoices" subtitle=${staff ? 'Companies billed on account, and custom invoices for anyone.' : 'Invoices for your company.'}
+        actions=${staff && html`<a class="btn primary" href="#/invoices/new">New invoice</a>
+          <${ActionButton} class="btn" onError=${setError} confirmText="Create invoices for every account's deliveries through the end of last month?"
           onClick=${runMonthly}>Invoice last month<//>`} />
       <${Alert} error=${error || list.error || acc.error} />
       ${notice && html`<${Alert} tone="success">${notice}<//>`}
@@ -271,7 +357,9 @@ export function InvoicePage({ id }) {
             <dt>Amount</dt><dd><strong>${formatMoney(i.totalCents)}</strong></dd>
             <dt>Terms</dt><dd>${i.terms}</dd>
             <dt>Due</dt><dd>${day(i.dueDate)}${i.overdue ? html` <span class="badge red">Overdue</span>` : ''}</dd>
-            <dt>Deliveries</dt><dd>${i.periodStart ? `${day(i.periodStart)} – ` : 'through '}${day(i.periodEnd)}</dd>
+            ${!i.isCustom && html`<dt>Deliveries</dt><dd>${i.periodStart ? `${day(i.periodStart)} – ` : 'through '}${day(i.periodEnd)}</dd>`}
+            ${i.billingEmail && html`<dt>Bill to</dt><dd>${i.company} · ${i.billingEmail}</dd>`}
+            ${i.memo && html`<dt>Note</dt><dd>${i.memo}</dd>`}
             <dt>Sent</dt><dd>${i.sentAt ? `${issued(i.sentAt)} to ${i.sentTo}` : 'Not yet'}${i.remindedAt ? ` · reminder ${issued(i.remindedAt)}` : ''}</dd>
             ${i.status === 'paid' && html`<dt>Paid</dt><dd>${issued(i.paidAt)} · ${i.paidMethodLabel}${i.paidNote ? ` · ${i.paidNote}` : ''}</dd>`}
           </dl>
@@ -279,7 +367,7 @@ export function InvoicePage({ id }) {
         ${staff && i.status === 'open' && html`
           <section class="card stack">
             <h2>${i.sentAt ? 'Send again' : 'Send it'}</h2>
-            <${Field} label="Email to" hint="The company's billing email unless you change it.">
+            <${Field} label="Email to" hint=${i.isCustom ? 'Who it goes to. Change it if needed.' : "The company's billing email unless you change it."}>
               <input type="email" value=${sendTo} onInput=${(e) => setTo(e.target.value)} /><//>
             <div class="inline">
               <${ActionButton} class="btn primary" onError=${setError} onClick=${act('send', { to: sendTo })}>${i.sentAt ? 'Resend invoice' : 'Send invoice'}<//>
@@ -296,7 +384,8 @@ export function InvoicePage({ id }) {
               <${ActionButton} class="btn" onError=${setError} confirmText=${`Mark ${i.invoiceNumber} paid (${formatMoney(i.totalCents)})?`}
                 onClick=${act('paid', { method, note })}>Mark paid<//>
               <${ActionButton} class="btn danger" onError=${setError}
-                confirmText="Void this invoice? Its deliveries go back to 'not invoiced yet' so you can fix them and invoice again."
+                confirmText=${i.isCustom ? 'Void this invoice? It stays on record as void; make a new one if you need to fix it.'
+                  : "Void this invoice? Its deliveries go back to 'not invoiced yet' so you can fix them and invoice again."}
                 onClick=${act('void')}>Void<//>
             </div>
           </section>`}
@@ -304,7 +393,7 @@ export function InvoicePage({ id }) {
       <section class="card">
         <h2>Lines</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>Date</th><th>Delivery</th><th>PO / reference</th><th>Amount</th></tr></thead>
+          <thead><tr><th>Date</th><th>${i.isCustom ? 'Description' : 'Delivery'}</th><th>PO / reference</th><th>Amount</th></tr></thead>
           <tbody>${i.lines.map((l) => html`<tr key=${l.id}>
             <td data-label="Date">${day(l.day)}</td>
             <td data-label="Delivery">${l.orderId && staff ? html`<a href=${`#/orders/${l.orderId}`}>${l.description}</a>` : l.description}</td>

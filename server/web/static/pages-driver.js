@@ -214,6 +214,13 @@ export function DriverHistoryPage() {
         <div class="stat"><span class="muted small">Paid, last 60 days</span><strong>${formatMoney(e.paidLast60DaysCents)}</strong></div>
       </div>`}
       <${Payouts} earnings=${e} onPaid=${() => { earnings.reload(); done.reload(); }} />
+      ${e?.extras?.length > 0 && html`<section class="card">
+        <h2>Other work</h2>
+        ${e.extras.map((x) => html`<div class="row-between" key=${x.id}>
+          <div><strong>${x.description}</strong><div class="muted small">${new Date(`${x.day}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            · ${x.driverPaidAt ? `paid ${formatDate(x.driverPaidAt)}` : 'not paid out yet'}</div></div>
+          <strong>${formatMoney(x.driverPayCents)}</strong></div>`)}
+      </section>`}
       <${Alert} error=${done.error} />
       ${done.loading ? html`<${Spinner} />` : !done.data?.length ? html`<${Empty} title="No completed jobs yet" />` : html`
         <div class="job-list">${done.data.map((o) => html`<${JobCard} key=${o.id} o=${o}

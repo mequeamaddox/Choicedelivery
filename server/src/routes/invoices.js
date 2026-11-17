@@ -68,6 +68,17 @@ router.post('/', staffOnly, asyncH(async (req, res) => {
   res.status(201).json(await inv.getInvoice('id', id));
 }));
 
+// A custom invoice: bill a company or anyone for lines typed by hand (work outside the app, a flat fee…).
+// Body: { organizationId? | billToName + billToEmail?, billToAddress?, termsDays, lines: [{ day?, description, cents }], memo? }.
+router.post('/custom', staffOnly, asyncH(async (req, res) => {
+  const b = req.body || {};
+  const id = await db.withTx((client) => inv.createCustomInvoice(client, {
+    organizationId: str(b.organizationId) || null, billToName: b.billToName, billToEmail: b.billToEmail, billToAddress: b.billToAddress,
+    termsDays: b.termsDays ?? 0, lines: b.lines, memo: b.memo, actorId: req.user.id,
+  }));
+  res.status(201).json(await inv.getInvoice('id', id));
+}));
+
 // Invoice every company billed on account for last month (what the 1st-of-the-month run does).
 router.post('/run-monthly', staffOnly, asyncH(async (req, res) => {
   const made = await inv.runMonthly(new Date(), { force: true });
@@ -84,7 +95,7 @@ router.post('/:id/send', staffOnly, asyncH(async (req, res) => {
   if (invoice.status === 'void') throw new HttpError(409, 'This invoice was voided');
   const to = str(req.body?.to).toLowerCase() || invoice.billingEmail;
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-    throw new HttpError(400, "Enter the email to send it to (or add a billing email for the company)");
+    throw new HttpError(400, 'Enter the email to send it to');
   }
   const reminder = req.body?.reminder === true;
   await inv.emailInvoice(invoice, { to, reminder });

@@ -3365,6 +3365,89 @@ test('gig routes: stops read from screenshots, worked on a map, deleted after; s
 });
 
 // Last: it wipes every order. Companies, logins and settings stay; numbering starts again.
+test('pay for other work: dispatch adds it, it shows as owed, is paid with order pay, and can be removed while unpaid', async () => {
+  let r = await call('POST', '/payouts/items', { token: t.d1, body: { driverId: ids.d1, day: '2026-11-14', description: 'x', cents: 100 } });
+  assert.equal(r.status, 403, 'drivers cannot add their own pay');
+  r = await call('POST', '/payouts/items', { token: t.dispatcher, body: { driverId: ids.d1, day: '2026-11-14', description: '', cents: 100 } });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/payouts/items', { token: t.dispatcher, body: { driverId: ids.d1, day: '2026-11-14', description: 'Walmart deliveries', cents: 12000 } });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  const item = r.data;
+  r = await call('POST', '/payouts/items', { token: t.dispatcher, body: { driverId: ids.d2, day: '2026-11-14', description: 'Oops', cents: 500 } });
+  const oops = r.data;
+
+  r = await call('GET', '/payouts/me', { token: t.d1 });
+  const owedBefore = r.data.owedCents;
+  assert.ok(r.data.extras.some((x) => x.id === item.id && x.driverPayCents === 12000 && !x.driverPaidAt), 'the driver sees it');
+  r = await call('GET', '/payouts', { token: t.admin });
+  const mine = r.data.find((d) => d.driver.id === ids.d1);
+  assert.ok(mine.orders.some((o) => o.id === item.id && o.isExtra && o.description === 'Walmart deliveries'));
+  assert.equal(mine.totalCents, owedBefore);
+
+  r = await call('DELETE', `/payouts/items/${oops.id}`, { token: t.dispatcher });
+  assert.equal(r.status, 200);
+  r = await call('POST', '/payouts/mark-paid', { token: t.admin, body: { itemIds: [item.id] } });
+  assert.deepEqual(r.data, { paidOrders: 1, totalCents: 12000 });
+  r = await call('POST', '/payouts/mark-paid', { token: t.admin, body: { itemIds: [item.id] } });
+  assert.equal(r.data.paidOrders, 0, 'paying twice does nothing');
+  r = await call('DELETE', `/payouts/items/${item.id}`, { token: t.dispatcher });
+  assert.equal(r.status, 409, 'paid pay stays on record');
+  r = await call('GET', '/payouts/me', { token: t.d1 });
+  assert.equal(r.data.owedCents, owedBefore - 12000);
+  assert.ok(r.data.extras.find((x) => x.id === item.id).driverPaidAt);
+  r = await call('GET', '/payouts?status=paid', { token: t.admin });
+  assert.ok(r.data.find((d) => d.driver.id === ids.d1).orders.some((o) => o.id === item.id));
+});
+
+test('custom invoices: bill anyone for typed lines, email it, pay it, and customers only see their own', async () => {
+  const mailer = require('../src/mailer');
+  const mails = [];
+  mailer.setSender(async (m) => { mails.push(m); return 'sent'; });
+  try {
+    let r = await call('POST', '/invoices/custom', { token: t.acme, body: { billToName: 'X', lines: [{ description: 'a', cents: 100 }] } });
+    assert.equal(r.status, 403);
+    r = await call('POST', '/invoices/custom', { token: t.dispatcher, body: { lines: [{ description: 'a', cents: 100 }] } });
+    assert.equal(r.status, 400, 'needs someone to bill');
+    r = await call('POST', '/invoices/custom', { token: t.dispatcher, body: { billToName: 'Pat', lines: [{ description: 'a' }] } });
+    assert.equal(r.status, 400, 'lines need amounts');
+    r = await call('POST', '/invoices/custom', { token: t.dispatcher, body: {
+      billToName: 'Pat Walker', billToEmail: 'Pat@Walker.test', termsDays: 15, memo: 'Thanks!',
+      lines: [{ day: '2026-11-14', description: 'Delivery route (8 × $25.00)', cents: 20000 }, { description: 'Fuel', cents: 1550 }],
+    } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    const inv = r.data;
+    assert.equal(inv.isCustom, true);
+    assert.equal(inv.company, 'Pat Walker');
+    assert.equal(inv.billingEmail, 'pat@walker.test');
+    assert.equal(inv.totalCents, 21550);
+    assert.equal(inv.terms, 'Net 15');
+    assert.equal(inv.lines.length, 2);
+    r = await call('GET', '/invoices', { token: t.dispatcher });
+    assert.ok(r.data.some((i) => i.id === inv.id && i.company === 'Pat Walker'));
+    r = await call('GET', `/invoices/${inv.id}`, { token: t.acme });
+    assert.equal(r.status, 404, 'other customers cannot see it');
+
+    r = await call('POST', `/invoices/${inv.id}/send`, { token: t.dispatcher, body: {} });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const mail = mails.find((m) => m.to === 'pat@walker.test');
+    assert.ok(mail && /Here is your invoice from Choice Delivery SC/.test(mail.html) && /Thanks!/.test(mail.html));
+    const page = await (await fetch(`${base}/public/invoice/${inv.publicToken}`)).text();
+    assert.ok(/Pat Walker/.test(page) && /Delivery route/.test(page) && /Description/.test(page));
+    r = await call('POST', `/invoices/${inv.id}/paid`, { token: t.dispatcher, body: { method: 'cash' } });
+    assert.equal(r.data.status, 'paid');
+
+    // For a company: shows on its account, and the company's customers can see it.
+    const acme = (await call('GET', '/users/me', { token: t.acme })).data.organization;
+    r = await call('POST', '/invoices/custom', { token: t.dispatcher, body: { organizationId: acme.id, lines: [{ description: 'Pallet storage', cents: 4000 }] } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    r = await call('GET', `/invoices/${r.data.id}`, { token: t.acme });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.totalCents, 4000);
+  } finally {
+    mailer.setSender(null);
+  }
+});
+
 test('the owner can delete every order before real work starts', async () => {
   let r = await call('POST', '/expenses/delete-all-orders', { token: t.admin, body: { confirm: 'DELETE' } });
   assert.equal(r.status, 200, JSON.stringify(r.data));

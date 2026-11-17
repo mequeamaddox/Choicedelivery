@@ -7,7 +7,7 @@ import { DriverJobsPage, DriverJobPage, DriverHistoryPage, PayoutMethodPage } fr
 import { DriverMileagePage } from './pages-mileage.js';
 import { ShippingFormPage, ShippingLabelPage } from './pages-shipping.js';
 import { CustodyPage } from './pages-custody.js';
-import { InvoicesPage, InvoicePage, BillingPage } from './pages-invoices.js';
+import { InvoicesPage, InvoicePage, BillingPage, NewInvoicePage } from './pages-invoices.js';
 import { ExpensesPage } from './pages-expenses.js';
 import { GigPage } from './pages-gig.js';
 import { PhoneAppPage, DriverAlertsPage, setupHomeScreenApp } from './pages-phone.js';
@@ -98,6 +98,7 @@ function App() {
   if (storeKit) return html`<${StoreKitPage} key=${storeKit.id} orgId=${storeKit.id} />`;
   if (path === '/store-kit' && user.role === 'shipper') return html`<${StoreKitPage} />`;
   if (path === '/billing' && user.role === 'shipper') return html`<${BillingPage} />`;
+  if (path === '/invoices/new' && isStaff(user)) return html`<${NewInvoicePage} />`;
   const invoice = match('/invoices/:id', path);
   if (invoice) return html`<${InvoicePage} key=${invoice.id} id=${invoice.id} />`;
   const custody = user.role !== 'driver' && match('/orders/:id/custody', path);

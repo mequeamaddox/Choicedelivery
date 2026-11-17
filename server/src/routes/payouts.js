@@ -4,10 +4,10 @@
 const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff, signScopedToken } = require('../auth');
-const { asyncH, HttpError } = require('../util');
+const { asyncH, HttpError, str } = require('../util');
 const stripe = require('../stripe');
 const {
-  INSTANT_FEE, INSTANT_MIN_NET_CENTS, instantFee, nextBatchAt, lockOwed, loadDriver, payThroughStripe, payByHand,
+  INSTANT_FEE, INSTANT_MIN_NET_CENTS, instantFee, nextBatchAt, lockOwed, lockItems, loadDriver, payThroughStripe, payByHand,
 } = require('../driver-payouts');
 
 const router = express.Router();
@@ -23,6 +23,12 @@ const ORDER_COLS = `o.id, o.order_number, o.completed_at, o.driver_pay_cents, o.
 const serialize = (r) => ({
   id: r.id, orderNumber: r.order_number, completedAt: r.completed_at, driverPayCents: r.driver_pay_cents ?? 0,
   driverPaidAt: r.driver_paid_at, payoutMethod: r.payout_method || null, payoutKind: r.payout_kind || null, pickup: r.pickup, dropoff: r.dropoff,
+});
+// Pay for other work (not an order): shown with a driver's orders, with isExtra and its description.
+const ITEM_COLS = `i.id, i.day, i.description, i.cents, i.driver_paid_at, i.driver_id, p.method AS payout_method, p.kind AS payout_kind`;
+const serializeItem = (r) => ({
+  id: r.id, isExtra: true, description: r.description, day: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day).slice(0, 10),
+  completedAt: r.day, driverPayCents: r.cents, driverPaidAt: r.driver_paid_at, payoutMethod: r.payout_method || null, payoutKind: r.payout_kind || null,
 });
 const sum = (list) => list.reduce((n, o) => n + (o.driverPayCents || 0), 0);
 const base = () => String(process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com').replace(/\/$/, '');
@@ -65,16 +71,25 @@ router.get('/', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
      FROM orders o JOIN users u ON u.id = o.driver_id LEFT JOIN driver_payouts p ON p.id = o.driver_payout_id
      WHERE (o.status = 'completed' OR (o.status = 'cancelled' AND o.tonu_cents > 0)) AND NOT o.is_demo AND ${paid ? "o.driver_paid_at > now() - interval '60 days'" : 'o.driver_paid_at IS NULL AND o.driver_pay_cents > 0'}
      ORDER BY u.name, o.completed_at`);
+  const { rows: items } = await db.query(
+    `SELECT ${ITEM_COLS}, u.name AS driver_name, u.email AS driver_email, u.phone_number AS driver_phone,
+            u.stripe_account_id, u.stripe_payouts_enabled, u.stripe_details_submitted
+     FROM driver_pay_items i JOIN users u ON u.id = i.driver_id LEFT JOIN driver_payouts p ON p.id = i.driver_payout_id
+     WHERE ${paid ? "i.driver_paid_at > now() - interval '60 days'" : 'i.driver_paid_at IS NULL'}
+     ORDER BY u.name, i.day`);
   const drivers = new Map();
-  for (const r of rows) {
+  const entry = (r) => {
     if (!drivers.has(r.driver_id)) {
       drivers.set(r.driver_id, {
         driver: { id: r.driver_id, name: r.driver_name, email: r.driver_email, phoneNumber: r.driver_phone },
         stripe: stripeStatus(r), orders: [],
       });
     }
-    drivers.get(r.driver_id).orders.push(serialize(r));
-  }
+    return drivers.get(r.driver_id);
+  };
+  for (const r of rows) entry(r).orders.push(serialize(r));
+  for (const r of items) entry(r).orders.push(serializeItem(r));
+  rows.push(...items);
   // Drivers part-way through Stripe sign-up: check whether they've finished since.
   if (!paid) {
     await Promise.all([...drivers.entries()].map(async ([id, d]) => {
@@ -87,16 +102,19 @@ router.get('/', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   res.json([...drivers.values()].map((d) => ({ ...d, totalCents: sum(d.orders) })));
 }));
 
-// Locks the given completed, unpaid orders and checks they all belong to one driver.
-async function lockUnpaid(client, orderIds) {
-  const ids = Array.isArray(orderIds) ? orderIds.filter((x) => typeof x === 'string').slice(0, 500) : [];
-  if (!ids.length) throw new HttpError(400, 'Choose at least one order');
+// Locks the given completed, unpaid orders and other-work pay (itemIds).
+async function lockUnpaid(client, orderIds, itemIds) {
+  const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 500) : []);
+  const ids = list(orderIds);
+  const extra = list(itemIds);
+  if (!ids.length && !extra.length) throw new HttpError(400, 'Choose at least one order');
   let rows;
   try {
     ({ rows } = await client.query(
       `SELECT id, driver_id, driver_pay_cents, order_number FROM orders
        WHERE id = ANY($1::uuid[]) AND (status = 'completed' OR (status = 'cancelled' AND tonu_cents > 0)) AND driver_paid_at IS NULL AND driver_id IS NOT NULL
        FOR UPDATE`, [ids]));
+    if (extra.length) rows.push(...(await lockItems(client, { ids: extra })));
   } catch (e) {
     if (e.code === '22P02') throw new HttpError(400, 'Invalid order id');
     throw e;
@@ -104,10 +122,37 @@ async function lockUnpaid(client, orderIds) {
   return rows;
 }
 
+// Staff: pay a driver for work that isn't an order (e.g. a day of Walmart deliveries).
+// Body: { driverId, day: 'YYYY-MM-DD', description, cents }. It's owed until paid, like order pay.
+router.post('/items', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const b = req.body || {};
+  const description = str(b.description).slice(0, 300);
+  const cents = Number(b.cents);
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(str(b.day)) ? str(b.day) : null;
+  if (!description) throw new HttpError(400, 'Describe the work (e.g. "Walmart deliveries")');
+  if (!Number.isInteger(cents) || cents <= 0 || cents > 1000000) throw new HttpError(400, 'Enter the amount to pay');
+  if (!day) throw new HttpError(400, 'Choose the day of the work');
+  const { rows: [driver] } = await db.query("SELECT id FROM users WHERE id = $1 AND role = 'driver'", [str(b.driverId)])
+    .catch(() => ({ rows: [] }));
+  if (!driver) throw new HttpError(400, 'Choose a driver');
+  const { rows: [item] } = await db.query(
+    `INSERT INTO driver_pay_items (driver_id, day, description, cents, created_by) VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, day, description, cents, driver_paid_at, driver_id`, [driver.id, day, description, cents, req.user.id]);
+  res.status(201).json(serializeItem(item));
+}));
+
+// Staff: remove other-work pay that was added by mistake (only while it's unpaid).
+router.delete('/items/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
+  const { rowCount } = await db.query('DELETE FROM driver_pay_items WHERE id = $1 AND driver_paid_at IS NULL', [req.params.id])
+    .catch((e) => { if (e.code === '22P02') return { rowCount: 0 }; throw e; });
+  if (!rowCount) throw new HttpError(409, "It's already paid (or was removed)");
+  res.json({ ok: true });
+}));
+
 // Staff: mark orders' driver pay as paid outside the app (one payout record per driver). Body: { orderIds }.
 router.post('/mark-paid', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   const result = await db.withTx(async (client) => {
-    const rows = await lockUnpaid(client, req.body?.orderIds);
+    const rows = await lockUnpaid(client, req.body?.orderIds, req.body?.itemIds);
     const byDriver = new Map();
     for (const r of rows) byDriver.set(r.driver_id, [...(byDriver.get(r.driver_id) || []), r]);
     for (const [driverId, list] of byDriver) await payByHand(client, driverId, list, req.user.id);
@@ -121,7 +166,7 @@ router.post('/mark-paid', requireRole('admin', 'dispatcher'), asyncH(async (req,
 router.post('/pay-stripe', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   if (!stripe.enabled()) throw new HttpError(409, 'Stripe is not set up');
   const result = await db.withTx(async (client) => {
-    const rows = await lockUnpaid(client, req.body?.orderIds);
+    const rows = await lockUnpaid(client, req.body?.orderIds, req.body?.itemIds);
     if (!rows.length) throw new HttpError(409, 'These orders were already paid');
     const driverIds = [...new Set(rows.map((r) => r.driver_id))];
     if (driverIds.length > 1) throw new HttpError(400, 'Pay one driver at a time');
@@ -141,15 +186,20 @@ router.get('/me', asyncH(async (req, res) => {
     `SELECT ${ORDER_COLS} FROM orders o LEFT JOIN driver_payouts p ON p.id = o.driver_payout_id
      WHERE o.driver_id = $1 AND (o.status = 'completed' OR (o.status = 'cancelled' AND o.tonu_cents > 0)) AND (o.driver_paid_at IS NULL OR o.driver_paid_at > now() - interval '60 days')
      ORDER BY o.completed_at DESC`, [req.user.id]);
+  const { rows: itemRows } = await db.query(
+    `SELECT ${ITEM_COLS} FROM driver_pay_items i LEFT JOIN driver_payouts p ON p.id = i.driver_payout_id
+     WHERE i.driver_id = $1 AND (i.driver_paid_at IS NULL OR i.driver_paid_at > now() - interval '60 days') ORDER BY i.day DESC`, [req.user.id]);
+  const extras = itemRows.map(serializeItem);
   const orders = rows.map(serialize);
-  const unpaid = orders.filter((o) => !o.driverPaidAt);
+  const unpaid = [...orders, ...extras].filter((o) => !o.driverPaidAt);
   const weekStart = new Date(Date.now() - 7 * 24 * 3600 * 1000);
   const owed = sum(unpaid);
   const fee = instantFee(owed);
   res.json({
     owedCents: owed,
-    last7DaysCents: sum(orders.filter((o) => new Date(o.completedAt) > weekStart)),
-    paidLast60DaysCents: sum(orders.filter((o) => o.driverPaidAt)),
+    last7DaysCents: sum([...orders, ...extras].filter((o) => new Date(o.completedAt) > weekStart)),
+    paidLast60DaysCents: sum([...orders, ...extras].filter((o) => o.driverPaidAt)),
+    extras,
     // Free weekly payout, or get paid now for a fee.
     nextPayoutAt: nextBatchAt(),
     instant: {

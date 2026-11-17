@@ -38,24 +38,48 @@ function nextBatchAt(now = new Date()) {
   return null;
 }
 
-// Completed, unpaid orders for a driver, locked for this transaction.
+// Unpaid pay for other work (not an order), locked: a driver's (driverId) and/or particular ones (ids).
+// Rows look like order rows (driver_pay_cents, order_number = the description) with item = true.
+async function lockItems(client, { driverId = null, ids = null } = {}) {
+  const { rows } = await client.query(
+    `SELECT id, driver_id, cents AS driver_pay_cents, description AS order_number, true AS item FROM driver_pay_items
+     WHERE driver_paid_at IS NULL AND ($1::uuid IS NULL OR driver_id = $1) AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
+     ORDER BY day, created_at FOR UPDATE`, [driverId, ids]);
+  return rows;
+}
+
+// Everything a driver is owed (completed, unpaid orders plus other work), locked for this transaction.
+// With orderIds, only those orders.
 async function lockOwed(client, driverId, orderIds = null) {
   const { rows } = await client.query(
     `SELECT id, driver_id, driver_pay_cents, order_number FROM orders
      WHERE driver_id = $1 AND (status = 'completed' OR (status = 'cancelled' AND tonu_cents > 0)) AND driver_paid_at IS NULL AND NOT is_demo AND driver_pay_cents > 0
        AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
      ORDER BY completed_at FOR UPDATE`, [driverId, orderIds]);
-  return rows;
+  return orderIds ? rows : [...rows, ...(await lockItems(client, { driverId }))];
 }
+
+// Drivers owed anything (orders or other work), for the Wednesday batch and its summary.
+const OWED_DRIVERS = `
+  SELECT o.driver_id AS id FROM orders o
+  WHERE (o.status = 'completed' OR (o.status = 'cancelled' AND o.tonu_cents > 0)) AND o.driver_paid_at IS NULL AND NOT o.is_demo AND o.driver_pay_cents > 0
+  UNION SELECT driver_id FROM driver_pay_items WHERE driver_paid_at IS NULL`;
 
 const loadDriver = async (client, driverId) => (await client.query(
   'SELECT id, name, email, stripe_account_id, stripe_payouts_enabled FROM users WHERE id = $1', [driverId])).rows[0];
 
 async function settle(client, rows, payout, actorId) {
+  const items = rows.filter((r) => r.item);
+  if (items.length) {
+    await client.query(
+      'UPDATE driver_pay_items SET driver_paid_at = now(), driver_paid_by = $2, driver_payout_id = $3 WHERE id = ANY($1::uuid[])',
+      [items.map((r) => r.id), actorId, payout.id]);
+  }
+  const orders = rows.filter((r) => !r.item);
   await client.query(
     'UPDATE orders SET driver_paid_at = now(), driver_paid_by = $2, driver_payout_id = $3 WHERE id = ANY($1::uuid[])',
-    [rows.map((r) => r.id), actorId, payout.id]);
-  for (const r of rows) {
+    [orders.map((r) => r.id), actorId, payout.id]);
+  for (const r of orders) {
     await client.query('INSERT INTO order_events (order_id, actor_id, type, data) VALUES ($1, $2, $3, $4)',
       [r.id, actorId, 'driver_paid', JSON.stringify({ cents: r.driver_pay_cents, method: payout.method, kind: payout.kind })]);
   }
@@ -144,9 +168,7 @@ async function runWeeklyBatch(now = new Date(), { force = false } = {}) {
      WHERE settings.value->>'date' IS DISTINCT FROM EXCLUDED.value->>'date'`, [JSON.stringify({ date: l.date })]);
   if (!rowCount) return { ran: false, alreadyRan: true };
   const { rows: drivers } = await db.query(
-    `SELECT DISTINCT u.id FROM orders o JOIN users u ON u.id = o.driver_id
-     WHERE (o.status = 'completed' OR (o.status = 'cancelled' AND o.tonu_cents > 0)) AND o.driver_paid_at IS NULL AND NOT o.is_demo AND o.driver_pay_cents > 0
-       AND u.stripe_account_id IS NOT NULL AND u.stripe_payouts_enabled`);
+    `SELECT u.id FROM users u WHERE u.id IN (${OWED_DRIVERS}) AND u.stripe_account_id IS NOT NULL AND u.stripe_payouts_enabled`);
   const paid = [];
   const failed = [];
   for (const { id } of drivers) {
@@ -164,8 +186,7 @@ async function runWeeklyBatch(now = new Date(), { force = false } = {}) {
     }
   }
   const { rows: [{ n: noDeposit }] } = await db.query(
-    `SELECT count(DISTINCT o.driver_id)::int AS n FROM orders o JOIN users u ON u.id = o.driver_id
-     WHERE (o.status = 'completed' OR (o.status = 'cancelled' AND o.tonu_cents > 0)) AND o.driver_paid_at IS NULL AND NOT o.is_demo AND NOT u.stripe_payouts_enabled`);
+    `SELECT count(*)::int AS n FROM users u WHERE u.id IN (${OWED_DRIVERS}) AND NOT u.stripe_payouts_enabled`);
   if (paid.length || failed.length || noDeposit) {
     const to = process.env.ORDER_ALERTS_EMAIL || process.env.LEADS_EMAIL || 'info@choicedeliverysc.com';
     const total = paid.reduce((n, p) => n + p.netCents, 0);
@@ -174,7 +195,7 @@ async function runWeeklyBatch(now = new Date(), { force = false } = {}) {
       subject: `Wednesday driver payouts: ${money(total)} to ${paid.length} driver${paid.length === 1 ? '' : 's'}${failed.length ? ` (${failed.length} failed)` : ''}`,
       html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
         <p><strong>Paid through Stripe:</strong></p>
-        <ul>${paid.map((p) => `<li>${p.driver.name || p.driver.email}: ${money(p.netCents)} (${p.paidOrders} order${p.paidOrders === 1 ? '' : 's'})</li>`).join('') || '<li>Nobody this week</li>'}</ul>
+        <ul>${paid.map((p) => `<li>${p.driver.name || p.driver.email}: ${money(p.netCents)} (${p.paidOrders} item${p.paidOrders === 1 ? '' : 's'})</li>`).join('') || '<li>Nobody this week</li>'}</ul>
         ${failed.length ? `<p><strong>Couldn't pay:</strong></p><ul>${failed.map((f) => `<li>${f.driver?.name || f.driver?.email}: ${f.error}</li>`).join('')}</ul>` : ''}
         ${noDeposit ? `<p>${noDeposit} driver${noDeposit === 1 ? " hasn't" : "s haven't"} set up direct deposit; pay them by hand on the Driver pay page.</p>` : ''}
         <p><a href="${process.env.PUBLIC_URL || 'https://app.choicedeliverysc.com'}/#/payouts">Open Driver pay</a></p></div>`,
@@ -191,6 +212,6 @@ function startWeeklyBatchTimer() {
 }
 
 module.exports = {
-  INSTANT_FEE, INSTANT_MIN_NET_CENTS, instantFee, nextBatchAt, lockOwed, loadDriver, payThroughStripe, payByHand,
+  INSTANT_FEE, INSTANT_MIN_NET_CENTS, instantFee, nextBatchAt, lockOwed, lockItems, loadDriver, payThroughStripe, payByHand,
   runWeeklyBatch, startWeeklyBatchTimer,
 };

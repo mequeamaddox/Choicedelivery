@@ -863,6 +863,58 @@ export function LeadsPage() {
 }
 
 // ---------- Driver pay ----------
+// Pay for work that isn't an order in the app (a day of Walmart deliveries, a route for another company).
+// One entry per driver; pick several drivers to pay each the same amount.
+function AddOtherWorkPay({ onAdded }) {
+  const drivers = useApi('/users?role=driver');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+  const [picked, setPicked] = useState([]);
+  const [v, setV] = useState({ day: today, description: '', amount: '' });
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const list = (drivers.data || []).filter((d) => d.isActive && d.role === 'driver');
+  const toggle = (id) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
+  const cents = Math.round(Number(String(v.amount).replace(/[$,\s]/g, '')) * 100) || 0;
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(null); setDone(null);
+    if (!picked.length) { setError(new Error('Choose who did the work')); return; }
+    setBusy(true);
+    try {
+      for (const driverId of picked) {
+        await api('/payouts/items', { method: 'POST', body: { driverId, day: v.day, description: v.description, cents } });
+      }
+      const names = list.filter((d) => picked.includes(d.id)).map((d) => d.name || d.email).join(' and ');
+      setDone(`Added ${formatMoney(cents)} for ${names}. It's listed below as owed.`);
+      setPicked([]); setV({ ...v, description: '', amount: '' });
+      onAdded();
+    } catch (err) { setError(err); } finally { setBusy(false); }
+  };
+  return html`
+    <details class="card">
+      <summary><strong>Add pay for other work</strong> <span class="muted small">· work that isn't an order in the app</span></summary>
+      <form class="stack" onSubmit=${submit} style="margin-top:12px">
+        <p class="small muted">For example a Walmart delivery day. It's owed like their order pay: paid in the Wednesday payout
+          if they have direct deposit, with Pay with Stripe, or marked paid when you pay them another way.</p>
+        <${Alert} error=${error || drivers.error} />
+        ${done && html`<${Alert} tone="success">${done}<//>`}
+        <div class="field"><span class="field-label">Who did the work</span>
+          <div class="stack-sm">${list.map((d) => html`<label class="check-row" key=${d.id}>
+            <input type="checkbox" checked=${picked.includes(d.id)} onChange=${() => toggle(d.id)} /> <span>${d.name || d.email}</span></label>`)}</div>
+        </div>
+        <div class="grid-2">
+          <${Field} label="What it was for"><input required maxlength="300" placeholder="e.g. Walmart deliveries" value=${v.description}
+            onInput=${(e) => setV({ ...v, description: e.target.value })} /><//>
+          <${Field} label="Day"><input type="date" required value=${v.day} onInput=${(e) => setV({ ...v, day: e.target.value })} /><//>
+          <${Field} label=${picked.length > 1 ? 'Pay each driver ($)' : 'Pay ($)'}><input required inputmode="decimal" placeholder="0.00" value=${v.amount}
+            onInput=${(e) => setV({ ...v, amount: e.target.value })} /><//>
+        </div>
+        <div><button class="btn primary" disabled=${busy || cents <= 0}>${busy ? 'Adding…' : picked.length > 1 ? `Add ${formatMoney(cents)} each` : `Add ${formatMoney(cents)}`}</button></div>
+      </form>
+    </details>`;
+}
+
 // What each driver is owed for completed deliveries. You send the money yourself (Cash App, Zelle,
 // check, payroll), then mark it paid here so both of you have the record.
 export function PayoutsPage() {
@@ -879,8 +931,9 @@ export function PayoutsPage() {
     if (!window.confirm(question)) return;
     setBusy(d.driver.id); setMsg({});
     try {
-      const r = await api(viaStripe ? '/payouts/pay-stripe' : '/payouts/mark-paid', { method: 'POST', body: { orderIds: d.orders.map((o) => o.id) } });
-      setMsg({ ok: `${viaStripe ? 'Sent' : 'Marked'} ${formatMoney(r.totalCents)} ${viaStripe ? 'through Stripe ' : 'paid '}to ${who(d)} (${r.paidOrders} order${r.paidOrders === 1 ? '' : 's'}).` });
+      const r = await api(viaStripe ? '/payouts/pay-stripe' : '/payouts/mark-paid', { method: 'POST', body: {
+        orderIds: d.orders.filter((o) => !o.isExtra).map((o) => o.id), itemIds: d.orders.filter((o) => o.isExtra).map((o) => o.id) } });
+      setMsg({ ok: `${viaStripe ? 'Sent' : 'Marked'} ${formatMoney(r.totalCents)} ${viaStripe ? 'through Stripe ' : 'paid '}to ${who(d)} (${r.paidOrders} item${r.paidOrders === 1 ? '' : 's'}).` });
       list.reload();
     } catch (err) { setMsg({ error: err }); } finally { setBusy(null); }
   };
@@ -889,14 +942,16 @@ export function PayoutsPage() {
     : st.connected ? html`<span class="badge amber">Direct deposit setup not finished</span>`
     : html`<span class="badge gray">No direct deposit yet</span>`);
   const short = (a) => (a || '').split(',')[0];
+  const day = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return html`
     <${Layout}>
-      <${PageHeader} title="Driver pay" subtitle="Drivers with direct deposit are paid automatically every Wednesday at 9 AM (free), or can get paid instantly for $1.50 + 1.5%. Pay early with Pay with Stripe, or mark others paid when you pay them another way." />
+      <${PageHeader} title="Driver pay" subtitle="Order pay and pay for other work. Drivers with direct deposit are paid automatically every Wednesday at 9 AM (free), or can get paid instantly for $1.50 + 1.5%. Pay early with Pay with Stripe, or mark others paid when you pay them another way." />
       <div class="tabs" role="tablist">
         <button class=${`tab ${tab === 'unpaid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'unpaid'} onClick=${() => { setTab('unpaid'); setMsg({}); }}>Owed</button>
         <button class=${`tab ${tab === 'paid' ? 'active' : ''}`} role="tab" aria-selected=${tab === 'paid'} onClick=${() => { setTab('paid'); setMsg({}); }}>Paid (last 60 days)</button>
       </div>
       <${Alert} error=${msg.error || list.error} /><${Alert} tone="success">${msg.ok}<//>
+      ${tab === 'unpaid' && html`<${AddOtherWorkPay} onAdded=${() => list.reload()} />`}
       ${list.loading && !list.data ? html`<${Spinner} />`
         : !list.data?.length ? html`<${Empty} title=${tab === 'unpaid' ? 'Nobody is owed anything right now' : 'No payouts in the last 60 days'} />`
         : list.data.map((d) => html`
@@ -918,9 +973,14 @@ export function PayoutsPage() {
               <thead><tr><th>Order</th><th>Delivered</th><th>Route</th><th class="num">Pay</th>${tab === 'paid' && html`<th>Paid</th>`}</tr></thead>
               <tbody>
                 ${d.orders.map((o) => html`<tr>
-                  <td data-label="Order"><a href=${`#/orders/${o.id}`}>${o.orderNumber}</a></td>
+                  ${o.isExtra ? html`<td data-label="Order"><span class="badge gray">Other work</span></td>
+                  <td data-label="Delivered" class="small">${day(o.day)}</td>
+                  <td data-label="Route" class="small">${o.description}${tab === 'unpaid' && html` <button type="button" class="link small"
+                    onClick=${async () => { if (!window.confirm(`Remove ${formatMoney(o.driverPayCents)} for "${o.description}"?`)) return;
+                      try { await api(`/payouts/items/${o.id}`, { method: 'DELETE' }); list.reload(); } catch (err) { setMsg({ error: err }); } }}>Remove</button>`}</td>`
+                  : html`<td data-label="Order"><a href=${`#/orders/${o.id}`}>${o.orderNumber}</a></td>
                   <td data-label="Delivered" class="small">${formatDate(o.completedAt)}</td>
-                  <td data-label="Route" class="small">${short(o.pickup)} → ${short(o.dropoff)}</td>
+                  <td data-label="Route" class="small">${short(o.pickup)} → ${short(o.dropoff)}</td>`}
                   <td data-label="Pay" class="num">${formatMoney(o.driverPayCents)}</td>
                   ${tab === 'paid' && html`<td data-label="Paid" class="small">${formatDate(o.driverPaidAt)} · ${o.payoutMethod === 'manual' ? 'by hand' : o.payoutKind === 'batch' ? 'Wednesday deposit' : o.payoutKind === 'instant' ? 'instant (driver)' : 'direct deposit'}</td>`}
                 </tr>`)}

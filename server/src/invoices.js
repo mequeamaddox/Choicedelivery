@@ -20,6 +20,8 @@ const endOfPreviousMonth = (ymd) => { const d = new Date(`${ymd.slice(0, 7)}-01T
 const ymd = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
 const longDate = (v) => new Date(`${ymd(v)}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' });
 const termsLabel = (days) => (Number(days) === 0 ? 'Due on receipt' : `Net ${days}`);
+// Who an invoice is billed to: a custom invoice's bill-to, else the company.
+const BILL = 'COALESCE(i.bill_to_name, o.name) AS company, COALESCE(i.bill_to_email, o.billing_email) AS billing_email';
 const shortAddress = (a) => String(a || '').split(',').slice(0, 2).join(',').trim();
 
 // What's billed to a company's account and not on an invoice yet, through a date (Columbia time).
@@ -77,10 +79,53 @@ async function createInvoice(client, orgId, { through = localDate(), actorId = n
   return inv.id;
 }
 
+// Custom invoices: bill a company (organizationId) or anyone (billToName + billToEmail) for lines typed by hand:
+// [{ day?, description, cents }]. Nothing on the account (orders, charges) is attached. Returns the new id.
+async function createCustomInvoice(client, { organizationId = null, billToName, billToEmail, billToAddress, termsDays = 0,
+  lines = [], memo, actorId = null } = {}) {
+  const clean = (v, n) => String(v ?? '').trim().slice(0, n) || null;
+  const name = clean(billToName, 200);
+  const email = clean(billToEmail, 200)?.toLowerCase() || null;
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Check the email address');
+  let org = null;
+  if (organizationId) {
+    ({ rows: [org] } = await client.query('SELECT id FROM organizations WHERE id = $1', [organizationId]).catch(() => ({ rows: [] })));
+    if (!org) throw new HttpError(404, 'Company not found');
+  } else if (!name) throw new HttpError(400, 'Enter who the invoice is for');
+  const terms = Number(termsDays);
+  if (!TERMS.includes(terms)) throw new HttpError(400, `Terms must be one of ${TERMS.join(', ')} days`);
+  const today = localDate();
+  const items = (Array.isArray(lines) ? lines : []).slice(0, 200).map((l) => ({
+    day: /^\d{4}-\d{2}-\d{2}$/.test(String(l?.day || '')) ? String(l.day) : today,
+    description: clean(l?.description, 500), cents: Number(l?.cents),
+  })).filter((l) => l.description || l.cents);
+  if (!items.length) throw new HttpError(400, 'Add at least one line');
+  for (const l of items) {
+    if (!l.description) throw new HttpError(400, 'Every line needs a description');
+    if (!Number.isInteger(l.cents) || l.cents === 0 || Math.abs(l.cents) > 10000000) throw new HttpError(400, `Enter an amount for "${l.description}"`);
+  }
+  const total = items.reduce((t, l) => t + l.cents, 0);
+  if (total <= 0) throw new HttpError(400, 'The total has to be more than $0');
+  const days = items.map((l) => l.day).sort();
+  const { rows: [{ n }] } = await client.query("SELECT nextval('invoice_number_seq') AS n");
+  const { rows: [inv] } = await client.query(
+    `INSERT INTO invoices (organization_id, invoice_number, period_start, period_end, terms_days, due_date, total_cents, created_by,
+       is_custom, bill_to_name, bill_to_email, bill_to_address, memo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $11, $12) RETURNING id`,
+    [org?.id || null, `INV-${n}`, days[0] === days.at(-1) ? null : days[0], days.at(-1), terms, addDays(today, terms), total, actorId,
+      name, email, clean(billToAddress, 300), clean(memo, 1000)]);
+  for (const [i, l] of items.entries()) {
+    await client.query(
+      'INSERT INTO invoice_lines (invoice_id, day, description, cents, sequence) VALUES ($1, $2, $3, $4, $5)',
+      [inv.id, l.day, l.description, l.cents, i + 1]);
+  }
+  return inv.id;
+}
+
 async function getInvoice(where, value) {
   const { rows: [inv] } = await db.query(
-    `SELECT i.*, o.name AS company, o.billing_email, o.phone AS company_phone, o.address AS company_address
-     FROM invoices i JOIN organizations o ON o.id = i.organization_id WHERE i.${where} = $1`, [value]).catch(() => ({ rows: [] }));
+    `SELECT i.*, ${BILL}, o.phone AS company_phone, COALESCE(i.bill_to_address, o.address) AS company_address
+     FROM invoices i LEFT JOIN organizations o ON o.id = i.organization_id WHERE i.${where} = $1`, [value]).catch(() => ({ rows: [] }));
   if (!inv) return null;
   const { rows: lines } = await db.query('SELECT * FROM invoice_lines WHERE invoice_id = $1 ORDER BY sequence', [inv.id]);
   return serialize(inv, lines);
@@ -99,14 +144,14 @@ function serialize(i, lines) {
     paymentProcessingAt: i.payment_processing_at || null,
     sentAt: i.sent_at, sentTo: i.sent_to, remindedAt: i.reminded_at, paidAt: i.paid_at,
     paidMethod: i.paid_method, paidMethodLabel: PAID_METHODS[i.paid_method] || i.paid_method || null, paidNote: i.paid_note,
-    publicToken: i.public_token,
+    publicToken: i.public_token, isCustom: !!i.is_custom, memo: i.memo || null,
     lines: lines && lines.map((l) => ({ id: l.id, orderId: l.order_id, chargeId: l.charge_id, day: ymd(l.day), description: l.description, reference: l.reference, cents: l.cents })),
   };
 }
 
 async function listInvoices({ organizationId = null, limit = 200 } = {}) {
   const { rows } = await db.query(
-    `SELECT i.*, o.name AS company, o.billing_email FROM invoices i JOIN organizations o ON o.id = i.organization_id
+    `SELECT i.*, ${BILL} FROM invoices i LEFT JOIN organizations o ON o.id = i.organization_id
      WHERE ($1::uuid IS NULL OR i.organization_id = $1) ORDER BY i.issued_at DESC LIMIT $2`, [organizationId, limit]);
   return rows.map((r) => serialize(r, null));
 }
@@ -187,7 +232,9 @@ async function emailInvoice(inv, { to, reminder = false } = {}) {
     html: `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#111827;font-size:14px">
   <div style="background:#0f766e;color:#fff;padding:16px 20px;border-radius:10px 10px 0 0"><strong>Choice Delivery SC</strong> · Invoice ${esc(inv.invoiceNumber)}</div>
   <div style="border:1px solid #e5e7eb;border-top:0;padding:20px;border-radius:0 0 10px 10px">
-    <p>${reminder ? `This is a friendly reminder that invoice <strong>${esc(inv.invoiceNumber)}</strong> is past due.` : `Here is your invoice for deliveries through ${esc(longDate(inv.periodEnd))}.`}</p>
+    <p>${reminder ? `This is a friendly reminder that invoice <strong>${esc(inv.invoiceNumber)}</strong> is past due.`
+      : inv.isCustom ? 'Here is your invoice from Choice Delivery SC.' : `Here is your invoice for deliveries through ${esc(longDate(inv.periodEnd))}.`}</p>
+    ${inv.memo ? `<p style="white-space:pre-line">${esc(inv.memo)}</p>` : ''}
     <table style="border-collapse:collapse;margin:12px 0">
       <tr><td style="color:#6b7280;padding:2px 14px 2px 0">Bill to</td><td>${esc(inv.company)}</td></tr>
       <tr><td style="color:#6b7280;padding:2px 14px 2px 0">Invoice</td><td>${esc(inv.invoiceNumber)} · issued ${esc(longDate(inv.issuedAt instanceof Date ? localDate(inv.issuedAt) : localDate(new Date(inv.issuedAt))))}</td></tr>
@@ -200,7 +247,7 @@ async function emailInvoice(inv, { to, reminder = false } = {}) {
     <p style="color:#6b7280;font-size:13px">Pay online by card or straight from your bank account (ACH).</p>
     ${instructions ? `<p style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;white-space:pre-line"><strong>Other ways to pay</strong><br>${esc(instructions)}</p>` : ''}
     <table style="border-collapse:collapse;width:100%;margin-top:8px">
-      <tr><th align="left" style="padding:6px">Date</th><th align="left" style="padding:6px">Delivery</th><th align="right" style="padding:6px">Amount</th></tr>
+      <tr><th align="left" style="padding:6px">Date</th><th align="left" style="padding:6px">${inv.isCustom ? 'Description' : 'Delivery'}</th><th align="right" style="padding:6px">Amount</th></tr>
       ${rows}
       ${inv.lines.length > shown.length ? `<tr><td colspan="3" style="padding:6px;color:#6b7280">…and ${inv.lines.length - shown.length} more on the full invoice.</td></tr>` : ''}
       <tr><td colspan="2" style="padding:8px 6px;border-top:2px solid #111827"><strong>Total</strong></td><td style="padding:8px 6px;border-top:2px solid #111827;text-align:right"><strong>${money(inv.totalCents)}</strong></td></tr>
@@ -242,12 +289,13 @@ tfoot td{border:0;font-weight:700;font-size:16px;padding-top:12px}.actions{displ
   <p class="muted">Issued ${esc(longDate(localDate(inv.issuedAt)))}</p><p class="muted">${esc(inv.terms)}</p></div></header>
 ${paidNow ? '<p class="stamp paid">Thank you! Your payment went through; this page updates once it\'s recorded.</p>' : ''}${status}
 <div class="cols"><div><p class="muted">Bill to</p><p><strong>${esc(inv.company)}</strong></p>${inv.companyAddress ? `<p>${esc(inv.companyAddress)}</p>` : ''}${inv.billingEmail ? `<p>${esc(inv.billingEmail)}</p>` : ''}</div>
-  <div><p class="muted">Deliveries</p><p>${inv.periodStart ? `${esc(longDate(inv.periodStart))} – ` : 'Through '}${esc(longDate(inv.periodEnd))}</p></div>
+  ${inv.isCustom ? '' : `<div><p class="muted">Deliveries</p><p>${inv.periodStart ? `${esc(longDate(inv.periodStart))} – ` : 'Through '}${esc(longDate(inv.periodEnd))}</p></div>`}
   <div class="due"><p class="muted">${inv.status === 'paid' ? 'Amount paid' : 'Amount due'}</p><strong>${money(inv.totalCents)}</strong><p class="muted">Due ${esc(longDate(inv.dueDate))}</p></div></div>
 ${inv.paymentProcessing ? '<p class="stamp paid">Your bank payment is on its way. It usually takes 3–5 business days to clear; this invoice is marked paid when it does.</p>' : ''}
 <div class="actions">${inv.status === 'open' && !inv.paymentProcessing ? `<a class="btn primary" href="${invoiceUrl(inv)}/pay">Pay ${money(inv.totalCents)} online (card or bank)</a>` : ''}
   <button class="btn" onclick="window.print()">Print / Save as PDF</button><a class="btn" href="${invoiceUrl(inv)}/csv">Download spreadsheet (CSV)</a></div>
-<table><thead><tr><th>Date</th><th>Delivery</th><th>PO / reference</th><th class="num">Amount</th></tr></thead><tbody>${lines}</tbody>
+${inv.memo ? `<p class="box">${esc(inv.memo)}</p>` : ''}
+<table><thead><tr><th>Date</th><th>${inv.isCustom ? 'Description' : 'Delivery'}</th><th>PO / reference</th><th class="num">Amount</th></tr></thead><tbody>${lines}</tbody>
 <tfoot><tr><td colspan="3">Total</td><td class="num">${money(inv.totalCents)}</td></tr></tfoot></table>
 ${inv.status === 'open' && instructions ? `<h3>Other ways to pay</h3><p class="box">${esc(instructions)}</p>` : ''}
 <p class="muted" style="margin-top:24px;font-size:13px">Please include the invoice number with your payment. Questions? Email info@choicedeliverysc.com.</p>
@@ -300,6 +348,6 @@ function startMonthlyTimer() {
 }
 
 module.exports = {
-  TERMS, PAID_METHODS, localDate, unbilledItems, createInvoice, getInvoice, listInvoices, accounts, markPaid, voidInvoice,
+  TERMS, PAID_METHODS, localDate, unbilledItems, createInvoice, createCustomInvoice, getInvoice, listInvoices, accounts, markPaid, voidInvoice,
   emailInvoice, invoicePage, invoiceCsv, payInstructions, runMonthly, startMonthlyTimer, invoiceUrl, termsLabel,
 };
