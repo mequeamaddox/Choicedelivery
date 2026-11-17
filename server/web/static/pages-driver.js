@@ -96,8 +96,9 @@ function DriverStatusCard({ user }) {
       <p>${user.workBlocker}</p>
       ${user.reviewNote && user.driverStatus !== 'applied' && html`<p class="small muted">${user.reviewNote}</p>`}
       ${!user.agreementSignedAt && c.missing.includes('Signed driver agreement') && html`<a class="btn primary" href="#/driver/agreement">Sign your driver agreement</a>`}
-      ${c.missing.filter((m) => m !== 'Signed driver agreement').length > 0 && html`<div class="small"><strong>Finish your profile in the driver app:</strong>
-        <ul>${c.missing.filter((m) => m !== 'Signed driver agreement').map((m) => html`<li>${m}</li>`)}</ul></div>`}
+      ${c.missing.some((m) => m.startsWith('Direct deposit')) && html`<a class="btn" href="#/driver/history">Set up direct deposit and tax info</a>`}
+      ${c.missing.filter((m) => m !== 'Signed driver agreement' && !m.startsWith('Direct deposit')).length > 0 && html`<div class="small"><strong>Finish your profile in the driver app:</strong>
+        <ul>${c.missing.filter((m) => m !== 'Signed driver agreement' && !m.startsWith('Direct deposit')).map((m) => html`<li>${m}</li>`)}</ul></div>`}
       <a class="btn primary" href="#/driver-app">Get the driver app</a>
     </section>`;
 }

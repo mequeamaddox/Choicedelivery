@@ -1892,7 +1892,9 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     for (const kind of ['photo', 'license_front', 'insurance', 'vehicle']) {
       r = await call('PUT', `/users/me/documents/${kind}`, { token: dana, body: { data: png } });
     }
-    assert.deepEqual(r.data.checklist.missing, ['Signed driver agreement'], 'only the agreement left to sign');
+    assert.deepEqual(r.data.checklist.missing, ['Direct deposit and tax info (payout setup)', 'Signed driver agreement'],
+      'only payout setup and the agreement left');
+    assert.deepEqual(r.data.checklist.screening, ['Driving record (MVR) checked', 'Background check cleared']);
     assert.ok(r.data.photoUrl);
     assert.equal((await call('GET', `/users/${danaId}/documents/insurance`, { token: t.dispatcher })).data.data, png, 'staff can review documents');
     assert.equal((await call('GET', `/users/${danaId}/documents/insurance`, { token: t.d1 })).status, 403, 'other drivers cannot');
@@ -1900,9 +1902,26 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     assert.equal(photo.headers.get('content-type'), 'image/png');
     assert.equal((await photo.arrayBuffer()).byteLength > 50, true);
 
-    // Approval unlocks work.
+    // A driver who applied on their own can't be approved until the checklist and screening are done.
     sent.length = 0;
     assert.equal((await call('POST', `/users/${danaId}/review`, { token: t.acme, body: { status: 'approved' } })).status, 403);
+    r = await call('POST', `/users/${danaId}/review`, { token: t.dispatcher, body: { status: 'approved' } });
+    assert.equal(r.status, 409);
+    assert.match(r.data.message, /Direct deposit.*Signed driver agreement.*Driving record.*Background check/);
+    const sig = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    assert.equal((await call('POST', '/driver-agreement', { token: dana, body: { legalName: 'Dana Wheels', address: '1 Main St',
+      city: 'Columbia', state: 'SC', zip: '29201', phone: '803-555-0102', consents: { contractor: true, background: true, agree: true },
+      signature: sig } })).status, 201);
+    await db.query('UPDATE users SET stripe_payouts_enabled = true WHERE id = $1', [danaId]);
+    assert.equal((await call('POST', `/users/${danaId}/screening`, { token: t.acme, body: { item: 'mvr', done: true } })).status, 403);
+    assert.equal((await call('POST', `/users/${danaId}/screening`, { token: t.dispatcher, body: { item: 'passport', done: true } })).status, 400);
+    for (const item of ['mvr', 'background']) {
+      r = await call('POST', `/users/${danaId}/screening`, { token: t.dispatcher, body: { item, done: true } });
+    }
+    assert.deepEqual(r.data.checklist.screening, []);
+    assert.ok(r.data.driverProfile.screening.background.at);
+
+    // Approval unlocks work.
     r = await call('POST', `/users/${danaId}/review`, { token: t.dispatcher, body: { status: 'approved' } });
     assert.equal(r.data.driverStatus, 'approved');
     await settle();
@@ -1940,7 +1959,9 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     r = await call('POST', '/users/invite', { token: t.dispatcher, body: { name: 'Ivy Invite', email: 'ivy@drivers.test', vehicleType: 'Minivan' } });
     assert.equal(r.status, 201);
     assert.equal(r.data.driverStatus, 'applied', 'invited drivers wait for approval');
-    assert.equal((await call('POST', `/users/${r.data.id}/review`, { token: t.dispatcher, body: { status: 'approved' } })).data.driverStatus, 'approved');
+    assert.equal(r.data.checklist.complete, false);
+    assert.equal((await call('POST', `/users/${r.data.id}/review`, { token: t.dispatcher, body: { status: 'approved' } })).data.driverStatus, 'approved',
+      'invited drivers can be approved before their checklist is done');
     await settle();
     const invite = sent.find((m) => m.to === 'ivy@drivers.test');
     const resetToken = invite.html.match(/#\/reset\/([a-f0-9]{64})/)[1];
