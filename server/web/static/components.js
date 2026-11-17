@@ -1,4 +1,20 @@
-import { html, useState, useEffect, useRef, getUser, logout, isStaff, STATUS, formatDate, mapsLink, ROLE_LABELS, currentPath } from './lib.js';
+import { html, useState, useEffect, useRef, getUser, logout, isStaff, STATUS, formatDate, mapsLink, ROLE_LABELS, currentPath, api } from './lib.js';
+
+// Unread messages for the Messages badge (drivers and dispatch), shared by every page and refreshed every 30s.
+let unreadCache = 0;
+function useUnreadMessages(user) {
+  const on = user && (user.role === 'driver' || isStaff(user));
+  const [n, setN] = useState(unreadCache);
+  useEffect(() => {
+    if (!on) return undefined;
+    let live = true;
+    const load = () => api('/messages/unread').then((r) => { unreadCache = r.unread; if (live) setN(r.unread); }).catch(() => {});
+    load();
+    const t = setInterval(load, 30000);
+    return () => { live = false; clearInterval(t); };
+  }, [on]);
+  return on ? n : 0;
+}
 
 export function Logo() {
   return html`<a class="logo" href=${getUser()?.role === 'driver' ? '#/driver' : '#/orders'}><img src="/static/logo.png" alt="Choice Delivery SC" width="480" height="174" /></a>`;
@@ -8,9 +24,11 @@ export function Layout({ children }) {
   const user = getUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const path = currentPath();
+  const unread = useUnreadMessages(user);
   const links = user?.role === 'driver' ? [
     { href: '/driver', label: 'Jobs', icon: 'list', tab: true },
     { href: '/driver/history', label: 'History', icon: 'inbox', tab: true },
+    { href: '/driver/messages', label: 'Messages', icon: 'chat', tab: true, badge: true },
     { href: '/driver/mileage', label: 'Mileage', icon: 'pin', tab: true },
     { href: '/driver/alerts', label: 'Job alerts', icon: 'inbox' },
     { href: '/account', label: 'Account', icon: 'user', tab: true },
@@ -19,6 +37,7 @@ export function Layout({ children }) {
     { href: '/orders/new', label: 'New order', icon: 'plus', tab: true },
     ...(isStaff(user) ? [
       { href: '/leads', label: 'Leads', icon: 'inbox', tab: true },
+      { href: '/messages', label: 'Messages', icon: 'chat', tab: true, badge: true },
       { href: '/people', label: 'Team', icon: 'users', tab: true },
       { href: '/companies', label: 'Companies', icon: 'building' },
       { href: '/invoices', label: 'Invoices', icon: 'list' },
@@ -43,7 +62,7 @@ export function Layout({ children }) {
         <${Logo} />
         <button class="menu-btn" aria-label="Menu" aria-expanded=${menuOpen} onClick=${() => setMenuOpen(!menuOpen)}>☰</button>
         <nav class=${`nav ${menuOpen ? 'open' : ''}`} onClick=${() => setMenuOpen(false)}>
-          ${links.map((l) => html`<a href=${`#${l.href}`} class=${active(l.href) ? 'active' : ''}>${l.label}</a>`)}
+          ${links.map((l) => html`<a href=${`#${l.href}`} class=${active(l.href) ? 'active' : ''}>${l.label}${l.badge && unread > 0 ? html` <span class="badge red">${unread}</span>` : ''}</a>`)}
           <span class="nav-user">
             ${user?.organization?.name || ROLE_LABELS[user?.role]}
             <button type="button" class="logout-btn" onClick=${logout}>Log out</button>
@@ -55,7 +74,7 @@ export function Layout({ children }) {
     <nav class="tabbar" aria-label="Main">
       ${links.filter((l) => l.tab).map((l) => html`
         <a href=${`#${l.href}`} class=${active(l.href) ? 'active' : ''} aria-current=${active(l.href) ? 'page' : undefined}>
-          <${Icon} name=${l.icon} /><span>${l.label}</span>
+          <span class="tab-icon"><${Icon} name=${l.icon} />${l.badge && unread > 0 && html`<span class="tab-dot">${unread > 9 ? '9+' : unread}</span>`}</span><span>${l.label}</span>
         </a>`)}
     </nav>`;
 }
@@ -246,6 +265,7 @@ export function AddressInput({ value, onChange, placeholder, required }) {
 const ICONS = {
   list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
   plus: 'M12 5v14M5 12h14',
+  chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
   users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
   user: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',

@@ -11,6 +11,7 @@ import { InvoicesPage, InvoicePage, BillingPage, NewInvoicePage } from './pages-
 import { ExpensesPage } from './pages-expenses.js';
 import { GigPage } from './pages-gig.js';
 import { PhoneAppPage, DriverAlertsPage, setupHomeScreenApp } from './pages-phone.js';
+import { MessagesPage, MessageThreadPage, DriverMessagesPage } from './pages-messages.js';
 import { StoreKitPage } from './pages-store.js';
 import { DriverAgreementPage, SignedAgreementPage } from './pages-agreement.js';
 
@@ -68,6 +69,7 @@ function App() {
     if (path === '/driver/mileage') return html`<${DriverMileagePage} />`;
     if (path === '/driver/agreement') return html`<${DriverAgreementPage} />`;
     if (path === '/driver/alerts') return html`<${DriverAlertsPage} />`;
+    if (path === '/driver/messages') return html`<${DriverMessagesPage} />`;
     if (path === '/account') return html`<${AccountPage} />`;
     navigate('/driver');
     return null;
@@ -98,6 +100,9 @@ function App() {
   if (storeKit) return html`<${StoreKitPage} key=${storeKit.id} orgId=${storeKit.id} />`;
   if (path === '/store-kit' && user.role === 'shipper') return html`<${StoreKitPage} />`;
   if (path === '/billing' && user.role === 'shipper') return html`<${BillingPage} />`;
+  if (path === '/messages' && isStaff(user)) return html`<${MessagesPage} />`;
+  const thread = isStaff(user) && match('/messages/:driverId', path);
+  if (thread) return html`<${MessageThreadPage} key=${thread.driverId} driverId=${thread.driverId} />`;
   if (path === '/invoices/new' && isStaff(user)) return html`<${NewInvoicePage} />`;
   const invoice = match('/invoices/:id', path);
   if (invoice) return html`<${InvoicePage} key=${invoice.id} id=${invoice.id} />`;

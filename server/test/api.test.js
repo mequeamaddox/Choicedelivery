@@ -1545,7 +1545,7 @@ test('drivers on the website (iPhone) turn on job alerts and get new jobs as pho
     const ivyId = r.data.user.id;
     await db.query("UPDATE users SET driver_status = 'approved', is_online = true WHERE id = $1", [ivyId]);
     r = await call('GET', '/push', { token: ivy });
-    assert.deepEqual(r.data.kinds.map((k) => k.key), ['jobs'], 'drivers only get job alerts');
+    assert.deepEqual(r.data.kinds.map((k) => k.key), ['jobs', 'messages'], 'drivers get job and message alerts');
     r = await call('POST', '/push/subscribe', { token: ivy, body: { subscription: { endpoint: 'https://push.example.com/ivy', keys: { p256dh: 'p', auth: 'a' } } } });
     assert.equal(r.data.devices, 1);
     r = await call('POST', '/orders', { token: t.dispatcher, body: orderBody() });
@@ -3454,6 +3454,69 @@ test('custom invoices: bill anyone for typed lines, email it, pay it, and custom
     assert.equal(r.data.totalCents, 4000);
   } finally {
     mailer.setSender(null);
+  }
+});
+
+test('messages: dispatch and a driver message each other with phone alerts; dispatch can message all drivers', async () => {
+  const webpush = require('../src/webpush');
+  const alerts = [];
+  webpush.setSender(async (sub, payload) => { alerts.push(JSON.parse(payload)); });
+  try {
+    // Phones signed up for alerts: the dispatcher's and driver d1's.
+    const sub = (n) => ({ endpoint: `https://push.example/${n}`, keys: { p256dh: 'k', auth: 'a' } });
+    assert.equal((await call('POST', '/push/subscribe', { token: t.dispatcher, body: { subscription: sub('disp-msg') } })).status < 300, true);
+    assert.equal((await call('POST', '/push/subscribe', { token: t.d1, body: { subscription: sub('d1-msg') } })).status < 300, true);
+
+    let r = await call('POST', '/messages/me', { token: t.acme, body: { body: 'hi' } });
+    assert.equal(r.status, 403, 'customers have no messages');
+    r = await call('POST', `/messages/${ids.d1}`, { token: t.d1, body: { body: 'x' } });
+    assert.equal(r.status, 403, 'drivers cannot message other drivers');
+    r = await call('POST', `/messages/${ids.d1}`, { token: t.dispatcher, body: { body: '  ' } });
+    assert.equal(r.status, 400);
+
+    r = await call('POST', `/messages/${ids.d1}`, { token: t.dispatcher, body: { body: 'Can you grab one more after this?' } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    await new Promise((done) => setTimeout(done, 100));
+    assert.ok(alerts.some((a) => a.title === 'Message from dispatch' && a.url === '/#/driver/messages'), 'the driver gets a phone alert');
+    r = await call('GET', '/messages/unread', { token: t.d1 });
+    assert.equal(r.data.unread, 1);
+    r = await call('GET', '/messages/me', { token: t.d1 });
+    assert.equal(r.data.at(-1).body, 'Can you grab one more after this?');
+    assert.equal(r.data.at(-1).fromStaff, true);
+    assert.equal((await call('GET', '/messages/unread', { token: t.d1 })).data.unread, 0, 'opening it reads it');
+
+    r = await call('POST', '/messages/me', { token: t.d1, body: { body: 'Yes, on my way' } });
+    assert.equal(r.status, 201);
+    await new Promise((done) => setTimeout(done, 100));
+    assert.ok(alerts.some((a) => /^Message from/.test(a.title) && a.body === 'Yes, on my way' && a.url === `/#/messages/${ids.d1}`), 'dispatch gets a phone alert');
+    assert.equal((await call('GET', '/messages/unread', { token: t.dispatcher })).data.unread, 1);
+    r = await call('GET', '/messages', { token: t.dispatcher });
+    const thread = r.data.find((x) => x.driver.id === ids.d1);
+    assert.equal(thread.unread, 1);
+    assert.equal(thread.last.body, 'Yes, on my way');
+    assert.equal(r.data[0].driver.id, ids.d1, 'latest conversation first');
+    r = await call('GET', `/messages/${ids.d1}`, { token: t.dispatcher });
+    assert.equal(r.data.messages.length, 2);
+    assert.ok(r.data.messages[0].readAt, 'the driver read the first one');
+    assert.equal((await call('GET', '/messages/unread', { token: t.dispatcher })).data.unread, 0);
+    assert.equal((await call('GET', `/messages/${ids.d1}`, { token: t.d1 })).status, 403);
+
+    // To every driver: lands in each conversation.
+    r = await call('POST', '/messages/broadcast', { token: t.d1, body: { body: 'x' } });
+    assert.equal(r.status, 403);
+    r = await call('POST', '/messages/broadcast', { token: t.dispatcher, body: { body: 'Walmart shift tomorrow 8 AM' } });
+    assert.equal(r.status, 201);
+    assert.ok(r.data.sent >= 1);
+    const m = (await call('GET', '/messages/me', { token: t.d1 })).data.at(-1);
+    assert.equal(m.body, 'Walmart shift tomorrow 8 AM');
+    assert.equal(m.broadcast, true);
+    assert.ok(alerts.some((a) => a.title === 'Message to all drivers'));
+
+    // Dispatch sees how many jobs each driver has going.
+    r = await call('GET', '/users?role=driver', { token: t.dispatcher });
+    assert.equal(typeof r.data.find((u) => u.id === ids.d1).activeJobs, 'number');
+  } finally {
+    webpush.setSender(null);
   }
 });
 

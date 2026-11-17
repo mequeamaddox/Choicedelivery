@@ -692,7 +692,7 @@ function DispatchPanel({ order, onChange, setError }) {
         <div class="inline">
           <select value=${driverId} onChange=${(e) => setDriverId(e.target.value)} disabled=${closed}>
             <option value="">Unassigned (open to all drivers)</option>
-            ${active.map((d) => html`<option value=${d.id}>${d.isOnline ? '● ' : '○ '}${d.name || d.email}${d.vehicleType ? ` · ${d.vehicleType}` : ''}</option>`)}
+            ${active.map((d) => html`<option value=${d.id}>${d.isOnline ? '● ' : '○ '}${d.name || d.email}${d.activeJobs ? ` · ${d.activeJobs} active` : ''}${d.vehicleType ? ` · ${d.vehicleType}` : ''}</option>`)}
           </select>
           <${ActionButton} disabled=${closed || driverId === (order.driver?.id || '')} onError=${setError}
             onClick=${async () => onChange(await api(`/orders/${order.id}/assign`, { method: 'POST', body: { driverId: driverId || null } }))}>
@@ -1120,6 +1120,7 @@ export function OrderPage({ id }) {
                   ${order.driver.vehicle && html`<p class="small muted">${order.driver.vehicle}${order.driver.plate ? ` · ${order.driver.plate}` : ''}</p>`}</div>
               </div>
               ${order.driver.phoneNumber && html`<p><a href=${`tel:${order.driver.phoneNumber}`}>${order.driver.phoneNumber}</a></p>`}
+              ${staff && order.driver.id && html`<p><a class="btn small" href=${`#/messages/${order.driver.id}?order=${order.id}&about=${encodeURIComponent(order.orderNumber)}`}>Message ${order.driver.name || 'driver'}</a></p>`}
               ${order.driver.location && html`<p class="small">Last location ${timeAgo(order.driver.locationUpdatedAt)}${' · '}<a href=${mapsLink(order.driver.location)} target="_blank" rel="noopener">open map</a></p>`}`
             : html`<p class="muted">${order.status === 'cancelled' ? 'No driver.' : 'Waiting for a driver to accept.'}</p>`}
           </section>`}

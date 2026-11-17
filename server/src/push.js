@@ -75,4 +75,18 @@ async function webAlert(userId, message) {
   }
 }
 
-module.exports = { notifyDriversOfOrder, notifyUser };
+// A message alert to one driver: their Android app (Expo) and the website on their phone (web push).
+async function notifyUserMessage(userId, { title, body, url }) {
+  const { rows } = await db.query('SELECT push_token FROM users WHERE id = $1', [userId]);
+  if (isExpoToken(rows[0]?.push_token)) {
+    await sendExpo([{ to: rows[0].push_token, sound: 'default', channelId: 'jobs', title, body, data: { url } }]);
+  }
+  try {
+    const webpush = require('./webpush');
+    if (await webpush.wants(userId, 'messages')) await webpush.notifyUserDevices(userId, { title, body, url, tag: 'messages' });
+  } catch (e) {
+    console.error('Web message alert failed:', e.message);
+  }
+}
+
+module.exports = { notifyDriversOfOrder, notifyUser, notifyUserMessage };

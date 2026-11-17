@@ -164,6 +164,7 @@ app.use('/public', require('./routes/public'));
 app.use('/leads', require('./routes/leads'));
 app.use('/settings', require('./routes/settings'));
 app.use('/payouts', require('./routes/payouts'));
+app.use('/messages', require('./routes/messages'));
 app.use('/mileage', require('./routes/mileage'));
 app.use('/api-keys', require('./routes/api-keys'));
 app.use('/shipping-forms', require('./routes/shipping-forms'));

@@ -12,6 +12,7 @@ const KINDS = {
   leads: 'Website messages and emailed quotes',
   payments: 'Invoice payments',
   problems: 'Problems on a delivery',
+  messages: 'Messages from drivers',
 };
 
 let keys = null;
@@ -86,7 +87,7 @@ async function notifyUserDevices(userId, message) {
 }
 
 // Drivers only get job alerts.
-const DRIVER_KINDS = { jobs: 'New jobs, and changes to jobs you\'re on' };
+const DRIVER_KINDS = { jobs: 'New jobs, and changes to jobs you\'re on', messages: 'Messages from dispatch' };
 const kindsFor = (role) => (role === 'driver' ? DRIVER_KINDS : KINDS);
 
 async function config(userId) {

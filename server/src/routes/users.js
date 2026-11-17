@@ -163,7 +163,11 @@ router.get('/', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {
   if (req.query.organizationId) { params.push(req.query.organizationId); where.push(`u.organization_id = $${params.length}`); }
   const { rows } = await db.query(
     `${USER_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY u.created_at`, params);
-  res.json(rows.map((u) => publicUser(u, { includeLocation: true })));
+  // Drivers: how many jobs each has going, so dispatch can see who to add a job to.
+  const { rows: busy } = await db.query(
+    "SELECT driver_id, count(*)::int AS n FROM orders WHERE status IN ('accepted', 'at_pickup', 'in_transit', 'at_dropoff') AND driver_id IS NOT NULL GROUP BY driver_id");
+  const active = new Map(busy.map((r) => [r.driver_id, r.n]));
+  res.json(rows.map((u) => ({ ...publicUser(u, { includeLocation: true }), ...(u.role === 'driver' ? { activeJobs: active.get(u.id) || 0 } : {}) })));
 }));
 
 router.get('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res) => {

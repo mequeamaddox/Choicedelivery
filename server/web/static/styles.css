@@ -550,3 +550,23 @@ fieldset.card { margin: 0; min-width: 0; }
 @media print { .agreement-signed { box-shadow: none; border: 0; padding: 0; } .agreement-text h3 { break-after: avoid; } }
 
 .on-the-way { color: var(--teal, #0f766e); }
+
+/* ---------- Messages ---------- */
+.tab-icon { position: relative; display: inline-flex; }
+.tab-dot { position: absolute; top: -6px; right: -10px; background: #dc2626; color: #fff; border-radius: 999px; font-size: .62rem;
+  font-weight: 700; min-width: 16px; height: 16px; padding: 0 4px; display: flex; align-items: center; justify-content: center; }
+.chat-list { display: flex; flex-direction: column; gap: .5rem; max-height: 60vh; overflow-y: auto; padding: .25rem 0 .75rem; }
+.bubble { max-width: 85%; padding: .55rem .75rem; border-radius: 14px; background: var(--gray-bg); align-self: flex-start; }
+.bubble.mine { background: var(--teal); color: #fff; align-self: flex-end; }
+.bubble-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble-tag { font-size: .7rem; font-weight: 700; opacity: .8; margin-bottom: .15rem; }
+.bubble-meta { font-size: .7rem; opacity: .75; margin-top: .2rem; }
+.chat-form { display: flex; flex-direction: column; gap: .5rem; border-top: 1px solid var(--border); padding-top: .75rem; }
+.chat-form .btn { align-self: flex-end; }
+.thread-list { padding: 0; }
+.thread-row { display: flex; justify-content: space-between; gap: .75rem; padding: .85rem 1rem; border-bottom: 1px solid var(--border);
+  color: inherit; text-decoration: none; }
+.thread-row:last-child { border-bottom: 0; }
+.thread-main { min-width: 0; }
+.thread-last { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread-side { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; flex-shrink: 0; }
