@@ -2924,6 +2924,10 @@ test('invoices: Net 30 accounts are billed monthly, sent, paid by check or onlin
     const pay = await fetch(`${base}/public/invoice/${invoice.publicToken}/pay`, { redirect: 'manual' });
     assert.equal(pay.headers.get('location'), 'https://checkout.stripe.com/pay/inv');
     assert.match(String(lastCheckout), /payment_method_types%5B0%5D=card&payment_method_types%5B1%5D=us_bank_account/, 'card or bank, no buy-now-pay-later');
+    // In person ("Take payment now"): card only, so it's paid on the spot.
+    await fetch(`${base}/public/invoice/${invoice.publicToken}/pay?card=1`, { redirect: 'manual' });
+    assert.match(String(lastCheckout), /payment_method_types%5B0%5D=card/);
+    assert.doesNotMatch(String(lastCheckout), /us_bank_account/);
     const hook = (type, paymentStatus) => {
       const payload = JSON.stringify({ type, data: { object: {
         id: 'cs_inv_1', payment_status: paymentStatus, amount_total: invoice.totalCents, metadata: { kind: 'invoice', invoice_id: invoice.id } } } });
@@ -3433,6 +3437,11 @@ test('custom invoices: bill anyone for typed lines, email it, pay it, and custom
     assert.ok(mail && /Here is your invoice from Choice Delivery SC/.test(mail.html) && /Thanks!/.test(mail.html));
     const page = await (await fetch(`${base}/public/invoice/${inv.publicToken}`)).text();
     assert.ok(/Pat Walker/.test(page) && /Delivery route/.test(page) && /Description/.test(page));
+    const qr = await fetch(`${base}/public/invoice/${inv.publicToken}/qr.svg`);
+    assert.equal(qr.status, 200);
+    assert.match(qr.headers.get('content-type'), /image\/svg\+xml/);
+    assert.match(await qr.text(), /<svg/);
+    assert.equal((await fetch(`${base}/public/invoice/00000000-0000-0000-0000-000000000000/qr.svg`)).status, 404);
     r = await call('POST', `/invoices/${inv.id}/paid`, { token: t.dispatcher, body: { method: 'cash' } });
     assert.equal(r.data.status, 'paid');
 

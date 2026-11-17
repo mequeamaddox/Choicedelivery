@@ -173,15 +173,26 @@ router.get('/invoice/:token/pay', rateLimit({ windowMs: 60 * 1000, max: 20 }), a
   const { rows: [{ stripe_session_id: previous }] } = await db.query('SELECT stripe_session_id FROM invoices WHERE id = $1', [invoice.id]);
   if (previous) await stripe.expireCheckoutSession(previous).catch(() => {});
   // Business invoices: card or bank transfer (ACH) only, no buy-now-pay-later (card alone if ACH is off).
+  // ?card=1 (paying in person, "Take payment now"): card only (Apple Pay / Google Pay included), so it's paid
+  // on the spot instead of a bank payment that takes days to clear.
   const params = {
     orderId: invoice.id, orderNumber: invoice.invoiceNumber, amountCents: invoice.totalCents,
     name: `Choice Delivery invoice ${invoice.invoiceNumber}`, description: `${invoice.company} · ${invoice.lines.length} line${invoice.lines.length === 1 ? '' : 's'}`,
     customerEmail: invoice.billingEmail || undefined, successUrl: `${page}?paid=1`, cancelUrl: page,
     metadata: { kind: 'invoice', invoice_id: invoice.id },
   };
-  const session = await stripe.createCheckoutSession({ ...params, paymentMethodTypes: ['card', 'us_bank_account'] });
+  const session = await stripe.createCheckoutSession({ ...params, paymentMethodTypes: req.query.card === '1' ? ['card'] : ['card', 'us_bank_account'] });
   await db.query('UPDATE invoices SET stripe_session_id = $2 WHERE id = $1', [invoice.id, session.id]);
   res.redirect(303, session.url);
+}));
+
+// QR code of an invoice's in-person card payment link, for the customer to scan and pay on their phone.
+router.get('/invoice/:token/qr.svg', rateLimit({ windowMs: 60 * 1000, max: 30 }), asyncH(async (req, res) => {
+  const inv = require('../invoices');
+  const invoice = /^[0-9a-f-]{36}$/i.test(req.params.token) ? await inv.getInvoice('public_token', req.params.token) : null;
+  if (!invoice) throw new HttpError(404, 'Not found');
+  const svg = await require('qrcode').toString(`${inv.invoiceUrl(invoice)}/pay?card=1`, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+  res.set('Cache-Control', 'private, max-age=600').type('image/svg+xml').send(svg);
 }));
 
 router.get('/pay/:token', rateLimit({ windowMs: 60 * 1000, max: 20 }), asyncH(async (req, res) => {

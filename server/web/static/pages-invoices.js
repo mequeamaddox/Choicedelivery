@@ -331,6 +331,27 @@ export function InvoicesPage() {
     <//>`;
 }
 
+// Taking payment in person: open the card screen on this phone and hand it over, or let the customer scan
+// the QR code and pay on theirs. Card only (paid on the spot). Watches the invoice and says when it's paid.
+function TakePayment({ i, onPaid }) {
+  const live = useApi(`/invoices/${i.id}`, { pollMs: 4000 });
+  useEffect(() => { if (live.data?.status === 'paid') onPaid(live.data); }, [live.data?.status]);
+  const pay = `/public/invoice/${i.publicToken}/pay?card=1`;
+  return html`
+    <section class="card stack take-payment">
+      <h2>Take payment now</h2>
+      <p class="small muted">For a customer who's with you. They pay ${formatMoney(i.totalCents)} by card, Apple Pay or Google Pay.
+        This page shows Paid as soon as it goes through.</p>
+      <a class="btn primary block" href=${pay} target="_blank" rel="noopener">Pay on this phone</a>
+      <p class="small muted">Opens the card screen. Hand your phone to the customer.</p>
+      <div class="qr-box" style="text-align:center">
+        <img src=${`/public/invoice/${i.publicToken}/qr.svg`} alt="QR code to pay this invoice" width="200" height="200"
+          style="background:#fff;padding:8px;border-radius:8px" />
+        <p class="small muted">Or have them scan this with their phone's camera and pay on their own phone.</p>
+      </div>
+    </section>`;
+}
+
 export function InvoicePage({ id }) {
   const staff = isStaff(getUser());
   const r = useApi(`/invoices/${id}`);
@@ -351,6 +372,7 @@ export function InvoicePage({ id }) {
         actions=${html`<a class="btn primary" href=${link} target="_blank" rel="noopener">View / print</a>
           <a class="btn" href=${`${link}/csv`}>Spreadsheet (CSV)</a>`} />
       <${Alert} error=${error} />
+      ${staff && i.status === 'open' && !i.paymentProcessing && html`<${TakePayment} i=${i} onPaid=${setOverride} />`}
       <div class="grid-2 invoice-top">
         <section class="card">
           <dl class="facts">
@@ -390,13 +412,14 @@ export function InvoicePage({ id }) {
             </div>
           </section>`}
       </div>
+      ${i.status === 'paid' && html`<${Alert} tone="success">Paid ${formatMoney(i.totalCents)}${i.paidMethodLabel ? ` · ${i.paidMethodLabel}` : ''}. Thank you!<//>`}
       <section class="card">
         <h2>Lines</h2>
         <div class="table-wrap"><table>
           <thead><tr><th>Date</th><th>${i.isCustom ? 'Description' : 'Delivery'}</th><th>PO / reference</th><th>Amount</th></tr></thead>
           <tbody>${i.lines.map((l) => html`<tr key=${l.id}>
             <td data-label="Date">${day(l.day)}</td>
-            <td data-label="Delivery">${l.orderId && staff ? html`<a href=${`#/orders/${l.orderId}`}>${l.description}</a>` : l.description}</td>
+            <td data-label=${i.isCustom ? 'Description' : 'Delivery'}>${l.orderId && staff ? html`<a href=${`#/orders/${l.orderId}`}>${l.description}</a>` : l.description}</td>
             <td data-label="PO / reference">${l.reference || '—'}</td>
             <td data-label="Amount">${formatMoney(l.cents)}</td>
           </tr>`)}
