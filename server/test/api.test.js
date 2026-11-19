@@ -2109,7 +2109,9 @@ test('driver pay: drivers see their pay, never the price; dispatch adjusts it an
   // Owners who drive: marked "no payout", their deliveries owe nothing and never show in payouts.
   const d1 = (await call('GET', '/users/me', { token: t.d1 })).data;
   assert.equal((await call('PATCH', `/users/${d1.id}`, { token: t.dispatcher, body: { noDriverPay: true } })).status, 403, 'admins only');
-  r = await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: true } });
+  assert.equal((await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: true } })).status, 403, 'only the owners have it');
+  await db.query('UPDATE users SET no_driver_pay = true WHERE id = $1', [d1.id]); // one of the owners
+  r = await call('GET', `/users/${d1.id}`, { token: t.admin });
   assert.equal(r.data.noDriverPay, true);
   r = await call('POST', '/orders', { token: t.acme, body: orderBody() });
   const owned = r.data;
@@ -2517,7 +2519,7 @@ test('each driver is alerted about a job once; owners every time, even after bei
     assert.ok(!jobAlerts().some((p) => p.to === tokenOf(d1.id)), 'not the regular driver who was taken off it');
 
     // An owner gets every alert, including after being taken off the job.
-    await call('PATCH', `/users/${d1.id}`, { token: t.admin, body: { noDriverPay: true } });
+    await db.query('UPDATE users SET no_driver_pay = true WHERE id = $1', [d1.id]);
     await call('POST', `/orders/${order.id}/assign`, { token: t.dispatcher, body: { driverId: d1.id } });
     pushes.length = 0;
     before = await alertedTokens(order.id);

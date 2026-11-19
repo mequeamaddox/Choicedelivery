@@ -217,7 +217,7 @@ export function DriverDetailPage({ id }) {
           </section>
         </div>
         <div class="stack">
-          ${getUser()?.role === 'admin' && html`<section class="card stack">
+          ${getUser()?.role === 'admin' && u.noDriverPay && html`<section class="card stack">
             <h2>Driver pay</h2>
             <label class="inline small">
               <input type="checkbox" checked=${!!u.noDriverPay} onChange=${async (e) => {

@@ -241,6 +241,8 @@ router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res)
     if (vehicleType !== undefined) await setVehicleType(target.id, vehicleType, client);
     await saveDriverDetails(client, target, { driverProfile, vehicle });
     if (noDriverPay !== undefined) {
+      // Only the owners (already marked) have this setting; no other driver can be made "no payout".
+      if (noDriverPay && !target.no_driver_pay) throw new HttpError(403, 'Only the owners can be set to no payout');
       await client.query('UPDATE users SET no_driver_pay = $2 WHERE id = $1', [target.id, noDriverPay]);
       // Their orders not yet paid out follow the new setting (custom amounts set by hand are kept).
       const { rows } = await client.query(
