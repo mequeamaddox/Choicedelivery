@@ -3,7 +3,7 @@ import { Spinner } from './components.js';
 import { LoginPage, SignupPage, ForgotPage, ResetPage, TrackPage, DriverSignupPage, DriverAppPage } from './pages-public.js';
 import { OrdersPage, NewOrderPage, OrderPage } from './pages-orders.js';
 import { PeoplePage, CompaniesPage, TeamPage, AccountPage, LeadsPage, DriverDetailPage, PayoutsPage } from './pages-admin.js';
-import { DriverJobsPage, DriverJobPage, DriverHistoryPage, PayoutMethodPage } from './pages-driver.js';
+import { DriverJobsPage, DriverJobPage, DriverHistoryPage, DriverProfilePage, PayoutMethodPage } from './pages-driver.js';
 import { DriverMileagePage } from './pages-mileage.js';
 import { ShippingFormPage, ShippingLabelPage } from './pages-shipping.js';
 import { CustodyPage } from './pages-custody.js';
@@ -70,6 +70,7 @@ function App() {
     if (path === '/driver/agreement') return html`<${DriverAgreementPage} />`;
     if (path === '/driver/alerts') return html`<${DriverAlertsPage} />`;
     if (path === '/driver/messages') return html`<${DriverMessagesPage} />`;
+    if (path === '/driver/profile') return html`<${DriverProfilePage} />`;
     if (path === '/account') return html`<${AccountPage} />`;
     navigate('/driver');
     return null;

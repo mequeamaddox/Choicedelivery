@@ -30,6 +30,7 @@ export function Layout({ children }) {
     { href: '/driver/history', label: 'History', icon: 'inbox', tab: true },
     { href: '/driver/messages', label: 'Messages', icon: 'chat', tab: true, badge: true },
     { href: '/driver/mileage', label: 'Mileage', icon: 'pin', tab: true },
+    { href: '/driver/profile', label: 'My profile', icon: 'user' },
     { href: '/driver/alerts', label: 'Job alerts', icon: 'inbox' },
     { href: '/account', label: 'Account', icon: 'user', tab: true },
   ] : [

@@ -19,19 +19,44 @@ function layout({ greeting, paragraphs, button, footer }) {
   </div></div>`;
 }
 
+// What a new applicant has to do (the same things the driver checklist asks for).
+const APPLICATION_STEPS = [
+  'Profile photo, and photos of your driver\'s license and insurance card',
+  'Vehicle details (make, model, plate)',
+  "Driver's license and insurance details (number, company, expiration dates)",
+  'An emergency contact',
+  'Direct deposit and tax info (a secure Stripe form)',
+  'Sign the driver agreement (about 5 minutes)',
+];
+const checklistHtml = (items) => `<ul style="padding-left:20px;margin:6px 0">${items.map((i) => `<li style="margin:4px 0">${esc(i)}</li>`).join('')}</ul>`;
+const finishUrl = () => `${base()}/#/driver`;
+
 // Replies go to the support inbox, so drivers can answer the email instead of calling.
 const send = (to, subject, html) => sendMail({ to, subject, html, replyTo: support() })
   .catch((e) => console.error(`Driver email "${subject}" failed:`, e.message));
 
 module.exports = {
-  applicationReceived: (u) => send(u.email, 'We got your Choice Delivery driver application', layout({
+  // Right after applying: everything they need to finish, and one button that works on any phone.
+  applicationReceived: (u) => send(u.email, 'Next steps for your Choice Delivery driver application', layout({
     greeting: `Hi ${firstName(u)},`,
     paragraphs: [
-      "Thanks for applying to drive with Choice Delivery. We'll review your application and email you when you're approved, usually within 1–2 business days.",
-      'To speed it up, install the driver app, sign in with the email and password you just chose, and finish your profile: profile photo, vehicle, driver\'s license and insurance.',
-      `Then sign your driver agreement online (about 5 minutes): <a href="${base()}/#/driver/agreement">${base().replace(/^https?:\/\//, '')}/#/driver/agreement</a>. Sign in with the same email and password.`,
+      "Thanks for applying to drive with Choice Delivery! We can approve you as soon as your application is complete. Here's what's left (about 15 minutes):",
+      checklistHtml(APPLICATION_STEPS),
+      'Tap the button below and sign in with the email and password you just chose. Your to-do list shows what\'s done and what\'s left, on iPhone or Android.',
     ],
-    button: { href: appPage(), text: 'Get the driver app' },
+    button: { href: finishUrl(), text: 'Finish your application' },
+    footer: `We'll email you when you're approved, usually within 1–2 business days of finishing. Questions? Just reply to this email or write to ${support()}.`,
+  })),
+
+  // A nudge when an applicant hasn't finished: what's still missing (from their checklist).
+  applicationReminder: (u, missing) => send(u.email, 'Finish your Choice Delivery driver application', layout({
+    greeting: `Hi ${firstName(u)},`,
+    paragraphs: [
+      "You started an application to drive with Choice Delivery. We can't approve it until it's complete. Still needed:",
+      checklistHtml(missing),
+      'Tap the button below and sign in with the email and password you chose when you applied. Forgot your password? Tap "Forgot password?" on the sign-in page.',
+    ],
+    button: { href: finishUrl(), text: 'Finish your application' },
   })),
 
   newApplication: (u) => send(process.env.LEADS_EMAIL || 'info@choicedeliverysc.com', `New driver application: ${u.name || u.email}`, layout({
@@ -78,3 +103,34 @@ module.exports = {
     footer: `Then get the app: <a href="${appPage()}">${appPage()}</a> · Questions? Reply to this email.`,
   })),
 };
+
+// Every hour: applicants who haven't finished get a reminder 2 days after applying, and one more a week after.
+async function remindApplicants() {
+  const db = require('./db');
+  const { getUser, driverChecklist } = require('./users');
+  const { rows } = await db.query(
+    `SELECT id FROM users WHERE role = 'driver' AND driver_status = 'applied' AND is_active AND NOT is_demo
+       AND ((application_reminders = 0 AND created_at < now() - interval '2 days')
+         OR (application_reminders = 1 AND created_at < now() - interval '7 days' AND application_reminded_at < now() - interval '3 days'))`);
+  let sent = 0;
+  for (const { id } of rows) {
+    const u = await getUser(id);
+    const { missing } = driverChecklist(u);
+    // Counted even when nothing is missing, so a finished applicant isn't checked again.
+    await db.query('UPDATE users SET application_reminders = application_reminders + 1, application_reminded_at = now() WHERE id = $1', [id]);
+    if (!missing.length) continue;
+    await module.exports.applicationReminder(u, missing);
+    sent += 1;
+  }
+  return sent;
+}
+
+function startReminderTimer() {
+  const tick = () => remindApplicants().catch((e) => console.error('Applicant reminders failed:', e.message));
+  setTimeout(tick, 60 * 1000).unref?.();
+  setInterval(tick, 60 * 60 * 1000).unref?.();
+}
+
+module.exports.remindApplicants = remindApplicants;
+module.exports.startReminderTimer = startReminderTimer;
+module.exports.APPLICATION_STEPS = APPLICATION_STEPS;

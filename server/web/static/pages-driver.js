@@ -2,7 +2,7 @@
 import { useJobAlertsOn } from './pages-phone.js';
 import {
   html, useState, useEffect, useRef, api, navigate, useApi, getUser, formatDate, timeAgo, mapsLink, STATUS, ACTIVE_STATUSES,
-  SERVICE_LEVEL_LABELS, formatMoney, currentPath,
+  SERVICE_LEVEL_LABELS, formatMoney, currentPath, refreshUser, VEHICLE_TYPES,
 } from './lib.js';
 import { Layout, PageHeader, Alert, Spinner, Empty, StatusBadge, RouteSummary, ActionButton, StopTimeline, Logo, Field } from './components.js';
 
@@ -97,9 +97,9 @@ function DriverStatusCard({ user }) {
       ${user.reviewNote && user.driverStatus !== 'applied' && html`<p class="small muted">${user.reviewNote}</p>`}
       ${!user.agreementSignedAt && c.missing.includes('Signed driver agreement') && html`<a class="btn primary" href="#/driver/agreement">Sign your driver agreement</a>`}
       ${c.missing.some((m) => m.startsWith('Direct deposit')) && html`<a class="btn" href="#/driver/history">Set up direct deposit and tax info</a>`}
-      ${c.missing.filter((m) => m !== 'Signed driver agreement' && !m.startsWith('Direct deposit')).length > 0 && html`<div class="small"><strong>Finish your profile in the driver app:</strong>
-        <ul>${c.missing.filter((m) => m !== 'Signed driver agreement' && !m.startsWith('Direct deposit')).map((m) => html`<li>${m}</li>`)}</ul></div>`}
-      <a class="btn primary" href="#/driver-app">Get the driver app</a>
+      ${c.missing.filter((m) => m !== 'Signed driver agreement' && !m.startsWith('Direct deposit')).length > 0 && html`<div class="small"><strong>Finish your profile:</strong>
+        <ul>${c.missing.filter((m) => m !== 'Signed driver agreement' && !m.startsWith('Direct deposit')).map((m) => html`<li>${m}</li>`)}</ul>
+        <a class="btn primary" href="#/driver/profile">Finish your profile</a></div>`}
     </section>`;
 }
 
@@ -647,4 +647,119 @@ export function PayoutMethodPage() {
       <p class="muted small">When you're done, go back to the Choice Delivery Driver app.</p></div>`;
   }
   return html`<${Layout}><a class="back" href="#/driver/history">← Earnings</a><${PageHeader} title="Payment info" />${body}<//>`;
+}
+
+// ---------- Profile (#/driver/profile) ----------
+// Everything on the driver checklist that the driver fills in, on the website (iPhone or Android): contact,
+// vehicle, license, insurance, emergency contact and the document photos.
+const DOCS = [
+  ['photo', 'Profile photo', 'A clear photo of your face, so customers know who to expect.', true],
+  ['license_front', "Driver's license (front)", '', true],
+  ['license_back', "Driver's license (back)", '', false],
+  ['insurance', 'Insurance card', '', true],
+  ['vehicle', 'Photo of your vehicle', 'The whole vehicle, with the plate showing.', true],
+  ['registration', 'Vehicle registration', '', false],
+];
+
+export function DriverProfilePage() {
+  const me = useApi('/users/me');
+  const [v, setV] = useState(null);
+  const [error, setError] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(null);
+  const [docs, setDocs] = useState([]);
+  useEffect(() => {
+    if (!me.data || v) return;
+    const u = me.data;
+    const p = u.driverProfile || {};
+    setDocs(u.documents || []);
+    setV({
+      phoneNumber: u.phoneNumber || '',
+      vehicle: { type: u.vehicle?.type || '', make: u.vehicle?.make || '', model: u.vehicle?.model || '', year: u.vehicle?.year || '',
+        color: u.vehicle?.color || '', plate: u.vehicle?.plate || '' },
+      license: { number: p.license?.number || '', state: p.license?.state || 'SC', expires: p.license?.expires || '' },
+      insurance: { company: p.insurance?.company || '', policyNumber: p.insurance?.policyNumber || '', expires: p.insurance?.expires || '' },
+      emergencyContact: { name: p.emergencyContact?.name || '', phone: p.emergencyContact?.phone || '' },
+    });
+  }, [me.data]);
+  if (!v) return html`<${Layout}>${me.error ? html`<${Alert} error=${me.error} />` : html`<${Spinner} />`}<//>`;
+  const set = (group, key) => (e) => { setSaved(false); setV({ ...v, [group]: { ...v[group], [key]: e.target.value } }); };
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null); setSaved(false);
+    try {
+      const u = await api('/users/me', { method: 'PUT', body: {
+        phoneNumber: v.phoneNumber, vehicleType: v.vehicle.type || undefined, vehicle: v.vehicle,
+        driverProfile: { license: v.license, insurance: v.insurance, emergencyContact: v.emergencyContact },
+      } });
+      refreshUser(u); setSaved(true); window.scrollTo(0, 0);
+    } catch (err) { setError(err); window.scrollTo(0, 0); } finally { setBusy(false); }
+  };
+  const upload = (kind) => async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    setUploading(kind); setError(null);
+    try {
+      const u = await api(`/users/me/documents/${kind}`, { method: 'PUT', body: { data: await readPhoto(f) } });
+      setDocs(u.documents || []); refreshUser(u);
+    } catch (err) { setError(err); } finally { setUploading(null); e.target.value = ''; }
+  };
+  const missing = getUser()?.checklist?.missing || [];
+  return html`
+    <${Layout}>
+      <a class="back" href="#/driver">← Jobs</a>
+      <${PageHeader} title="Your driver profile" subtitle="Everything we need to approve you and keep you on the road." />
+      <${Alert} error=${error} />
+      ${saved && html`<${Alert} tone="success">Saved.${missing.length ? ` Still needed: ${missing.join(', ')}.` : ' Your profile is complete.'}<//>`}
+      <section class="card stack">
+        <h2>Photos</h2>
+        <p class="small muted">Take them with your phone's camera, or pick from your photos.</p>
+        ${DOCS.map(([kind, label, hint, required]) => html`<div class="row-between doc-row" key=${kind}>
+          <div><strong>${label}</strong>${!required && html` <span class="muted small">(optional)</span>`}
+            ${hint && html`<div class="muted small">${hint}</div>`}
+            <div class="small">${docs.includes(kind) ? html`<span class="badge green">Uploaded</span>` : required ? html`<span class="badge amber">Needed</span>` : ''}</div></div>
+          <label class="btn small">${uploading === kind ? 'Uploading…' : docs.includes(kind) ? 'Replace' : 'Add photo'}
+            <input type="file" accept="image/*" class="visually-hidden" disabled=${!!uploading} onChange=${upload(kind)} /></label>
+        </div>`)}
+      </section>
+      <form class="stack" onSubmit=${save}>
+        <section class="card stack">
+          <h2>Contact</h2>
+          <${Field} label="Mobile phone"><input type="tel" required value=${v.phoneNumber} onInput=${(e) => { setSaved(false); setV({ ...v, phoneNumber: e.target.value }); }} /><//>
+          <h3>Emergency contact</h3>
+          <div class="grid-2">
+            <${Field} label="Name"><input required value=${v.emergencyContact.name} onInput=${set('emergencyContact', 'name')} /><//>
+            <${Field} label="Phone"><input type="tel" required value=${v.emergencyContact.phone} onInput=${set('emergencyContact', 'phone')} /><//>
+          </div>
+        </section>
+        <section class="card stack">
+          <h2>Vehicle</h2>
+          <div class="grid-2">
+            <${Field} label="Type"><select required value=${v.vehicle.type} onChange=${set('vehicle', 'type')}>
+              <option value="">Choose…</option>${VEHICLE_TYPES.map((t) => html`<option value=${t}>${t}</option>`)}</select><//>
+            <${Field} label="Make"><input required placeholder="e.g. Honda" value=${v.vehicle.make} onInput=${set('vehicle', 'make')} /><//>
+            <${Field} label="Model"><input required placeholder="e.g. Odyssey" value=${v.vehicle.model} onInput=${set('vehicle', 'model')} /><//>
+            <${Field} label="Year"><input inputmode="numeric" value=${v.vehicle.year} onInput=${set('vehicle', 'year')} /><//>
+            <${Field} label="Color"><input value=${v.vehicle.color} onInput=${set('vehicle', 'color')} /><//>
+            <${Field} label="License plate"><input required value=${v.vehicle.plate} onInput=${set('vehicle', 'plate')} /><//>
+          </div>
+        </section>
+        <section class="card stack">
+          <h2>Driver's license</h2>
+          <div class="grid-2">
+            <${Field} label="License number"><input required value=${v.license.number} onInput=${set('license', 'number')} /><//>
+            <${Field} label="State"><input maxlength="2" value=${v.license.state} onInput=${set('license', 'state')} /><//>
+            <${Field} label="Expires"><input type="date" required value=${v.license.expires} onInput=${set('license', 'expires')} /><//>
+          </div>
+          <h2>Auto insurance</h2>
+          <div class="grid-2">
+            <${Field} label="Insurance company"><input required value=${v.insurance.company} onInput=${set('insurance', 'company')} /><//>
+            <${Field} label="Policy number"><input value=${v.insurance.policyNumber} onInput=${set('insurance', 'policyNumber')} /><//>
+            <${Field} label="Expires"><input type="date" required value=${v.insurance.expires} onInput=${set('insurance', 'expires')} /><//>
+          </div>
+        </section>
+        <button class="btn primary block" disabled=${busy}>${busy ? 'Saving…' : 'Save profile'}</button>
+      </form>
+    <//>`;
 }

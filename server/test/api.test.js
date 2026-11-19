@@ -1862,11 +1862,34 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     assert.equal(r.data.user.vehicle.plate, 'ABC123');
     assert.equal(r.data.user.checklist.complete, false);
     await settle();
-    assert.ok(sent.some((m) => m.to === 'dana@drivers.test' && /got your .* application/.test(m.subject)), 'driver is emailed');
+    assert.ok(sent.some((m) => m.to === 'dana@drivers.test' && /Next steps for your .* application/.test(m.subject)), 'driver is emailed');
     const received = sent.find((m) => m.to === 'dana@drivers.test');
     assert.equal(received.replyTo, 'info@choicedeliverysc.com', 'drivers can reply by email');
     assert.doesNotMatch(received.html, /949-7034|[Cc]all dispatch/, 'no phone number for applicants');
     assert.ok(sent.some((m) => /New driver application: Dana Wheels/.test(m.subject) && m.html.includes(`#/people/${danaId}`)), 'dispatch is emailed');
+    assert.match(received.html, /emergency contact/i, 'the email lists every step');
+    assert.match(received.html, /Direct deposit and tax info/);
+    assert.ok(received.html.includes('/#/driver"'), 'one button to finish, on any phone');
+
+    // Not finished 2 days later: one reminder with what's still missing, then one more a week after applying.
+    const driverEmails = require('../src/driver-emails');
+    await db.query("UPDATE users SET created_at = now() - interval '3 days' WHERE id = $1", [danaId]);
+    sent.length = 0;
+    await driverEmails.remindApplicants();
+    await settle();
+    const nudge = sent.filter((m) => m.to === 'dana@drivers.test');
+    assert.equal(nudge.length, 1);
+    assert.match(nudge[0].subject, /Finish your Choice Delivery driver application/);
+    assert.match(nudge[0].html, /Emergency contact/);
+    await driverEmails.remindApplicants();
+    await settle();
+    assert.equal(sent.filter((m) => m.to === 'dana@drivers.test').length, 1, 'not again the same day');
+    await db.query("UPDATE users SET created_at = now() - interval '8 days', application_reminded_at = now() - interval '4 days' WHERE id = $1", [danaId]);
+    await driverEmails.remindApplicants();
+    await driverEmails.remindApplicants();
+    await settle();
+    assert.equal(sent.filter((m) => m.to === 'dana@drivers.test').length, 2, 'a second reminder a week in, and no more');
+    await db.query("UPDATE users SET created_at = now() WHERE id = $1", [danaId]);
 
     // Applied: can sign in and edit the profile, but no jobs, can't go online or be assigned.
     const order = (await call('POST', '/orders', { token: t.admin, body: orderBody() })).data;
