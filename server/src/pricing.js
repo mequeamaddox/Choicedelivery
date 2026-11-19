@@ -109,11 +109,17 @@ const DEFAULT_FEES = {
   // By vehicle: base price covering the first includedMiles, per-mile rate after that, and the most it
   // carries (heavier loads need a bigger vehicle or manual review). The biggest vehicle is a half-ton
   // pickup; there's no liftgate/box-truck service. Each can be switched off in the fee settings.
+  // Cargo space (inches, longest side first) and roughly how many cubic feet fit: the largest piece has to
+  // fit through and lie in the space, and all the pieces together have to fit.
   vehicles: {
-    Car: { description: 'Envelopes, boxes, small parcels', baseCents: 2500, includedMiles: 10, perMileCents: 150, maxLbs: 150, enabled: true },
-    Minivan: { description: 'Several boxes, small furniture', baseCents: 3500, includedMiles: 10, perMileCents: 200, maxLbs: 500, enabled: true },
-    'Cargo Van': { description: 'Larger loads that must stay dry', baseCents: 4000, includedMiles: 10, perMileCents: 225, maxLbs: 1000, enabled: true },
-    'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', baseCents: 4500, includedMiles: 10, perMileCents: 250, maxLbs: 1000, enabled: true },
+    Car: { description: 'Envelopes, boxes, small parcels', baseCents: 2500, includedMiles: 10, perMileCents: 150, maxLbs: 150,
+      cargoIn: [40, 36, 20], cubicFt: 15, enabled: true },
+    Minivan: { description: 'Several boxes, small furniture', baseCents: 3500, includedMiles: 10, perMileCents: 200, maxLbs: 500,
+      cargoIn: [84, 48, 40], cubicFt: 120, enabled: true },
+    'Cargo Van': { description: 'Larger loads that must stay dry', baseCents: 4000, includedMiles: 10, perMileCents: 225, maxLbs: 1000,
+      cargoIn: [120, 50, 52], cubicFt: 250, enabled: true },
+    'Pickup Truck': { description: 'Half-ton pickup: bulky or heavy items', baseCents: 4500, includedMiles: 10, perMileCents: 250, maxLbs: 1000,
+      cargoIn: [96, 50, 48], cubicFt: 90, enabled: true },
   },
   // Rush: a flat amount, plus a share of the distance charges (extra miles + travel to pickup) so far
   // trips cost more to rush than local ones, never more than capCents.
@@ -209,6 +215,8 @@ function normalizeFees(saved) {
       includedMiles: cleanCents(v.includedMiles, def.includedMiles),
       perMileCents: cleanCents(v.perMileCents, def.perMileCents),
       maxLbs: Math.max(1, cleanCents(v.maxLbs, def.maxLbs)),
+      cargoIn: def.cargoIn.map((d, i) => Math.max(1, cleanCents(Array.isArray(v.cargoIn) ? v.cargoIn[i] : undefined, d))).sort((a, b) => b - a),
+      cubicFt: Math.max(1, cleanCents(v.cubicFt, def.cubicFt)),
       enabled: typeof v.enabled === 'boolean' ? v.enabled : def.enabled,
     };
   }
@@ -312,6 +320,35 @@ function pieceWeightProblem({ maxPieceLbs, weightLbs, pieces, addOns }, fees = D
   return null;
 }
 
+// The largest piece's size in inches: { l, w, h } from a body (pieceDims), or null if not given.
+function parsePieceDims(value) {
+  if (value == null || value === '') return null;
+  const d = typeof value === 'object' ? value : null;
+  const nums = d ? [d.l, d.w, d.h].map(Number) : [];
+  if (nums.length !== 3 || nums.some((n) => !Number.isFinite(n) || n <= 0 || n > 600)) return undefined;
+  const [l, w, h] = nums.map((n) => Math.round(n * 10) / 10);
+  return { l, w, h };
+}
+
+const dimsText = (d) => `${d.l}×${d.w}×${d.h} in`;
+
+// Why a load won't fit a vehicle, or null: the largest piece has to fit in the cargo space (any way up),
+// and the pieces together (counted as the largest piece's size, to be safe) have to fit the space.
+function sizeProblem(vehicleType, vehicle, dims, pieces) {
+  if (!vehicle || !dims || !vehicle.cargoIn) return null;
+  const piece = [dims.l, dims.w, dims.h].sort((a, b) => b - a);
+  const space = [...vehicle.cargoIn].sort((a, b) => b - a);
+  if (piece.some((x, i) => x > space[i])) {
+    return `The largest piece (${dimsText(dims)}) is too big for a ${vehicleType} (cargo space about ${space.join('×')} in)`;
+  }
+  const n = Math.max(1, Number.parseInt(pieces, 10) || 1);
+  const cubicFt = (n * dims.l * dims.w * dims.h) / 1728;
+  if (cubicFt > vehicle.cubicFt) {
+    return `${n} pieces up to ${dimsText(dims)} is about ${Math.round(cubicFt)} cubic feet, more than a ${vehicleType} holds (about ${vehicle.cubicFt})`;
+  }
+  return null;
+}
+
 const maxWeightLbs = (fees) => fees.weightTiers[fees.weightTiers.length - 1].upToLbs;
 
 // Wait-time charge for a stop: free minutes first, then each started block is billed.
@@ -390,6 +427,7 @@ const DRIVER_HANDLING_ADDONS = ['loading_help', 'inside_delivery'];
 function calculatePrice({
   distanceMiles, serviceLevel = 'standard', at = new Date(), openOrders = 0, badWeather = false,
   vehicleType = null, weightLbs = null, stopCount = 2, addOns = [], fees = DEFAULT_FEES, pickupTravelMiles = null,
+  pieceDims = null, pieces = null,
 }) {
   const level = normalizeServiceLevel(serviceLevel);
   const vehicle = fees.vehicles?.[vehicleType] || null; // unknown/legacy types: Car rates, no capacity check
@@ -447,6 +485,8 @@ function calculatePrice({
       }
     }
   }
+  const tooBig = sizeProblem(vehicleType, vehicle, pieceDims, pieces);
+  if (tooBig) reviewReasons.push(tooBig);
   if (vehicle && !vehicle.enabled) reviewReasons.push(`${vehicleType} isn't available right now`);
   const extraStops = Math.max(0, (Number(stopCount) || 2) - 2);
   const extraStopsCents = extraStops * fees.extraStopCents;
@@ -528,5 +568,5 @@ module.exports = {
   holidayOn, holidayName,
   VEHICLE_TYPES, SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES,
   businessPlansEnabled, DEFAULT_FEES, CHARGE_KINDS, TONU_CENTS,
-  normalizeFees, getFees, driverPayFor, rushFeeFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, driverLifts, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
+  parsePieceDims, sizeProblem, normalizeFees, getFees, driverPayFor, rushFeeFor, rushEstimate, RUSH_LOCAL_MILES, parseWeightLbs, pieceWeightProblem, driverLifts, weightTierLabel, maxWeightLbs, waitCharge, normalizeServiceLevel, isServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, localTime,
 };

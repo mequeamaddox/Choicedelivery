@@ -584,6 +584,13 @@ function FeesEditor() {
             <${Field} label="Max lbs"><input type="number" min="1" step="1" value=${x.maxLbs} disabled=${!x.enabled}
               onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, maxLbs: Number(e.target.value) } } })} /><//>
           </div>
+          <div class="grid-4">
+            ${['Cargo length (in)', 'Cargo width (in)', 'Cargo height (in)'].map((label, i) => html`
+              <${Field} label=${label}><input type="number" min="1" step="1" value=${x.cargoIn?.[i] ?? ''} disabled=${!x.enabled}
+                onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, cargoIn: (x.cargoIn || [0, 0, 0]).map((d, j) => (j === i ? Number(e.target.value) : d)) } } })} /><//>`)}
+            <${Field} label="Holds (cubic ft)"><input type="number" min="1" step="1" value=${x.cubicFt ?? ''} disabled=${!x.enabled}
+              onInput=${(e) => set({ vehicles: { ...fees.vehicles, [name]: { ...x, cubicFt: Number(e.target.value) } } })} /><//>
+          </div>
         </fieldset>`)}
       <h3>Pickups away from Columbia</h3>
       <div class="grid-2">

@@ -360,7 +360,7 @@ export function DriverJobPage({ id }) {
         subtitle=${`${SERVICE_LEVEL_LABELS[order.serviceLevel] || ''}${order.serviceLevel === 'rush' ? ' (go straight there)' : ''}${order.vehicleType ? ` · ${order.vehicleType}` : ''}${order.distanceMiles != null ? ` · about ${order.distanceMiles} mi` : ''}`} />
       <${Alert} error=${error} />
       ${order.driverPayCents != null && html`<p class="card pay-card">Your pay: <strong>${formatMoney(order.driverPayCents)}</strong>${order.driverPaidAt ? html` <span class="badge green">Paid</span>` : ''}</p>`}
-      ${order.description && html`<p class="card small"><strong>Load:</strong> ${order.description}${order.weight ? ` · ${order.weight}` : ''}${order.numberOfPieces ? ` · ${order.numberOfPieces} pcs` : ''}</p>`}
+      ${order.description && html`<p class="card small"><strong>Load:</strong> ${order.description}${order.weight ? ` · ${order.weight}` : ''}${order.numberOfPieces ? ` · ${order.numberOfPieces} pcs` : ''}${order.pieceDims ? ` · largest ${order.pieceDims.l}×${order.pieceDims.w}×${order.pieceDims.h} in` : ''}</p>`}
 
       ${!mine && order.status === 'pending' && html`
         <${ActionButton} class="btn primary block big" onError=${setError}

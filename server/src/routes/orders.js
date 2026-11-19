@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { requireAuth, requireRole, isStaff } = require('../auth');
 const {
-  ACTIVE, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  ACTIVE, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, readPieceDims, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, lockQuotePrice, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 } = require('../orders');
 const { notifyDriversOfOrder, notifyUser } = require('../push');
@@ -172,7 +172,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   const b = req.body || {};
   if (b.priceCents !== undefined && !isStaff(req.user)) throw new HttpError(403, 'Only dispatch can set a price');
   if (req.user.role === 'shipper' && ['paid', 'authorized'].includes(current.paymentStatus)
-    && ['stops', 'serviceLevel', 'scheduledAt', 'weight', 'addOns', 'maxPieceLbs', 'numberOfPieces'].some((k) => b[k] !== undefined)) {
+    && ['stops', 'serviceLevel', 'scheduledAt', 'weight', 'addOns', 'maxPieceLbs', 'numberOfPieces', 'pieceDims'].some((k) => b[k] !== undefined)) {
     throw new HttpError(409, 'This order is already paid; contact dispatch to change the route, service, time, weight or add-ons');
   }
   if (req.user.role === 'shipper' && Array.isArray(b.stops)) {
@@ -185,6 +185,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
   let priceUnlocked = false;
   const addOns = b.addOns === undefined ? undefined : normalizeAddOns(b.addOns);
   const maxPieceLbs = b.maxPieceLbs === undefined ? undefined : parsePieceLbs(b.maxPieceLbs);
+  const pieceDims = b.pieceDims === undefined ? undefined : readPieceDims(b.pieceDims);
   if (b.serviceLevel !== undefined && !isServiceLevel(b.serviceLevel)) {
     throw new HttpError(400, 'serviceLevel must be "standard" or "rush"');
   }
@@ -203,12 +204,13 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
            add_ons = CASE WHEN $13::boolean THEN $14::text[] ELSE add_ons END,
            max_piece_lbs = CASE WHEN $15::boolean THEN $16::numeric ELSE max_piece_lbs END,
            po_number = CASE WHEN $17::boolean THEN NULLIF($18, '') ELSE po_number END,
+           piece_dims = CASE WHEN $19::boolean THEN $20::jsonb ELSE piece_dims END,
            updated_at = now()
          WHERE id = $1`,
         [current.id, b.vehicleType ?? null, b.weight ?? null, b.numberOfPieces ?? null, b.description ?? null,
           b.trackingNumber !== undefined, str(b.trackingNumber), b.priceCents !== undefined, b.priceCents ?? null,
           b.scheduledAt !== undefined, b.scheduledAt || null, b.serviceLevel ?? null, addOns !== undefined, addOns || [], maxPieceLbs !== undefined, maxPieceLbs ?? null,
-          b.poNumber !== undefined, str(b.poNumber).slice(0, 60)]
+          b.poNumber !== undefined, str(b.poNumber).slice(0, 60), pieceDims !== undefined, pieceDims ? JSON.stringify(pieceDims) : null]
       );
     } catch (e) {
       if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -258,6 +260,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
         || (b.serviceLevel !== undefined && b.serviceLevel !== current.serviceLevel)
         || (addOns !== undefined && !sameList(addOns, current.addOns))
         || (maxPieceLbs !== undefined && maxPieceLbs !== current.maxPieceLbs)
+        || (pieceDims !== undefined && JSON.stringify(pieceDims) !== JSON.stringify(current.pieceDims))
         || (b.numberOfPieces !== undefined && String(b.numberOfPieces) !== String(current.numberOfPieces ?? ''));
       if (changed) {
         priceUnlocked = true;
@@ -265,7 +268,7 @@ router.patch('/:id', requireRole('shipper', 'admin', 'dispatcher'), asyncH(async
         await recordEvent(client, current.id, req.user.id, 'price_unlocked', { fromCents: current.priceCents });
       }
     }
-    const priceFields = ['stops', 'vehicleType', 'weight', 'serviceLevel', 'addOns', 'maxPieceLbs', 'numberOfPieces'];
+    const priceFields = ['stops', 'vehicleType', 'weight', 'serviceLevel', 'addOns', 'maxPieceLbs', 'numberOfPieces', 'pieceDims'];
     if (priceFields.some((k) => b[k] !== undefined)) {
       await client.query('UPDATE orders SET quote_locked_cents = NULL, quote_locked_until = NULL WHERE id = $1', [current.id]);
     }

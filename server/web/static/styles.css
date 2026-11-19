@@ -570,3 +570,7 @@ fieldset.card { margin: 0; min-width: 0; }
 .thread-main { min-width: 0; }
 .thread-last { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .thread-side { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; flex-shrink: 0; }
+
+/* Largest piece L × W × H */
+.dims-row { display: flex; align-items: center; gap: .4rem; }
+.dims-row input { flex: 1; min-width: 0; }

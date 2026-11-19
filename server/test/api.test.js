@@ -3541,6 +3541,42 @@ test('messages: dispatch and a driver message each other with phone alerts; disp
   }
 });
 
+test('piece size: the largest piece and the total load must fit the vehicle, or it goes for review', async () => {
+  const { calculatePrice, sizeProblem, normalizeFees, DEFAULT_FEES } = require('../src/pricing');
+  const fees = normalizeFees(DEFAULT_FEES);
+  const pallet = { l: 48, w: 40, h: 36 };
+  assert.match(sizeProblem('Car', fees.vehicles.Car, pallet, 1), /too big for a Car/);
+  assert.equal(sizeProblem('Pickup Truck', fees.vehicles['Pickup Truck'], pallet, 1), null, 'a pallet fits a pickup');
+  assert.equal(sizeProblem('Car', fees.vehicles.Car, { l: 20, w: 36, h: 12 }, 1), null, 'any way up');
+  assert.match(sizeProblem('Car', fees.vehicles.Car, { l: 18, w: 18, h: 18 }, 10), /cubic feet/, 'ten boxes overfill a car');
+  assert.equal(sizeProblem('Minivan', fees.vehicles.Minivan, { l: 18, w: 18, h: 18 }, 10), null);
+  let q = calculatePrice({ distanceMiles: 5, vehicleType: 'Car', pieceDims: pallet, pieces: 1, fees });
+  assert.equal(q.needsReview, true);
+  q = calculatePrice({ distanceMiles: 5, vehicleType: 'Pickup Truck', pieceDims: pallet, pieces: 1, fees });
+  assert.equal(q.needsReview, false);
+  // Settings can change a vehicle's cargo space.
+  const custom = normalizeFees({ ...DEFAULT_FEES, vehicles: { ...DEFAULT_FEES.vehicles, Car: { ...DEFAULT_FEES.vehicles.Car, cargoIn: [50, 45, 40], cubicFt: 40 } } });
+  assert.equal(sizeProblem('Car', custom.vehicles.Car, pallet, 1), null);
+
+  // Quotes and orders: the size is checked and kept on the order for the driver.
+  let r = await call('POST', '/public/quote', { body: { stops: orderBody().stops, vehicleType: 'Car', pieceDims: pallet, numberOfPieces: '1' } });
+  assert.equal(r.data.needsReview, true);
+  assert.ok(r.data.reviewReasons.some((x) => /too big for a Car/.test(x)));
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ pieceDims: { l: 'big', w: 1, h: 1 } }) });
+  assert.equal(r.status, 400);
+  r = await call('POST', '/orders', { token: t.acme, body: orderBody({ vehicleType: 'Pickup Truck', pieceDims: pallet, numberOfPieces: '1' }) });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.deepEqual(r.data.pieceDims, pallet);
+  assert.equal(r.data.reviewStatus === 'needed', false);
+  const id = r.data.id;
+  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { vehicleType: 'Car' } });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal(r.data.priceBreakdown.needsReview, true, 'too small a vehicle is priced by hand');
+  r = await call('PATCH', `/orders/${id}`, { token: t.acme, body: { pieceDims: { l: 12, w: 12, h: 12 } } });
+  assert.deepEqual(r.data.pieceDims, { l: 12, w: 12, h: 12 });
+  assert.equal(r.data.priceBreakdown.needsReview, false);
+});
+
 test('the owner can delete every order before real work starts', async () => {
   let r = await call('POST', '/expenses/delete-all-orders', { token: t.admin, body: { confirm: 'DELETE' } });
   assert.equal(r.status, 200, JSON.stringify(r.data));

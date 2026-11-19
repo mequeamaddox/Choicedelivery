@@ -5,7 +5,7 @@ const { sendMail } = require('../mailer');
 const { rateLimit } = require('../rate-limit');
 const {
   SERVICE_LEVELS, BUSINESS_PLANS, OVERAGE_CENTS, PLAN_LOCAL_MILES, PLAN_RUSH_CENTS, PLAN_NAMES, businessPlansEnabled,
-  SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs,
+  SURCHARGES, isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pricingContext, getFees, parseWeightLbs, parsePieceDims,
   CHARGE_KINDS, pieceWeightProblem, pickupTravelMilesFor,
 } = require('../pricing');
 const { asyncH, HttpError, str, parseLocation } = require('../util');
@@ -317,6 +317,7 @@ async function priceQuote(b) {
     distanceMiles: routeMiles(locations), pickupTravelMiles: pickupTravelMilesFor(locations), serviceLevel, at, ...(await pricingContext(db)),
     vehicleType: typeof b.vehicleType === 'string' ? b.vehicleType : null,
     weightLbs: parseWeightLbs(b.weightLbs ?? b.weight), stopCount: stops.length, addOns, fees,
+    pieceDims: parsePieceDims(b.pieceDims) || null, pieces: b.numberOfPieces,
   });
   // An address we couldn't put on the map: priced by hand rather than at the base price.
   if (locations.some((l) => !l)) {

@@ -7,8 +7,15 @@ const { locate, haversineMiles } = require('./geocode');
 const quoteLocks = require('./quote-locks');
 const {
   isServiceLevel, normalizeServiceLevel, calculatePrice, routeMiles, pickupTravelMilesFor, pricingContext, getFees, parseWeightLbs, DEFAULT_FEES,
-  pieceWeightProblem, driverPayFor,
+  pieceWeightProblem, driverPayFor, parsePieceDims,
 } = require('./pricing');
+
+// The largest piece's size from a request body ({ l, w, h } inches), null if not given; 400 if it's not sizes.
+function readPieceDims(value) {
+  const d = parsePieceDims(value);
+  if (d === undefined) throw new HttpError(400, 'Enter the largest piece\'s length, width and height in inches');
+  return d;
+}
 
 function parsePieceLbs(value) {
   if (value == null || value === '') return null;
@@ -137,6 +144,7 @@ async function createOrderRow(client, actor, body) {
   const requestedAddOns = normalizeAddOns(body.addOns); // unknown ones are still rejected
   const addOns = (await getFees(client)).offerHelp ? requestedAddOns : [];
   const maxPieceLbs = parsePieceLbs(body.maxPieceLbs);
+  const pieceDims = readPieceDims(body.pieceDims);
   if (maxPieceLbs == null && (actor.role === 'shipper' || guest)) {
     throw new HttpError(400, 'Enter the weight of the heaviest single piece');
   }
@@ -186,15 +194,15 @@ async function createOrderRow(client, actor, body) {
       `INSERT INTO orders (organization_id, created_by, vehicle_type, weight, number_of_pieces, description,
                            tracking_number, price_cents, price_is_custom, scheduled_at, service_level, payment_status,
                            status, booked_at, add_ons, max_piece_lbs, customer_name, customer_email, customer_phone, is_guest,
-                           custody_required, seal_number, temperature, po_number)
+                           custody_required, seal_number, temperature, po_number, piece_dims)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $13 = 'quote' THEN NULL ELSE now() END, $14, $15, $16, $17, $18, $19,
-               $20, $21, $22, $23)
+               $20, $21, $22, $23, $24)
        RETURNING id`,
       [organizationId, owner, str(body.vehicleType), str(body.weight), str(body.numberOfPieces),
         str(body.description), str(body.trackingNumber) || null, priceCents, priceCents != null,
         body.scheduledAt || null, serviceLevel, paymentStatus, isQuote ? 'quote' : 'pending', addOns, maxPieceLbs,
         customerName || null, customerEmail || null, customerPhone || null, guest,
-        custody.required, custody.seal, custody.temperature, str(body.poNumber).slice(0, 60) || null]
+        custody.required, custody.seal, custody.temperature, str(body.poNumber).slice(0, 60) || null, pieceDims]
     ));
   } catch (e) {
     if (e.code === '23505') throw new HttpError(409, 'That tracking number is already in use');
@@ -307,7 +315,8 @@ async function bookQuote(client, actor, orderId, { expectedCents } = {}) {
 // Unscheduled (ASAP) orders are priced for when they were booked; unbooked quotes for now.
 async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
   const { rows: [o] } = await client.query(
-    `SELECT status, service_level, scheduled_at, booked_at, created_at, price_breakdown, weight, add_ons, vehicle_type
+    `SELECT status, service_level, scheduled_at, booked_at, created_at, price_breakdown, weight, add_ons, vehicle_type,
+            piece_dims, number_of_pieces
      FROM orders WHERE id = $1`, [orderId]);
   const { rows: stops } = await client.query(
     'SELECT location FROM stops WHERE order_id = $1 ORDER BY sequence', [orderId]);
@@ -324,6 +333,8 @@ async function repriceOrder(client, orderId, { fresh = false, at } = {}) {
     weightLbs: parseWeightLbs(o.weight),
     stopCount: stops.length,
     addOns: o.add_ons,
+    pieceDims: o.piece_dims || null,
+    pieces: o.number_of_pieces,
     fees: await getFees(client),
   });
   // An address that couldn't be put on the map has no distance, so the formula would only charge the base
@@ -455,6 +466,7 @@ function serializeOrder(o, stops, { events, charges, proof = false, user } = {})
     refundedCents: o.refunded_cents,
     addOns: o.add_ons || [],
     maxPieceLbs: o.max_piece_lbs == null ? null : Number(o.max_piece_lbs),
+    pieceDims: o.piece_dims || null,
     extraChargesCents: o.extra_charges_cents ?? 0,
     balanceDueCents: o.balance_due_cents ?? 0,
     vehicleType: o.vehicle_type,
@@ -692,6 +704,6 @@ async function completeStop(client, driver, orderId, stopId, { signature, photo,
 }
 
 module.exports = { lockQuotePrice,
-  GUEST, ACTIVE, TEMPERATURES, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
+  GUEST, ACTIVE, TEMPERATURES, custodyFields, recordEvent, createOrder, bookQuote, normalizeAddOns, parsePieceLbs, readPieceDims, assertPieceWeights, repriceOrder, visibilityFilter, ORDER_SELECT, serializeOrder, loadStops,
   getOrderFor, arriveAtStop, completeStop, nextStop, normalizeStops, locateStops, insertStops, refreshDriverPay,
 };

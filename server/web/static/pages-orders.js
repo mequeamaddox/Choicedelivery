@@ -142,9 +142,9 @@ export function OrdersPage() {
 const blankStop = (type) => ({ type, address: '', location: null, contactName: '', contactPhone: '', instructions: '' });
 
 // Live quote from the server (same formula used when the order is booked).
-function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleType, email) {
+function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleType, email, pieceDims, numberOfPieces) {
   const [quote, setQuote] = useState(null);
-  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt, weightLbs, addOns, vehicleType, email]);
+  const key = JSON.stringify([stops.map((s) => [s.address, s.location]), serviceLevel, scheduledAt, weightLbs, addOns, vehicleType, email, pieceDims, numberOfPieces]);
   useEffect(() => {
     if (stops.some((s) => !s.address.trim() && !s.location)) { setQuote(null); return undefined; }
     let cancelled = false;
@@ -154,6 +154,7 @@ function useQuote(stops, serviceLevel, scheduledAt, weightLbs, addOns, vehicleTy
           stops: stops.map((s) => ({ address: s.address, location: s.location || undefined })), serviceLevel,
           scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
           weightLbs: weightLbs === '' ? undefined : Number(weightLbs), addOns, vehicleType, email: email || undefined,
+          pieceDims: pieceDims || undefined, numberOfPieces: numberOfPieces || undefined,
         } });
         if (!cancelled) setQuote(q);
       } catch { /* the estimate is optional */ }
@@ -270,7 +271,7 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
   const [v, setV] = useState({
     serviceLevel: 'standard', vehicleType: 'Car', weightLbs: '', numberOfPieces: '', description: '', trackingNumber: '',
     scheduledAt: '', organizationId: '', price: '', addOns: [], maxPieceLbs: '', customerName: '', customerEmail: '', sendPayLink: true,
-    customerPhone: '', agreeTerms: false, sealNumber: '', temperature: '', poNumber: '',
+    customerPhone: '', agreeTerms: false, sealNumber: '', temperature: '', poNumber: '', dimL: '', dimW: '', dimH: '',
   });
   // Medical facilities' orders have chain of custody (seal number, temperature, counts at every handoff).
   const medical = guest ? false : staff ? !!(companies.data || []).find((c) => c.id === v.organizationId)?.isMedical
@@ -311,12 +312,28 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
   }, []);
   const bind = (name) => ({ value: v[name], onInput: (e) => setV({ ...v, [name]: e.target.value }) });
   // A guest's email lets an earlier emailed quote be honored (signed-in customers are matched by their login).
-  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType, guest ? v.customerEmail.trim() : '');
+  // The largest piece's size (inches), once all three are filled in.
+  const dimsList = [v.dimL, v.dimW, v.dimH].map(Number);
+  const pieceDims = dimsList.every((n) => n > 0) ? { l: dimsList[0], w: dimsList[1], h: dimsList[2] } : null;
+  const quote = useQuote(stops, v.serviceLevel, v.scheduledAt, v.weightLbs, v.addOns, v.vehicleType, guest ? v.customerEmail.trim() : '',
+    pieceDims, v.numberOfPieces);
   useEffect(() => { setShownCents(null); }, [quote?.totalCents]); // a fresh price on screen replaces "the price changed"
   const fees = pricing.data?.fees;
   const vehicles = fees ? Object.entries(fees.vehicles).filter(([, x]) => x.enabled) : [];
   const lbs = v.weightLbs === '' ? null : Number(v.weightLbs);
   const tooHeavyFor = (x) => lbs != null && lbs > x.maxLbs;
+  // Same size rule as the server: the largest piece fits the cargo space (any way up), and the pieces
+  // together (each counted as the largest) fit the space.
+  const tooBigFor = (x) => {
+    if (!pieceDims || !x.cargoIn) return false;
+    const piece = [pieceDims.l, pieceDims.w, pieceDims.h].sort((a, b) => b - a);
+    const space = [...x.cargoIn].sort((a, b) => b - a);
+    if (piece.some((d, i) => d > space[i])) return true;
+    const n = Math.max(1, Number.parseInt(v.numberOfPieces, 10) || 1);
+    return (n * pieceDims.l * pieceDims.w * pieceDims.h) / 1728 > x.cubicFt;
+  };
+  const unfit = (x) => tooHeavyFor(x) || tooBigFor(x);
+  const fitsVehicle = vehicles.find(([, x]) => !unfit(x))?.[0] || null; // the smallest one that fits
   const needsReview = quote?.needsReview;
   // Pickup far from Columbia: priced, but dispatch approves it first (dispatch's own bookings skip that).
   const needsApproval = !needsReview && quote?.needsApproval && !staff;
@@ -365,7 +382,7 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
         const r = await api('/public/book', { method: 'POST', body: {
           serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
           addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
-          maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
+          maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs), pieceDims: pieceDims || undefined,
           ...(medical ? { sealNumber: v.sealNumber.trim() || undefined, temperature: v.temperature || undefined } : {}),
           scheduledAt: v.scheduledAt ? new Date(v.scheduledAt).toISOString() : undefined,
           stops,
@@ -393,7 +410,7 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
       const body = {
         serviceLevel: v.serviceLevel, vehicleType: v.vehicleType, weight: v.weightLbs === '' ? '' : `${v.weightLbs} lbs`,
         addOns: v.addOns, numberOfPieces: v.numberOfPieces, description: v.description,
-        maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs),
+        maxPieceLbs: v.maxPieceLbs === '' ? undefined : Number(v.maxPieceLbs), pieceDims: pieceDims || undefined,
         ...(medical ? { sealNumber: v.sealNumber.trim() || undefined, temperature: v.temperature || undefined } : {}),
         trackingNumber: v.trackingNumber || undefined,
         poNumber: v.poNumber.trim() || undefined,
@@ -479,12 +496,13 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
             <span class="field-label">Vehicle</span>
             <div class="choice-grid" role="radiogroup" aria-label="Vehicle">
               ${vehicles.map(([name, x]) => html`
-                <label class=${`choice ${v.vehicleType === name ? 'selected' : ''} ${tooHeavyFor(x) ? 'unfit' : ''}`}>
+                <label class=${`choice ${v.vehicleType === name ? 'selected' : ''} ${unfit(x) ? 'unfit' : ''}`}>
                   <input type="radio" name="vehicleType" value=${name} checked=${v.vehicleType === name}
                     onChange=${() => setV({ ...v, vehicleType: name })} />
                   <span><strong>${name}</strong>
-                    <span class="muted small line">${x.description} · up to ${x.maxLbs.toLocaleString()} lbs</span>
-                    ${tooHeavyFor(x) && html`<span class="small warn-text">Too heavy for this vehicle</span>`}</span>
+                    <span class="muted small line">${x.description} · up to ${x.maxLbs.toLocaleString()} lbs${x.cargoIn ? ` · about ${x.cargoIn.join('×')} in` : ''}</span>
+                    ${tooHeavyFor(x) ? html`<span class="small warn-text">Too heavy for this vehicle</span>`
+                      : tooBigFor(x) && html`<span class="small warn-text">Too big for this vehicle</span>`}</span>
                 </label>`)}
             </div>
           </div>
@@ -506,8 +524,9 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
             </div>
             ${pieceProblem ? html`<div class="alert error" role="alert"><strong>Can't book this shipment:</strong> ${`${pieceProblem} Split it into lighter pieces, or email info@choicedeliverysc.com.`}</div>`
             : needsReview ? html`<div class="alert warn" role="status"><strong>We'll price this one by hand:</strong>
-                ${' '}${quote.reviewReasons.join('. ')}. ${vehicles.some(([, x]) => !tooHeavyFor(x)) && lbs != null && lbs <= Math.max(...vehicles.map(([, x]) => x.maxLbs))
-                  ? 'Pick a bigger vehicle above, or send it for review.' : 'Send it to us and we\'ll email you a price, usually within a business hour. Nothing is charged until you accept it.'}</div>`
+                ${' '}${quote.reviewReasons.join('. ')}. ${fitsVehicle && fitsVehicle !== v.vehicleType && unfit(fees.vehicles[v.vehicleType] || {})
+                  ? html`A ${fitsVehicle} fits it. <button type="button" class="link" onClick=${() => setV({ ...v, vehicleType: fitsVehicle })}>Switch to ${fitsVehicle}</button>, or send it for review.`
+                  : 'Send it to us and we\'ll email you a price, usually within a business hour. Nothing is charged until you accept it.'}</div>`
             : quote ? html`${needsApproval && html`<div class="alert warn" role="status"><strong>Needs our approval:</strong>
                 ${' '}${quote.approvalReason}, so we confirm this job before it's booked (usually within a business hour).
                 Nothing is charged until it's approved.</div>`}
@@ -535,6 +554,17 @@ export function NewOrderPage({ guest = false, storeCode = null }) {
             <${Field} label="Heaviest single piece (lbs)" hint=${pieceLimit ? `With our driver lifting, each piece must be ${pieceLimit} lbs or less.` : 'So the driver knows what to expect. You load and unload it.'}>
               <input type="number" min="1" step="1" required inputmode="numeric" placeholder=${pieceLimit ? `up to ${pieceLimit}` : ''} ...${bind('maxPieceLbs')} />
             <//>
+          </div>
+          <div class="field">
+            <span class="field-label">Largest piece (inches)</span>
+            <div class="dims-row">
+              <input type="number" min="1" step="any" inputmode="decimal" placeholder="Length" aria-label="Length (inches)" required=${!staff} ...${bind('dimL')} />
+              <span>×</span>
+              <input type="number" min="1" step="any" inputmode="decimal" placeholder="Width" aria-label="Width (inches)" required=${!staff} ...${bind('dimW')} />
+              <span>×</span>
+              <input type="number" min="1" step="any" inputmode="decimal" placeholder="Height" aria-label="Height (inches)" required=${!staff} ...${bind('dimH')} />
+            </div>
+            <span class="hint">So we send a vehicle it fits in. A pallet is about 48 × 40, plus its height.</span>
           </div>
           <${Field} label="What are we moving?"><textarea rows="3" placeholder="Boxes of files, parts, small furniture, fragile items…" ...${bind('description')}></textarea><//>
           ${medical && html`<div class="custody-box">
@@ -1135,6 +1165,7 @@ export function OrderPage({ id }) {
               <dt>Vehicle</dt><dd>${order.vehicleType || '—'}</dd>
               <dt>Weight</dt><dd>${order.weight || '—'}</dd>
               <dt>Pieces</dt><dd>${order.numberOfPieces || '—'}${order.maxPieceLbs != null ? ` · heaviest ${order.maxPieceLbs} lbs` : ''}</dd>
+              ${order.pieceDims && html`<dt>Largest piece</dt><dd>${order.pieceDims.l} × ${order.pieceDims.w} × ${order.pieceDims.h} in</dd>`}
               <dt>Pickup time</dt><dd>${order.scheduledAt ? formatDate(order.scheduledAt) : 'ASAP'}</dd>
               <dt>Reference</dt><dd>${order.trackingNumber || '—'}</dd>
               ${order.poNumber && html`<dt>PO / job</dt><dd>${order.poNumber}</dd>`}
