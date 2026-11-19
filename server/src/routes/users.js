@@ -250,7 +250,12 @@ router.patch('/:id', requireRole('admin', 'dispatcher'), asyncH(async (req, res)
       for (const r of rows) await refreshDriverPay(client, r.id);
     }
   });
-  res.json(publicUser(await getUser(target.id), { includeLocation: true }));
+  const updated = await getUser(target.id);
+  // A typo fixed in an applicant's email: their next-steps email (which bounced) goes to the right address.
+  if (email && email !== target.email && updated.role === 'driver' && updated.driver_status === 'applied') {
+    driverEmails.applicationReceived(updated);
+  }
+  res.json(publicUser(updated, { includeLocation: true }));
 }));
 
 module.exports = router;

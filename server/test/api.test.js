@@ -1891,6 +1891,15 @@ test('drivers apply, finish their profile, get reviewed and are emailed at each 
     assert.equal(sent.filter((m) => m.to === 'dana@drivers.test').length, 2, 'a second reminder a week in, and no more');
     await db.query("UPDATE users SET created_at = now() WHERE id = $1", [danaId]);
 
+    // Dispatch fixes a typo in an applicant's email: the next-steps email goes to the right address.
+    sent.length = 0;
+    r = await call('PATCH', `/users/${danaId}`, { token: t.dispatcher, body: { email: 'dana@drivers.fixed.test' } });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    await settle();
+    assert.ok(sent.some((m) => m.to === 'dana@drivers.fixed.test' && /Next steps/.test(m.subject)));
+    await call('PATCH', `/users/${danaId}`, { token: t.dispatcher, body: { email: 'dana@drivers.test' } });
+    await settle();
+
     // Applied: can sign in and edit the profile, but no jobs, can't go online or be assigned.
     const order = (await call('POST', '/orders', { token: t.admin, body: orderBody() })).data;
     r = await call('GET', '/orders?status=pending', { token: dana });

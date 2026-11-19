@@ -159,6 +159,8 @@ export function DriverDetailPage({ id }) {
   const { data: u, error, loading, reload } = useApi(`/users/${encodeURIComponent(id)}`);
   const [note, setNote] = useState('');
   const [actionError, setActionError] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [contact, setContact] = useState({ name: '', email: '', phoneNumber: '' });
   if (loading && !u) return html`<${Layout}><${Spinner} /><//>`;
   if (!u) return html`<${Layout}><${Alert} error=${error} /><a href="#/people">Back to team</a><//>`;
   const p = u.driverProfile || {};
@@ -181,15 +183,24 @@ export function DriverDetailPage({ id }) {
               ${u.photoUrl ? html`<img class="avatar big" src=${u.photoUrl} alt="" />` : html`<div class="avatar big empty">${(u.name || '?')[0]}</div>`}
               <div>
                 <p><strong>${u.name}</strong></p>
-                <p class="small"><a href=${`mailto:${u.email}`}>${u.email}</a>${u.phoneNumber && html` · <a href=${`tel:${u.phoneNumber}`}>${u.phoneNumber}</a>`}
-                  · <${ActionButton} class="link small" onError=${setActionError} onClick=${async () => {
-                    const email = window.prompt('New email for this driver (they sign in with it):', u.email);
-                    if (email == null || email.trim() === u.email) return;
-                    await api(`/users/${u.id}`, { method: 'PATCH', body: { email: email.trim() } }); reload();
-                  }}>Change email<//></p>
+                <p class="small"><a href=${`mailto:${u.email}`}>${u.email}</a>${u.phoneNumber && html` · <a href=${`tel:${u.phoneNumber}`}>${u.phoneNumber}</a>`}</p>
+                ${!editing && html`<button type="button" class="btn small" onClick=${() => { setContact({ name: u.name || '', email: u.email, phoneNumber: u.phoneNumber || '' }); setEditing(true); }}>Edit name, email or phone</button>`}
                 <p class="small muted">${[p.city, p.zip].filter(Boolean).join(' ')}</p>
               </div>
             </div>
+            ${editing && html`<form class="stack" style="margin-top:12px" onSubmit=${async (e) => {
+              e.preventDefault();
+              try {
+                await api(`/users/${u.id}`, { method: 'PATCH', body: { name: contact.name.trim(), email: contact.email.trim(), phoneNumber: contact.phoneNumber.trim() } });
+                setEditing(false); setActionError(null); reload();
+              } catch (x) { setActionError(x); }
+            }}>
+              <${Field} label="Name"><input required value=${contact.name} onInput=${(e) => setContact({ ...contact, name: e.target.value })} /><//>
+              <${Field} label="Email" hint=${u.driverStatus === 'applied' ? 'They sign in with it. Fixing it re-sends their next-steps email.' : 'They sign in with it.'}>
+                <input type="email" required value=${contact.email} onInput=${(e) => setContact({ ...contact, email: e.target.value })} /><//>
+              <${Field} label="Phone"><input type="tel" value=${contact.phoneNumber} onInput=${(e) => setContact({ ...contact, phoneNumber: e.target.value })} /><//>
+              <div class="inline"><button class="btn primary small">Save</button><button type="button" class="btn small" onClick=${() => setEditing(false)}>Cancel</button></div>
+            </form>`}
             ${u.checklist?.expired?.length > 0 && html`<${Alert}>${u.checklist.expired.join('. ')}. They can't take jobs until they upload new ones.<//>`}
             ${u.checklist?.missing?.length > 0 && html`<div class="small"><strong>Still missing:</strong> ${u.checklist.missing.join(', ')}.</div>`}
             ${u.checklist?.complete && !u.checklist?.expired?.length && html`<p class="small">✓ Profile complete</p>`}
